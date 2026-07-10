@@ -18,6 +18,8 @@ export function JoinCall({ language: initialLanguage, onBack, onJoined, initialC
   const [mode, setMode] = useState<JoinMode>('scan');
   const [language, setLanguage] = useState(initialLanguage);
 
+  const isConnectingRef = React.useRef(false);
+
   useEffect(() => {
     if (initialCode && initialCode.length === 6) {
       setMode('manual');
@@ -25,7 +27,10 @@ export function JoinCall({ language: initialLanguage, onBack, onJoined, initialC
   }, [initialCode]);
 
   const handleJoin = (joinCode: string = code) => {
+    if (isConnectingRef.current) return;
+    
     if (joinCode.length === 6) {
+      isConnectingRef.current = true;
       const codeUpper = joinCode.toUpperCase();
       const wsUrl = import.meta.env.VITE_SIGNALING_URL || "ws://localhost:8080";
       const ws = new WebSocket(wsUrl);
@@ -36,6 +41,7 @@ export function JoinCall({ language: initialLanguage, onBack, onJoined, initialC
       };
 
       ws.onerror = () => {
+        isConnectingRef.current = false;
         console.error("WebSocket connection failed to", wsUrl);
         alert(`Connection failed! Please check that VITE_SIGNALING_URL is set correctly in Vercel. Current URL: ${wsUrl}`);
       };
@@ -48,6 +54,10 @@ export function JoinCall({ language: initialLanguage, onBack, onJoined, initialC
             onJoined(codeUpper, language);
           }
         } catch(e) {}
+      };
+      
+      ws.onclose = () => {
+        isConnectingRef.current = false;
       };
     }
   };
