@@ -35,6 +35,11 @@ export function JoinCall({ language: initialLanguage, onBack, onJoined, initialC
         ws.send(JSON.stringify({ type: "join", sessionId: codeUpper + "_signal" }));
       };
 
+      ws.onerror = () => {
+        console.error("WebSocket connection failed to", wsUrl);
+        alert(`Connection failed! Please check that VITE_SIGNALING_URL is set correctly in Vercel. Current URL: ${wsUrl}`);
+      };
+
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
@@ -44,14 +49,6 @@ export function JoinCall({ language: initialLanguage, onBack, onJoined, initialC
           }
         } catch(e) {}
       };
-
-      // Fallback in case the other peer already dropped their watcher or network is slow
-      setTimeout(() => {
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-          ws.close();
-          onJoined(codeUpper, language);
-        }
-      }, 1500);
     }
   };
 
