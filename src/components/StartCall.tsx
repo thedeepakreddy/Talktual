@@ -19,30 +19,50 @@ export function StartCall({ language, onBack, onJoined }: StartCallProps) {
     setRoomCode(code);
 
     const wsUrl = import.meta.env.VITE_SIGNALING_URL || "ws://localhost:8080";
-    const ws = new WebSocket(wsUrl);
+    let ws: WebSocket;
+    let isConnecting = false;
+    let isMounted = true;
 
-    ws.onopen = () => {
-      // Join a special signaling room just to coordinate the transition
-      ws.send(JSON.stringify({ type: "join", sessionId: code + "_signal" }));
-    };
+    const connect = () => {
+      if (!isMounted || isConnecting) return;
+      isConnecting = true;
+      ws = new WebSocket(wsUrl);
 
-    ws.onerror = () => {
-      console.error("WebSocket connection failed to", wsUrl);
-      alert(`Connection failed! Please check that VITE_SIGNALING_URL is set correctly in Vercel. Current URL: ${wsUrl}`);
-    };
+      ws.onopen = () => {
+        isConnecting = false;
+        ws.send(JSON.stringify({ type: "join", sessionId: code + "_signal" }));
+      };
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === "ready") {
-          ws.close();
-          onJoined(code);
+      ws.onerror = () => {
+        isConnecting = false;
+        console.error("WebSocket connection failed to", wsUrl);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "ready") {
+            isMounted = false; // Prevent reconnect
+            ws.close();
+            onJoined(code);
+          }
+        } catch(e) {}
+      };
+
+      ws.onclose = () => {
+        isConnecting = false;
+        // Reconnect if it dropped unexpectedly
+        if (isMounted) {
+          setTimeout(connect, 2000);
         }
-      } catch(e) {}
+      };
     };
+
+    connect();
 
     return () => {
-      ws.close();
+      isMounted = false;
+      if (ws) ws.close();
     };
   }, [onJoined]);
 
