@@ -43,6 +43,7 @@ export function startListening(
           if (!response.ok) {
             const errorText = await response.text();
             console.error("STT Proxy failed:", errorText);
+            alert(`STT Error: The server returned ${response.status}. Make sure ELEVENLABS_API_KEY is set in your backend. Details: ${errorText}`);
             onError?.("Transcription failed");
             return;
           }
@@ -50,9 +51,13 @@ export function startListening(
           const data = await response.json();
           if (data.text) {
             onResult(data.text.trim());
+          } else {
+            alert("STT Error: ElevenLabs returned no text.");
+            onError?.("No text returned");
           }
         } catch (err) {
           console.error("STT fetch error:", err);
+          alert(`STT Network Error: ${String(err)}. Is the backend server running?`);
           onError?.(String(err));
         }
       };
