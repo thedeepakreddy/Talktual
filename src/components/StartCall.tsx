@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Language } from '../types';
-import { useSocket } from '../SocketContext';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 
 interface StartCallProps {
@@ -13,27 +12,34 @@ interface StartCallProps {
 
 export function StartCall({ language, onBack, onJoined }: StartCallProps) {
   const [roomCode, setRoomCode] = useState('');
-  const { socket } = useSocket();
 
   useEffect(() => {
     // Generate random 6-character code
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     setRoomCode(code);
 
-    if (socket) {
-      socket.emit('join_room', { roomCode: code, language: language.name });
+    const wsUrl = import.meta.env.VITE_SIGNALING_URL || "ws://localhost:8080";
+    const ws = new WebSocket(wsUrl);
 
-      socket.on('user_joined', () => {
-        onJoined(code);
-      });
-    }
+    ws.onopen = () => {
+      // Join a special signaling room just to coordinate the transition
+      ws.send(JSON.stringify({ type: "join", sessionId: code + "_signal" }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "ready") {
+          ws.close();
+          onJoined(code);
+        }
+      } catch(e) {}
+    };
 
     return () => {
-      if (socket) {
-        socket.off('user_joined');
-      }
+      ws.close();
     };
-  }, [socket, onJoined, language.name]);
+  }, [onJoined]);
 
   // Construct a join URL
   const joinUrl = typeof window !== 'undefined' ? `${window.location.origin}/?join=${roomCode}` : '';

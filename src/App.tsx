@@ -3,7 +3,6 @@ import { Home } from './components/Home';
 import { StartCall } from './components/StartCall';
 import { JoinCall } from './components/JoinCall';
 import { CallRoom } from './components/CallRoom';
-import { SocketProvider } from './SocketContext';
 import { Language } from './types';
 
 type Screen = 'home' | 'start' | 'join' | 'call';
@@ -87,9 +86,5 @@ function AppContent() {
 }
 
 export default function App() {
-  return (
-    <SocketProvider>
-      <AppContent />
-    </SocketProvider>
-  );
+  return <AppContent />;
 }

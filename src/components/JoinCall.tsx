@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Language, SUPPORTED_LANGUAGES } from '../types';
-import { useSocket } from '../SocketContext';
 import { ArrowLeft, Camera, Keyboard } from 'lucide-react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 
@@ -18,7 +17,6 @@ export function JoinCall({ language: initialLanguage, onBack, onJoined, initialC
   const [code, setCode] = useState(initialCode);
   const [mode, setMode] = useState<JoinMode>('scan');
   const [language, setLanguage] = useState(initialLanguage);
-  const { socket } = useSocket();
 
   useEffect(() => {
     if (initialCode && initialCode.length === 6) {
@@ -27,9 +25,33 @@ export function JoinCall({ language: initialLanguage, onBack, onJoined, initialC
   }, [initialCode]);
 
   const handleJoin = (joinCode: string = code) => {
-    if (joinCode.length === 6 && socket) {
-      socket.emit('join_room', { roomCode: joinCode.toUpperCase(), language: language.name });
-      onJoined(joinCode.toUpperCase(), language);
+    if (joinCode.length === 6) {
+      const codeUpper = joinCode.toUpperCase();
+      const wsUrl = import.meta.env.VITE_SIGNALING_URL || "ws://localhost:8080";
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        // Send a join to the special signaling room to trigger the QR screen to advance
+        ws.send(JSON.stringify({ type: "join", sessionId: codeUpper + "_signal" }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "ready") {
+            ws.close();
+            onJoined(codeUpper, language);
+          }
+        } catch(e) {}
+      };
+
+      // Fallback in case the other peer already dropped their watcher or network is slow
+      setTimeout(() => {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+          onJoined(codeUpper, language);
+        }
+      }, 1500);
     }
   };
 
