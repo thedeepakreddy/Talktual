@@ -1,9 +1,25 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Message, Language } from '../types';
-import { useSocket } from '../SocketContext';
 import { Mic, PhoneOff, MessageSquare, X } from 'lucide-react';
 import { cn } from '../utils';
+
+import { connectCall } from '../lib/webrtc';
+import { startListening, RecognitionHandle } from '../lib/speechToText';
+import { translateText } from '../lib/translate';
+import { speak, preloadVoices } from '../lib/textToSpeech';
+
+// Use VITE_ prefix as this is a Vite app. We also check NEXT_PUBLIC_ for fallback if defined.
+const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || "wss://YOUR-SIGNALING-SERVER-URL";
+
+type CallStatus =
+  | "waiting-for-peer"
+  | "connecting"
+  | "connected"
+  | "peer-left"
+  | "expired"
+  | "error"
+  | "disconnected";
 
 interface CallRoomProps {
   roomCode: string;
@@ -13,144 +29,103 @@ interface CallRoomProps {
 }
 
 export function CallRoom({ roomCode, language, userName, onEndCall }: CallRoomProps) {
-  const { socket } = useSocket();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [interimTranscript, setInterimTranscript] = useState('');
   const [showTranscript, setShowTranscript] = useState(false);
+  const [status, setStatus] = useState<CallStatus>("waiting-for-peer");
   const [myId] = useState(() => Math.random().toString(36).substring(7));
   
-  const recognitionRef = useRef<any>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const callRef = useRef<ReturnType<typeof connectCall> | null>(null);
+  const recognitionRef = useRef<RecognitionHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, interimTranscript, showTranscript]);
+  }, [messages, showTranscript]);
 
   useEffect(() => {
-    if (!socket) return;
-    
-    // Ensure we are in the room, especially if socket reconnects
-    socket.emit('join_room', { roomCode, language: language.name });
-    
-    const handleConnect = () => {
-      socket.emit('join_room', { roomCode, language: language.name });
-    };
-    socket.on('connect', handleConnect);
+    preloadVoices();
 
-    socket.on('new_message', (msg: Message) => {
-      setMessages(prev => [...prev, msg]);
-      
-      if (msg.speakerId !== myId) {
-        speakText(msg.translatedText, language.bcp47);
-      } else {
-        setIsTranslating(false);
-      }
-    });
+    const call = connectCall(
+      roomCode,
+      SIGNALING_URL,
+      (stream) => {
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = stream;
+          remoteAudioRef.current.muted = true;
+        }
+      },
+      async (text, lang) => {
+        // Receive their original text and language, translate to our language
+        setIsTranslating(true);
+        try {
+          const translated = await translateText(
+            text, 
+            lang.split("-")[0] || "auto", 
+            language.bcp47.split("-")[0]
+          );
+          setMessages(prev => [...prev, {
+            speakerId: "them",
+            speakerName: "Stranger",
+            originalText: text,
+            translatedText: translated
+          }]);
+          setIsSpeaking(true);
+          speak(translated, language.bcp47, () => setIsSpeaking(false));
+        } catch (err) {
+          console.error("Translation error:", err);
+        } finally {
+          setIsTranslating(false);
+        }
+      },
+      (newStatus) => setStatus(newStatus as CallStatus)
+    );
+
+    callRef.current = call;
+    call.addLocalAudio().catch(err => console.error("Mic error:", err));
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('new_message');
+      recognitionRef.current?.stop();
+      call.close();
     };
-  }, [socket, myId, language.name, language.bcp47, roomCode]);
+  }, [roomCode, language.bcp47]);
 
-  const speakText = (text: string, langCode: string) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = langCode;
-      
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = (e) => {
-        console.error('Speech synthesis error:', e);
-        setIsSpeaking(false);
-      };
-      
-      window.speechSynthesis.speak(utterance);
-    }
-  };
+  const handlePressStart = useCallback(() => {
+    if (isSpeaking) return;
 
-  const startListening = useCallback(() => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Speech recognition is not supported in this browser. Please use Chrome or Safari.');
-      return;
-    }
-
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    
-    recognition.lang = language.bcp47;
-    recognition.continuous = true;
-    recognition.interimResults = true;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      setInterimTranscript('');
-    };
-
-    recognition.onresult = (event: any) => {
-      let currentInterim = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (!event.results[i].isFinal) {
-          currentInterim += event.results[i][0].transcript;
-        }
+    setIsListening(true);
+    recognitionRef.current = startListening(
+      language.bcp47,
+      (recognizedText) => {
+        setMessages(prev => [...prev, {
+          speakerId: myId,
+          speakerName: userName,
+          originalText: recognizedText,
+          translatedText: recognizedText
+        }]);
+        
+        // Send original text to the peer so they can translate it to their language
+        callRef.current?.sendTranslatedText(recognizedText, language.bcp47);
+      },
+      (err) => {
+        console.error("STT error:", err);
+        setIsListening(false);
       }
-      setInterimTranscript(currentInterim);
-    };
+    );
+  }, [language.bcp47, myId, userName, isSpeaking]);
 
-    recognition.onerror = (event: any) => {
-      console.error('Speech recognition error', event.error);
-      stopListening(recognition);
-    };
-
-    recognition.start();
-    recognitionRef.current = recognition;
-  }, [language]);
-
-  const stopListening = useCallback((rec = recognitionRef.current) => {
-    if (rec) {
-      rec.stop();
-      setIsListening(false);
-    }
+  const handlePressEnd = useCallback(() => {
+    setIsListening(false);
+    recognitionRef.current?.stop();
   }, []);
 
-  useEffect(() => {
-    if (!recognitionRef.current) return;
-    const recognition = recognitionRef.current;
-    
-    recognition.onresult = (event: any) => {
-      let finalTranscript = '';
-      let currentInterim = '';
-      
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        } else {
-          currentInterim += event.results[i][0].transcript;
-        }
-      }
-      
-      setInterimTranscript(currentInterim);
-      
-      if (finalTranscript.trim() && socket) {
-        setIsTranslating(true);
-        socket.emit('speech_ended', {
-          roomCode,
-          originalText: finalTranscript.trim(),
-          sourceLang: language.name,
-          speakerId: myId,
-          speakerName: userName
-        });
-      }
-    };
-  }, [socket, myId, roomCode, language.name]);
-
   const getStateText = () => {
+    if (status !== "connected") return `STATUS: ${status.toUpperCase()}`;
     if (isListening) return "RECEIVING SIGNAL...";
     if (isTranslating) return "DECODING...";
     if (isSpeaking) return "TRANSMITTING...";
@@ -167,7 +142,7 @@ export function CallRoom({ roomCode, language, userName, onEndCall }: CallRoomPr
         </div>
         <div className="flex gap-4">
           <button 
-            onClick={() => setShowTranscript(true)}
+            onClick={() => setShowTranscript(v => !v)}
             className="p-3 bg-zinc-900 text-zinc-400 rounded-none border border-zinc-800 hover:bg-zinc-800 transition-colors"
           >
             <MessageSquare className="w-5 h-5" />
@@ -214,15 +189,17 @@ export function CallRoom({ roomCode, language, userName, onEndCall }: CallRoomPr
           </AnimatePresence>
 
           <button
-            onPointerDown={startListening}
-            onPointerUp={() => stopListening()}
-            onPointerLeave={() => stopListening()}
+            onPointerDown={handlePressStart}
+            onPointerUp={handlePressEnd}
+            onPointerLeave={handlePressEnd}
+            disabled={status !== "connected" && status !== "connecting"}
             className={cn(
-              "relative w-40 h-40 flex items-center justify-center transition-all duration-150 select-none z-10 rounded-full border-4 shadow-[0_0_15px_rgba(0,0,0,0.5)] active:scale-95",
-              isListening ? "bg-orange-500 border-orange-400" : 
-              isTranslating ? "bg-zinc-800 border-zinc-700" :
-              isSpeaking ? "bg-zinc-100 border-zinc-300" :
-              "bg-zinc-900 border-zinc-800 hover:bg-zinc-800"
+              "relative w-40 h-40 flex items-center justify-center transition-all duration-150 select-none z-10 rounded-full border-4 shadow-[0_0_15px_rgba(0,0,0,0.5)]",
+              (status !== "connected" && status !== "connecting") ? "opacity-50 cursor-not-allowed bg-zinc-900 border-zinc-800" :
+              isListening ? "bg-orange-500 border-orange-400 active:scale-95" : 
+              isTranslating ? "bg-zinc-800 border-zinc-700 active:scale-95" :
+              isSpeaking ? "bg-zinc-100 border-zinc-300 active:scale-95" :
+              "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 active:scale-95"
             )}
           >
             <Mic className={cn(
@@ -245,7 +222,8 @@ export function CallRoom({ roomCode, language, userName, onEndCall }: CallRoomPr
           initial={{ opacity: 0, y: 5 }}
           animate={{ opacity: 1, y: 0 }}
           className={cn(
-            "text-sm font-bold tracking-widest font-mono uppercase",
+            "text-sm font-bold tracking-widest font-mono uppercase text-center max-w-[80%]",
+            status !== "connected" ? "text-zinc-400" :
             isListening ? "text-orange-500" : 
             isTranslating ? "text-zinc-500" :
             isSpeaking ? "text-zinc-100" :
@@ -282,7 +260,7 @@ export function CallRoom({ roomCode, language, userName, onEndCall }: CallRoomPr
               className="flex-1 overflow-y-auto p-6 flex flex-col gap-6"
             >
               <AnimatePresence>
-                {messages.length === 0 && !interimTranscript && !isTranslating && (
+                {messages.length === 0 && !isTranslating && (
                   <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm font-mono uppercase tracking-widest">
                     No signals detected
                   </div>
@@ -305,31 +283,23 @@ export function CallRoom({ roomCode, language, userName, onEndCall }: CallRoomPr
                         isMe ? "bg-orange-500/10 border-orange-500/50 text-orange-500 rounded-none border-r-4" : "bg-zinc-900 border-zinc-800 text-zinc-300 rounded-none border-l-4"
                       )}>
                         <p className="text-[15px] mb-1 leading-relaxed">{isMe ? msg.originalText : msg.translatedText}</p>
-                        <p className={cn("text-[11px] uppercase tracking-widest font-mono", isMe ? "text-orange-500/50" : "text-zinc-600")}>
-                          {isMe ? msg.translatedText : msg.originalText}
-                        </p>
+                        {!isMe && (
+                          <p className="text-[11px] uppercase tracking-widest font-mono text-zinc-600">
+                            {msg.originalText}
+                          </p>
+                        )}
                       </div>
                     </motion.div>
                   );
                 })}
-                
-                {interimTranscript && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="self-end max-w-[85%] bg-orange-500/5 border border-orange-500/30 text-orange-500 p-4 rounded-none border-r-4"
-                  >
-                    <p className="text-[15px] animate-pulse opacity-75">{interimTranscript}</p>
-                  </motion.div>
-                )}
 
                 {isTranslating && (
                    <motion.div
                      initial={{ opacity: 0 }}
                      animate={{ opacity: 1 }}
-                     className="self-end max-w-[85%] mt-2"
+                     className="self-start max-w-[85%] mt-2"
                    >
-                     <div className="flex gap-2 p-3 bg-zinc-900 border border-zinc-800 rounded-none border-r-4 border-r-zinc-600">
+                     <div className="flex gap-2 p-3 bg-zinc-900 border border-zinc-800 rounded-none border-l-4 border-l-zinc-600">
                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" style={{ animationDelay: '0ms' }} />
                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" style={{ animationDelay: '150ms' }} />
                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" style={{ animationDelay: '300ms' }} />
@@ -341,6 +311,7 @@ export function CallRoom({ roomCode, language, userName, onEndCall }: CallRoomPr
           </motion.div>
         )}
       </AnimatePresence>
+      <audio ref={remoteAudioRef} autoPlay />
     </div>
   );
 }
