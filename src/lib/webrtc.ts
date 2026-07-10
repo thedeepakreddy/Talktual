@@ -25,6 +25,8 @@ export function connectCall(
   });
 
   let role: "offerer" | "answerer" | null = null;
+  let pendingCandidates: RTCIceCandidateInit[] = [];
+  let isRemoteDescriptionSet = false;
 
   pc.ontrack = (event) => onRemoteStream(event.streams[0]);
 
@@ -62,6 +64,10 @@ export function connectCall(
 
       case "offer":
         await pc.setRemoteDescription(msg.offer);
+        isRemoteDescriptionSet = true;
+        pendingCandidates.forEach(c => pc.addIceCandidate(c).catch(console.error));
+        pendingCandidates = [];
+        
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         ws.send(JSON.stringify({ type: "answer", answer }));
@@ -69,13 +75,16 @@ export function connectCall(
 
       case "answer":
         await pc.setRemoteDescription(msg.answer);
+        isRemoteDescriptionSet = true;
+        pendingCandidates.forEach(c => pc.addIceCandidate(c).catch(console.error));
+        pendingCandidates = [];
         break;
 
       case "ice":
-        try {
-          await pc.addIceCandidate(msg.candidate);
-        } catch {
-          // benign if it arrives before remote description is set
+        if (isRemoteDescriptionSet) {
+          pc.addIceCandidate(msg.candidate).catch(console.error);
+        } else {
+          pendingCandidates.push(msg.candidate);
         }
         break;
 
