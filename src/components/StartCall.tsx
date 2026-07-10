@@ -26,6 +26,11 @@ export function StartCall({ language, onBack, onJoined }: StartCallProps) {
       ws.send(JSON.stringify({ type: "join", sessionId: code + "_signal" }));
     };
 
+    ws.onerror = () => {
+      console.error("WebSocket connection failed to", wsUrl);
+      alert(`Connection failed! Please check that VITE_SIGNALING_URL is set correctly in Vercel. Current URL: ${wsUrl}`);
+    };
+
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
