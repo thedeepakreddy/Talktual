@@ -1,8 +1,7 @@
-// High-quality speech-to-text via ElevenLabs Scribe API.
-// Captures audio using MediaRecorder during the push-to-talk hold,
-// then uploads the batch to ElevenLabs upon release.
+// Speech-to-text proxied through our signaling server to hide API keys.
 
-const ELEVENLABS_API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY;
+const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || "ws://localhost:8080";
+const API_BASE = SIGNALING_URL.replace(/^ws/, 'http');
 
 export interface RecognitionHandle {
   stop: () => void;
@@ -13,11 +12,6 @@ export function startListening(
   onResult: (text: string) => void,
   onError?: (error: string) => void
 ): RecognitionHandle | null {
-  if (!ELEVENLABS_API_KEY) {
-    onError?.("VITE_ELEVENLABS_API_KEY is missing. STT disabled.");
-    return null;
-  }
-
   let mediaRecorder: MediaRecorder | null = null;
   const audioChunks: Blob[] = [];
 
@@ -40,19 +34,15 @@ export function startListening(
         try {
           const formData = new FormData();
           formData.append('file', audioBlob, 'recording.webm');
-          formData.append('model_id', 'scribe_v1');
           
-          const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+          const response = await fetch(`${API_BASE}/api/stt`, {
             method: 'POST',
-            headers: {
-              'xi-api-key': ELEVENLABS_API_KEY
-            },
             body: formData
           });
 
           if (!response.ok) {
             const errorText = await response.text();
-            console.error("ElevenLabs STT error:", errorText);
+            console.error("STT Proxy failed:", errorText);
             onError?.("Transcription failed");
             return;
           }
