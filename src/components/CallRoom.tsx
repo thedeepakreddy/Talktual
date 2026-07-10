@@ -48,6 +48,13 @@ export function CallRoom({ roomCode, language, userName, onEndCall }: CallRoomPr
     }
   }, [messages, showTranscript]);
 
+  // Automatically end the call if the other user leaves
+  useEffect(() => {
+    if (status === "peer-left") {
+      onEndCall();
+    }
+  }, [status, onEndCall]);
+
   useEffect(() => {
     preloadVoices();
 
