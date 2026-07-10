@@ -1,42 +1,71 @@
-// Free text-to-speech via the browser's speechSynthesis API.
-// Voice availability per language varies a lot by device/OS — test the
-// specific language pairs you care about early.
-// Swap this file's internals later for ElevenLabs/Azure; keep the same
-// function signature so nothing else needs to change.
+// High-quality text-to-speech via ElevenLabs API.
+// Uses the eleven_multilingual_v2 model to automatically detect and speak the correct language.
 
-export function speak(
+const ELEVENLABS_API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY;
+const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel (high quality, multilingual)
+
+export async function speak(
   text: string,
   lang: string,
   onEnd?: () => void
-): void {
-  if (!("speechSynthesis" in window)) {
-    console.warn("speechSynthesis not supported in this browser");
+): Promise<void> {
+  if (!ELEVENLABS_API_KEY) {
+    console.warn("VITE_ELEVENLABS_API_KEY is not set. TTS is disabled.");
     onEnd?.();
     return;
   }
 
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = lang; // e.g. "fa-IR", "hu-HU"
+  try {
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${DEFAULT_VOICE_ID}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': ELEVENLABS_API_KEY
+      },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75
+        }
+      })
+    });
 
-  const voices = speechSynthesis.getVoices();
-  const match = voices.find((v) => v.lang === lang || v.lang.startsWith(lang.split("-")[0]));
-  if (match) utterance.voice = match;
-
-  if (onEnd) utterance.onend = onEnd;
-
-  speechSynthesis.speak(utterance);
-}
-
-// Call this once on app load — voice list loads asynchronously on some browsers
-export function preloadVoices(): Promise<SpeechSynthesisVoice[]> {
-  return new Promise((resolve) => {
-    const voices = speechSynthesis.getVoices();
-    if (voices.length > 0) {
-      resolve(voices);
+    if (!response.ok) {
+      console.error("ElevenLabs TTS error:", await response.text());
+      onEnd?.();
       return;
     }
-    speechSynthesis.onvoiceschanged = () => {
-      resolve(speechSynthesis.getVoices());
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      onEnd?.();
     };
-  });
+    
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      onEnd?.();
+    };
+
+    audio.play().catch(e => {
+      console.error("Audio playback failed:", e);
+      URL.revokeObjectURL(url);
+      onEnd?.();
+    });
+  } catch (err) {
+    console.error("TTS fetch error:", err);
+    onEnd?.();
+  }
+}
+
+// Preloading voices is no longer strictly necessary since we fetch from API,
+// but we keep the signature for compatibility with CallRoom.tsx
+export function preloadVoices(): Promise<any[]> {
+  return Promise.resolve([]);
 }
