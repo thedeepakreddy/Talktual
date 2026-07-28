@@ -1,4 +1,3 @@
-Talktual
 Talktual is a real-time, peer-to-peer voice translation application designed to seamlessly bridge language barriers. It allows two users to connect via a secure WebRTC data channel (established through a QR code handshake) and communicate in their native languages using a push-to-talk interface.
 
 The application records voice input, transcribes it, translates the text, and synthesizes the translated voice on the receiver's device, all in near real-time.
