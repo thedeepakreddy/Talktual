@@ -1,13 +1,248 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", monospace;
+}
+
+:root {
+  /* Apple system colors, dark appearance */
+  --blue: #0a84ff;
+  --green: #30d158;
+  --amber: #ff9f0a;
+  --red: #ff453a;
+
+  --text-1: #f5f5f7;
+  --text-2: rgba(235, 235, 245, 0.62);
+  --text-3: rgba(235, 235, 245, 0.32);
+
+  --surface: rgba(255, 255, 255, 0.045);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --hairline: rgba(255, 255, 255, 0.09);
+
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background-color: #09090b;
-  color: #fafafa;
+  margin: 0;
+  background: #08080a;
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* A push-to-talk hold must never turn into a pull-to-refresh. */
+  overscroll-behavior: none;
 }
 
+/* Ambient depth behind everything, so flat black never reads as "unfinished". */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(90rem 50rem at 50% -20%, rgba(10, 132, 255, 0.09), transparent 60%),
+    radial-gradient(60rem 40rem at 50% 120%, rgba(255, 159, 10, 0.06), transparent 60%);
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+  min-height: 100%;
+}
+
+button {
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select {
+  font-family: inherit;
+}
+
+@layer utilities {
+  .glass {
+    background: var(--surface);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid var(--hairline);
+  }
+
+  .hairline-t {
+    border-top: 1px solid var(--hairline);
+  }
+
+  .safe-b {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+
+  .safe-t {
+    padding-top: max(1rem, env(safe-area-inset-top));
+  }
+
+  .no-touch {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Speaker grille — the single strongest "this is a radio" cue. Two offset dot
+   grids read as a real perforated metal panel rather than a flat texture.
+--------------------------------------------------------------------------- */
+.grille {
+  background-image:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.16) 1.1px, transparent 1.3px),
+    radial-gradient(circle at center, rgba(0, 0, 0, 0.55) 1.1px, transparent 1.3px);
+  background-size: 9px 9px, 9px 9px;
+  background-position: 0 0, 0.5px 0.5px;
+  transition: opacity 260ms var(--ease-out);
+}
+
+/* ---------------------------------------------------------------------------
+   Push-to-talk button. Built from a machined bezel, a domed face, and a
+   specular highlight so it reads as a physical part under a thumb.
+--------------------------------------------------------------------------- */
+.ptt-bezel {
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 145deg,
+    #46464d 0deg,
+    #7a7a85 60deg,
+    #2b2b30 130deg,
+    #5c5c66 210deg,
+    #33333a 290deg,
+    #46464d 360deg
+  );
+  padding: 10px;
+  box-shadow:
+    0 24px 48px -12px rgba(0, 0, 0, 0.85),
+    0 2px 0 rgba(255, 255, 255, 0.08) inset,
+    0 -2px 6px rgba(0, 0, 0, 0.6) inset;
+  transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
+}
+
+.ptt-face {
+  position: relative;
+  border-radius: 9999px;
+  background:
+    radial-gradient(120% 120% at 50% 8%, #34343b 0%, #1d1d22 46%, #131317 100%);
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.14) inset,
+    0 -18px 32px rgba(0, 0, 0, 0.55) inset;
+  transition: background 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+}
+
+/* Specular sheen across the top of the dome. */
+.ptt-face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 42%);
+  pointer-events: none;
+}
+
+.ptt-live .ptt-face {
+  background:
+    radial-gradient(120% 120% at 50% 8%, #ffc061 0%, #ff9f0a 44%, #c9700a 100%);
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.4) inset,
+    0 -18px 32px rgba(120, 60, 0, 0.5) inset;
+}
+
+.ptt-live.ptt-bezel,
+.ptt-live .ptt-bezel {
+  box-shadow:
+    0 10px 26px -8px rgba(0, 0, 0, 0.8),
+    0 0 46px rgba(255, 159, 10, 0.42),
+    0 2px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+.ptt-pressed {
+  transform: scale(0.965);
+}
+
+.ptt-recv .ptt-face {
+  background:
+    radial-gradient(120% 120% at 50% 8%, #4aa8ff 0%, #0a84ff 46%, #0a5fbd 100%);
+}
+
+.ptt-disabled {
+  opacity: 0.35;
+  filter: saturate(0.2);
+}
+
+/* Transmit halo. Kept off the button itself so the press animation stays crisp. */
+@keyframes ptt-ripple {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.ptt-ripple {
+  animation: ptt-ripple 1.9s var(--ease-out) infinite;
+}
+
+/* Status LED with a real bloom. */
+.led {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+}
+
+.led::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 9999px;
+  background: inherit;
+  opacity: 0.32;
+  filter: blur(4px);
+}
+
+@keyframes led-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.led-pulse {
+  animation: led-breathe 1.8s ease-in-out infinite;
+}
+
+/* Sheets slide from the bottom edge like a native modal. */
+.sheet-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sheet-scroll::-webkit-scrollbar {
+  width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ptt-ripple,
+  .led-pulse {
+    animation: none;
+  }
+}

@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Language, SUPPORTED_LANGUAGES } from '../types';
-import { ArrowLeft, Camera, Keyboard } from 'lucide-react';
 import { Scanner } from '@yudiel/react-qr-scanner';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Language } from '../types';
+import { LanguagePicker } from './LanguagePicker';
+import { cn } from '../utils';
 
 interface JoinCallProps {
   language: Language;
@@ -13,176 +15,276 @@ interface JoinCallProps {
 
 type JoinMode = 'scan' | 'manual';
 
-export function JoinCall({ language: initialLanguage, onBack, onJoined, initialCode = '' }: JoinCallProps) {
-  const [code, setCode] = useState(initialCode);
-  const [mode, setMode] = useState<JoinMode>('scan');
-  const [language, setLanguage] = useState(initialLanguage);
+const CODE_LENGTH = 6;
 
-  const isConnectingRef = React.useRef(false);
+export function JoinCall({
+  language: initialLanguage,
+  onBack,
+  onJoined,
+  initialCode = '',
+}: JoinCallProps) {
+  const [code, setCode] = useState(initialCode.toUpperCase());
+  const [mode, setMode] = useState<JoinMode>(initialCode.length === CODE_LENGTH ? 'manual' : 'scan');
+  const [language, setLanguage] = useState(initialLanguage);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [cameraFailed, setCameraFailed] = useState(false);
+
+  const isConnectingRef = useRef(false);
+  const hiddenInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (initialCode && initialCode.length === 6) {
-      setMode('manual');
-    }
+    if (initialCode.length === CODE_LENGTH) setMode('manual');
   }, [initialCode]);
 
   const handleJoin = (joinCode: string = code) => {
-    if (isConnectingRef.current) return;
-    
-    if (joinCode.length === 6) {
-      isConnectingRef.current = true;
-      const codeUpper = joinCode.toUpperCase();
-      const wsUrl = import.meta.env.VITE_SIGNALING_URL || "ws://localhost:8080";
-      const ws = new WebSocket(wsUrl);
+    if (isConnectingRef.current || joinCode.length !== CODE_LENGTH) return;
 
-      ws.onopen = () => {
-        // Send a join to the special signaling room to trigger the QR screen to advance
-        ws.send(JSON.stringify({ type: "join", sessionId: codeUpper + "_signal" }));
-      };
+    isConnectingRef.current = true;
+    setConnecting(true);
+    setError(null);
 
-      ws.onerror = () => {
-        isConnectingRef.current = false;
-        console.error("WebSocket connection failed to", wsUrl);
-        alert(`Connection failed! Please check that VITE_SIGNALING_URL is set correctly in Vercel. Current URL: ${wsUrl}`);
-      };
+    const codeUpper = joinCode.toUpperCase();
+    const wsUrl = import.meta.env.VITE_SIGNALING_URL || 'ws://localhost:8080';
+    const ws = new WebSocket(wsUrl);
 
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === "ready") {
-            ws.close();
-            onJoined(codeUpper, language);
-          }
-        } catch(e) {}
-      };
-      
-      ws.onclose = () => {
-        isConnectingRef.current = false;
-      };
-    }
+    const fail = (message: string) => {
+      isConnectingRef.current = false;
+      setConnecting(false);
+      setError(message);
+    };
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'join', sessionId: codeUpper + '_signal' }));
+    };
+
+    ws.onerror = () => fail('Could not reach the server. Check your connection and try again.');
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'ready') {
+          ws.close();
+          onJoined(codeUpper, language);
+        } else if (msg.type === 'error') {
+          ws.close();
+          fail('That channel is already full.');
+        }
+      } catch {
+        /* ignore malformed frames */
+      }
+    };
+
+    ws.onclose = () => {
+      isConnectingRef.current = false;
+      setConnecting(false);
+    };
   };
 
-  const handleScan = (detectedCodes: any[]) => {
-    if (detectedCodes && detectedCodes.length > 0) {
-      const result = detectedCodes[0].rawValue;
-      // Extract code from URL if it's a join URL
-      const urlMatch = result.match(/\?join=([a-zA-Z0-9]{6})/i);
-      if (urlMatch && urlMatch[1]) {
-        handleJoin(urlMatch[1].toUpperCase());
-      } else if (result.length === 6) {
-        handleJoin(result.toUpperCase());
-      }
-    }
+  const handleScan = (detectedCodes: { rawValue: string }[]) => {
+    if (!detectedCodes?.length) return;
+    const result = detectedCodes[0].rawValue;
+    const urlMatch = result.match(/\?join=([a-zA-Z0-9]{6})/i);
+    if (urlMatch?.[1]) handleJoin(urlMatch[1].toUpperCase());
+    else if (result.length === CODE_LENGTH) handleJoin(result.toUpperCase());
+  };
+
+  const setModeSafely = (next: JoinMode) => {
+    setError(null);
+    setMode(next);
+    if (next === 'manual') setTimeout(() => hiddenInputRef.current?.focus(), 150);
   };
 
   return (
-    <motion.div 
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="flex flex-col min-h-screen p-8 max-w-md mx-auto relative bg-[#09090b] text-zinc-100"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.35 }}
+      className="mx-auto flex min-h-screen w-full max-w-md flex-col px-6"
     >
-      <button 
-        onClick={onBack}
-        className="absolute top-8 left-8 p-3 rounded-none bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors z-10"
-      >
-        <ArrowLeft className="w-5 h-5 text-zinc-100" />
-      </button>
-
-      <div className="text-center mt-24 mb-10">
-        <h2 className="text-xl font-bold mb-3 font-mono tracking-widest uppercase">Sync Signal</h2>
-        
-        <div className="mt-4 flex flex-col items-center">
-          <label className="text-xs text-zinc-500 mb-1 uppercase tracking-widest font-mono">Your Freq</label>
-          <select 
-            className="p-2 bg-transparent text-zinc-300 font-mono text-sm tracking-widest text-center focus:outline-none cursor-pointer uppercase"
-            value={language.code}
-            onChange={(e) => {
-              const lang = SUPPORTED_LANGUAGES.find(l => l.code === e.target.value);
-              if (lang) setLanguage(lang);
-            }}
-          >
-            {SUPPORTED_LANGUAGES.map(lang => (
-              <option key={lang.code} value={lang.code} className="bg-zinc-900 text-zinc-100">{lang.name}</option>
-            ))}
-          </select>
-        </div>
+      <div className="safe-t flex items-center justify-between py-4">
+        <button
+          onClick={onBack}
+          aria-label="Back"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-[var(--text-1)] transition-colors hover:bg-white/[0.1]"
+        >
+          <ArrowLeft className="h-[18px] w-[18px]" />
+        </button>
+        <button
+          onClick={() => setPickerOpen(true)}
+          className="flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.05] px-3 py-1.5 transition-colors hover:bg-white/[0.1]"
+        >
+          <span className="text-[15px] leading-none">{language.flag}</span>
+          <span className="text-[13px] font-medium text-[var(--text-2)]">{language.native}</span>
+        </button>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center w-full mb-10">
-        <AnimatePresence mode="wait">
-          {mode === 'scan' ? (
-            <motion.div 
-              key="scan"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-[280px] aspect-square overflow-hidden bg-zinc-900 relative border-2 border-zinc-800"
-            >
-              <Scanner 
-                onScan={handleScan}
-                classNames={{
-                  container: "w-full h-full object-cover",
-                }}
-                components={{
-                  audio: false,
-                  finder: false,
-                }}
+      <div className="pt-2 pb-6">
+        <h1 className="text-[26px] font-bold tracking-[-0.02em] text-[var(--text-1)]">
+          Join a channel
+        </h1>
+        <p className="mt-1.5 text-[15px] text-[var(--text-2)]">
+          You’ll hear everything in {language.native}.
+        </p>
+      </div>
+
+      {/* Segmented control */}
+      <div className="mb-6 flex rounded-xl bg-white/[0.06] p-1">
+        {(['scan', 'manual'] as JoinMode[]).map((value) => (
+          <button
+            key={value}
+            onClick={() => setModeSafely(value)}
+            className={cn(
+              'relative flex-1 rounded-[9px] py-2 text-[14px] font-medium transition-colors',
+              mode === value ? 'text-[var(--text-1)]' : 'text-[var(--text-2)]'
+            )}
+          >
+            {mode === value && (
+              <motion.span
+                layoutId="join-segment"
+                transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+                className="absolute inset-0 rounded-[9px] bg-white/[0.12]"
               />
-              <div className="absolute inset-0 border-[40px] border-black/50 pointer-events-none" />
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-3/4 h-3/4 border border-orange-500/50" />
-                {/* Crosshairs */}
-                <div className="absolute w-full h-[1px] bg-orange-500/20" />
-                <div className="absolute h-full w-[1px] bg-orange-500/20" />
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div 
-              key="manual"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full flex flex-col items-center"
+            )}
+            <span className="relative">{value === 'scan' ? 'Scan code' : 'Enter code'}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-1 flex-col items-center justify-center">
+        {mode === 'scan' ? (
+          <div className="w-full">
+            <div className="relative mx-auto aspect-square w-full max-w-[300px] overflow-hidden rounded-[28px] border border-white/10 bg-black">
+              {!cameraFailed ? (
+                <Scanner
+                  onScan={handleScan}
+                  onError={() => setCameraFailed(true)}
+                  classNames={{ container: 'w-full h-full object-cover' }}
+                  components={{ finder: false }}
+                />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+                  <p className="text-[15px] text-[var(--text-2)]">
+                    Camera unavailable.
+                  </p>
+                  <button
+                    onClick={() => setModeSafely('manual')}
+                    className="rounded-full bg-white/[0.12] px-4 py-2 text-[14px] font-medium text-[var(--text-1)]"
+                  >
+                    Enter the code instead
+                  </button>
+                </div>
+              )}
+
+              {!cameraFailed && <ScannerFrame />}
+            </div>
+            <p className="mt-5 text-center text-[13px] text-[var(--text-3)]">
+              Point at the QR code on their screen
+            </p>
+          </div>
+        ) : (
+          <div className="w-full">
+            <button
+              onClick={() => hiddenInputRef.current?.focus()}
+              className="flex w-full justify-center gap-1.5"
+              aria-label="Enter channel code"
             >
-              <input
-                type="text"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
-                placeholder="------"
-                className="w-full max-w-[280px] text-center text-4xl font-mono font-bold tracking-[0.2em] p-6 bg-zinc-900/50 border-b-2 border-zinc-800 focus:outline-none focus:border-orange-500 transition-colors uppercase placeholder-zinc-700 rounded-none mb-8 text-orange-500"
-              />
-              
-              <button
-                onClick={() => handleJoin()}
-                disabled={code.length !== 6}
-                className="w-full max-w-[280px] py-4 px-6 bg-orange-500 text-black font-bold uppercase tracking-widest text-sm transition-colors hover:bg-orange-400 disabled:opacity-50 disabled:cursor-not-allowed rounded-none"
-              >
-                Establish Link
-              </button>
-            </motion.div>
+              {Array.from({ length: CODE_LENGTH }).map((_, i) => {
+                const char = code[i];
+                const active = i === code.length;
+                return (
+                  <span
+                    key={i}
+                    className={cn(
+                      'tnum flex h-14 w-11 items-center justify-center rounded-xl border font-mono text-[22px] font-semibold transition-colors',
+                      char
+                        ? 'border-white/16 bg-white/[0.1] text-[var(--text-1)]'
+                        : active
+                          ? 'border-[var(--blue)]/70 bg-white/[0.06] text-[var(--text-1)]'
+                          : 'border-white/8 bg-white/[0.04] text-[var(--text-3)]'
+                    )}
+                  >
+                    {char ?? ''}
+                  </span>
+                );
+              })}
+            </button>
+
+            <input
+              ref={hiddenInputRef}
+              value={code}
+              onChange={(e) => {
+                const next = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
+                setCode(next);
+                setError(null);
+                if (next.length === CODE_LENGTH) handleJoin(next);
+              }}
+              inputMode="text"
+              autoComplete="one-time-code"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              maxLength={CODE_LENGTH}
+              className="pointer-events-none absolute h-px w-px opacity-0"
+              aria-hidden="true"
+            />
+
+            <p className="mt-5 text-center text-[13px] text-[var(--text-3)]">
+              The 6 characters shown on their screen
+            </p>
+          </div>
+        )}
+
+        <AnimatePresence>
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mt-5 rounded-xl border border-[var(--red)]/25 bg-[var(--red)]/10 px-4 py-2.5 text-center text-[13px] text-[#ff9a92]"
+            >
+              {error}
+            </motion.p>
           )}
         </AnimatePresence>
       </div>
 
-      <div className="mt-auto mb-8 flex justify-center">
+      <div className="safe-b pt-6">
         <button
-          onClick={() => setMode(mode === 'scan' ? 'manual' : 'scan')}
-          className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-zinc-500 hover:text-zinc-300 transition-colors"
+          onClick={() => handleJoin()}
+          disabled={code.length !== CODE_LENGTH || connecting}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--blue)] py-4 text-[16px] font-semibold text-white transition-all hover:brightness-110 active:scale-[0.985] disabled:pointer-events-none disabled:opacity-30"
         >
-          {mode === 'scan' ? (
-            <>
-              <Keyboard className="w-4 h-4" />
-              Manual Override
-            </>
-          ) : (
-            <>
-              <Camera className="w-4 h-4" />
-              Optical Scan
-            </>
-          )}
+          {connecting && <Loader2 className="h-[18px] w-[18px] animate-spin" />}
+          {connecting ? 'Connecting…' : 'Join'}
         </button>
       </div>
+
+      <LanguagePicker
+        open={pickerOpen}
+        selected={language}
+        subtitle="What you'll speak and hear"
+        onSelect={setLanguage}
+        onClose={() => setPickerOpen(false)}
+      />
     </motion.div>
+  );
+}
+
+/** Corner brackets over the camera feed — reads as a viewfinder, not a border. */
+function ScannerFrame() {
+  const corners = [
+    'left-6 top-6 border-l-2 border-t-2 rounded-tl-lg',
+    'right-6 top-6 border-r-2 border-t-2 rounded-tr-lg',
+    'left-6 bottom-6 border-l-2 border-b-2 rounded-bl-lg',
+    'right-6 bottom-6 border-r-2 border-b-2 rounded-br-lg',
+  ];
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      {corners.map((position) => (
+        <span key={position} className={cn('absolute h-8 w-8 border-white/70', position)} />
+      ))}
+    </div>
   );
 }
