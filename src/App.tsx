@@ -1,31 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Home } from './components/Home';
 import { StartCall } from './components/StartCall';
 import { JoinCall } from './components/JoinCall';
 import { CallRoom } from './components/CallRoom';
 import { Language } from './types';
+import { unlockAudio } from './lib/audio';
+import { prewarm } from './lib/translate';
 
 type Screen = 'home' | 'start' | 'join' | 'call';
 
-function AppContent() {
+export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
   const [language, setLanguage] = useState<Language | null>(null);
-  const [roomCode, setRoomCode] = useState<string>('');
-  const [userName, setUserName] = useState<string>('');
+  const [roomCode, setRoomCode] = useState('');
+  const [userName, setUserName] = useState('');
 
-  const warmUpSpeechSynthesis = () => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance('');
-      utterance.volume = 0;
-      window.speechSynthesis.speak(utterance);
-    }
+  // Mobile browsers only allow audio playback if the page has already played
+  // some during a real user gesture. Every entry point below runs from a tap,
+  // so this is the one chance to unlock before the first translation arrives.
+  const primeAudio = () => {
+    void unlockAudio();
+    prewarm();
   };
-  
+
   useEffect(() => {
-    // Check if there's a ?join= params
-    const params = new URLSearchParams(window.location.search);
-    const joinCode = params.get('join');
+    const joinCode = new URLSearchParams(window.location.search).get('join');
     if (joinCode) {
       setRoomCode(joinCode.toUpperCase());
       setCurrentScreen('join');
@@ -33,58 +32,67 @@ function AppContent() {
   }, []);
 
   const handleStartCall = (lang: Language, name: string) => {
-    warmUpSpeechSynthesis();
+    primeAudio();
     setLanguage(lang);
     setUserName(name);
     setCurrentScreen('start');
   };
 
   const handleJoinCall = (lang: Language, name: string) => {
-    warmUpSpeechSynthesis();
+    primeAudio();
     setLanguage(lang);
     setUserName(name);
     setCurrentScreen('join');
   };
 
-  const handleJoinedRoom = (code: string, lang?: Language) => {
-    warmUpSpeechSynthesis();
+  const handleJoinedRoom = useCallback((code: string, lang?: Language) => {
+    primeAudio();
     if (lang) setLanguage(lang);
     setRoomCode(code);
     setCurrentScreen('call');
-  };
+  }, []);
 
-  const handleEndCall = () => {
+  const handleEndCall = useCallback(() => {
     setRoomCode('');
     setCurrentScreen('home');
-    // Also remove ?join param if present
     if (window.history.pushState) {
-      const newurl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-      window.history.pushState({path:newurl},'',newurl);
+      const url = window.location.protocol + '//' + window.location.host + window.location.pathname;
+      window.history.pushState({ path: url }, '', url);
     }
-  };
+  }, []);
 
-  if (currentScreen === 'home') {
-    return <Home onStartCall={handleStartCall} onJoinCall={handleJoinCall} />;
-  }
-  
   if (currentScreen === 'start' && language) {
-    return <StartCall language={language} onBack={() => setCurrentScreen('home')} onJoined={handleJoinedRoom} />;
+    return (
+      <StartCall
+        language={language}
+        onBack={() => setCurrentScreen('home')}
+        onJoined={handleJoinedRoom}
+      />
+    );
   }
 
-  if (currentScreen === 'join') {
-    if (!language) {
-      return <Home onStartCall={handleStartCall} onJoinCall={handleJoinCall} />;
-    }
-    return <JoinCall language={language} onBack={() => setCurrentScreen('home')} onJoined={(code, lang) => { setLanguage(lang); handleJoinedRoom(code); }} initialCode={roomCode} />;
+  if (currentScreen === 'join' && language) {
+    return (
+      <JoinCall
+        language={language}
+        onBack={() => setCurrentScreen('home')}
+        onJoined={(code, lang) => handleJoinedRoom(code, lang)}
+        initialCode={roomCode}
+      />
+    );
   }
 
   if (currentScreen === 'call' && language) {
-    return <CallRoom roomCode={roomCode} language={language} userName={userName} onEndCall={handleEndCall} />;
+    return (
+      <CallRoom
+        roomCode={roomCode}
+        language={language}
+        userName={userName}
+        onLanguageChange={setLanguage}
+        onEndCall={handleEndCall}
+      />
+    );
   }
 
-  return null;
-}
-
-export default function App() {
-  return <AppContent />;
+  return <Home onStartCall={handleStartCall} onJoinCall={handleJoinCall} />;
 }
