@@ -27,10 +27,12 @@ try {
   const transport = await host.page.locator('text=/^(Direct|Relayed)$/').first().textContent();
   const lat = [];
   const fromFinal = [];
+  const pressToStart = [];
+  const releaseToStop = [];
   for (let i = 0; i < TURNS; i++) {
     const phrase = `turn number ${i}`;
     const expected = `[en|es] ${phrase}`;
-    const { saidAt, releasedAt } = await talk(host.page, phrase);
+    const { pressedAt, saidAt, releasedAt } = await talk(host.page, phrase);
     const handle = await guest.page.waitForFunction(
       (e) => window.__spoken.find((s) => s.text === e)?.t,
       expected,
@@ -39,7 +41,14 @@ try {
     const spokeAt = await handle.jsonValue();
     lat.push(spokeAt - releasedAt);
     fromFinal.push(spokeAt - saidAt);
-    await host.page.waitForTimeout(150);
+    // Recognizer lifecycle relative to the button (only meaningful when the
+    // recognizer is started per press; an always-on recognizer has no such events).
+    await host.page.waitForTimeout(1300);
+    const log = await host.page.evaluate(() => window.__srLog);
+    const start = log.find((e) => e.ev === 'start' && e.t >= pressedAt);
+    const stop = log.find((e) => (e.ev === 'stop' || e.ev === 'abort') && e.t >= releasedAt);
+    if (start) pressToStart.push(start.t - pressedAt);
+    if (stop) releaseToStop.push(stop.t - releasedAt);
   }
   console.log(`repo: ${cwd}`);
   console.log(`transport: ${transport}; turns: ${lat.length}`);
@@ -56,6 +65,8 @@ try {
         n: lat.length,
         release: { p50: pct(lat, 50), p95: pct(lat, 95), max: Math.max(...lat) },
         final: { p50: pct(fromFinal, 50), p95: pct(fromFinal, 95), max: Math.max(...fromFinal) },
+        pressToStart: pressToStart.length ? { n: pressToStart.length, p50: pct(pressToStart, 50), p95: pct(pressToStart, 95) } : null,
+        releaseToStop: releaseToStop.length ? { n: releaseToStop.length, p50: pct(releaseToStop, 50), p95: pct(releaseToStop, 95), max: Math.max(...releaseToStop) } : null,
       })
   );
 } catch (err) {
