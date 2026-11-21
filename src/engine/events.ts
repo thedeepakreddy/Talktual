@@ -6,6 +6,8 @@
 //   * PeerMessage — the wire protocol between the two browsers (data channel
 //     or relay). External input: always validated before use.
 
+import { isVoiceWireMessage, type VoiceWireMessage } from '../voicemirror/controller.ts';
+
 export const ENGINE_EVENT_VERSION = 1 as const;
 export const WIRE_VERSION = 1 as const;
 
@@ -105,7 +107,8 @@ export type PeerMessage =
       sentAt: number;
       /** Set when the sender's translation failed and `translated` is just the original. */
       untranslated?: boolean;
-    };
+    }
+  | VoiceWireMessage;
 
 const MAX_TEXT = 4000;
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
@@ -136,6 +139,9 @@ export function isPeerMessage(value: unknown): value is PeerMessage {
         (m.seq === undefined || (Number.isInteger(m.seq) && (m.seq as number) >= 0)) &&
         (m.untranslated === undefined || typeof m.untranslated === 'boolean')
       );
+    case 'voice':
+      // Phase 3 VoiceMirror (additive; Phase 2 peers drop it as unknown).
+      return isVoiceWireMessage(m);
     default:
       return false;
   }

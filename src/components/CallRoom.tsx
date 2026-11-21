@@ -9,6 +9,7 @@ import type { SessionDeps, SessionSnapshot } from '../engine/CommunicationSessio
 import type { SegmentRecord } from '../engine/events';
 import { LanguagePicker } from './LanguagePicker';
 import { ConsentSheet } from './ConsentSheet';
+import { VOICEMIRROR_DISCLOSURE } from '../voicemirror/disclosure';
 
 interface CallRoomProps {
   roomCode: string;
@@ -412,6 +413,12 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
               <span className="tnum">{s.lastLatencyMs}ms</span>
             </>
           )}
+          {s?.voice.peerActive && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>Their voice style matched</span>
+            </>
+          )}
           {s?.features.serverKnown && s.features.tts !== 'server' && (
             <>
               <span aria-hidden="true">·</span>
@@ -430,6 +437,16 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
               className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 font-medium text-[var(--text-2)] transition-colors hover:bg-white/[0.1] disabled:opacity-40"
             >
               {continuous ? 'Hands-free: on' : 'Hands-free: off'}
+            </button>
+          )}
+          {s?.voice.available && (
+            <button
+              onClick={() => session?.toggleVoiceMirror()}
+              disabled={!connected}
+              aria-pressed={s.voice.sharing}
+              className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 font-medium text-[var(--text-2)] transition-colors hover:bg-white/[0.1] disabled:opacity-40"
+            >
+              {s.voice.sharing ? 'Voice match: on' : 'Voice match: off'}
             </button>
           )}
           <button
@@ -496,6 +513,15 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
         subtitle="Switching takes effect immediately"
         onSelect={onLanguageChange}
         onClose={() => setPickerOpen(false)}
+      />
+
+      <ConsentSheet
+        open={Boolean(s?.voice.prompt)}
+        disclosure={VOICEMIRROR_DISCLOSURE}
+        granted={false}
+        allowLabel="Share voice style"
+        onAllow={() => session?.acceptVoiceMirror()}
+        onDecline={() => session?.declineVoiceMirror()}
       />
 
       <ConsentSheet

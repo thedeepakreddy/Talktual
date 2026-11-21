@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_TURN_URL?: string;
   readonly VITE_TURN_USERNAME?: string;
   readonly VITE_TURN_CREDENTIAL?: string;
+  /** "1" enables the VoiceMirror (Phase 3) prototype in this build. */
+  readonly VITE_VOICEMIRROR?: string;
 }
 
 interface ImportMeta {

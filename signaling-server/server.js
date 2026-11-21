@@ -23,12 +23,32 @@ function toInt(value, fallback) {
   return Number.isFinite(n) && value !== undefined && value !== "" ? n : fallback;
 }
 
+const VOICE_ID_RE = /^[A-Za-z0-9]{8,64}$/;
+const REGISTERS = ["low", "mid", "high"];
+
+/** Returns a catalog object, null when unset, or throws on malformed input (caught by validateEnv). */
+function parseVoiceCatalog(raw) {
+  if (raw === undefined || raw === "") return null;
+  const obj = JSON.parse(raw);
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("not an object");
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (!REGISTERS.includes(k) || typeof v !== "string" || !VOICE_ID_RE.test(v)) throw new Error("bad entry");
+    out[k] = v;
+  }
+  return out;
+}
+
 function loadConfig(env = process.env) {
   const elevenKey = env.ELEVENLABS_API_KEY || env.VITE_ELEVENLABS_API_KEY;
   return {
     port: env.PORT || 8080,
     // Rooms are shared by QR code, which takes a moment in the real world.
     sessionTimeoutMs: toInt(env.SESSION_TIMEOUT_MS, 10 * 60 * 1000),
+    /** VoiceMirror (Phase 3 prototype): accept coarse voice hints on /api/tts. Off by default. */
+    voiceMirrorEnabled: env.VOICEMIRROR_ENABLED === "1",
+    /** Optional server-owned stock-voice catalog by register: {"low":"id","mid":"id","high":"id"}. */
+    voiceCatalog: parseVoiceCatalog(env.VOICEMIRROR_VOICE_CATALOG),
     /** How long a dropped participant's seat is held for them to reconnect. 0 disables resume. */
     resumeGraceMs: toInt(env.RESUME_GRACE_MS, 20_000),
     elevenLabsApiKey: elevenKey,
@@ -146,6 +166,17 @@ function validateEnv(env = process.env, { production = false } = {}) {
     warnings.push("ElevenLabs key is supplied as VITE_ELEVENLABS_API_KEY; rename it to ELEVENLABS_API_KEY (VITE_* names are for browser bundles)");
   }
   if (env.RESUME_GRACE_MS === "0") warnings.push("RESUME_GRACE_MS=0 disables reconnect: any network blip ends the call");
+  if (env.VOICEMIRROR_ENABLED !== undefined && !["0", "1", ""].includes(env.VOICEMIRROR_ENABLED)) {
+    errors.push('VOICEMIRROR_ENABLED must be "1" or "0"');
+  }
+  try {
+    parseVoiceCatalog(env.VOICEMIRROR_VOICE_CATALOG);
+  } catch {
+    errors.push('VOICEMIRROR_VOICE_CATALOG must be JSON like {"low":"<voiceId>","mid":"<voiceId>","high":"<voiceId>"}');
+  }
+  if (env.VOICEMIRROR_VOICE_CATALOG && env.VOICEMIRROR_ENABLED !== "1") {
+    warnings.push("VOICEMIRROR_VOICE_CATALOG is set but VOICEMIRROR_ENABLED is not 1: the catalog is unused");
+  }
 
   const secrets = Object.fromEntries(SECRET_KEYS.map((k) => [k, Boolean(env[k])]));
   return { errors, warnings, secretsPresent: secrets };
@@ -282,6 +313,7 @@ function createServer(overrides = {}) {
       // interim text would burn through that in one conversation, so live
       // captions are only offered when a real provider is configured.
       liveCaptions: translator !== "mymemory",
+      voiceHints: cfg.voiceMirrorEnabled,
     });
   });
 
@@ -450,7 +482,18 @@ function createServer(overrides = {}) {
   // TEXT TO SPEECH (streamed)
   // ==========================================
 
-  async function requestElevenTts(text, lang, outputFormat, signal) {
+  /** Validates the optional VoiceMirror hint. Returns null when absent/disabled; throws on malformed input. */
+  function voiceHint(raw) {
+    if (raw === undefined || raw === null || !cfg.voiceMirrorEnabled) return null;
+    if (typeof raw !== "object" || Array.isArray(raw)) throw new Error("bad voice hint");
+    const { register, speed } = raw;
+    if (!REGISTERS.includes(register)) throw new Error("bad register");
+    if (typeof speed !== "number" || !Number.isFinite(speed) || speed < 0.8 || speed > 1.2) throw new Error("bad speed");
+    if (Object.keys(raw).some((k) => k !== "register" && k !== "speed")) throw new Error("unexpected field");
+    return { register, speed: Math.round(speed * 100) / 100 };
+  }
+
+  async function requestElevenTts(text, lang, outputFormat, signal, hint = null) {
     const params = new URLSearchParams({
       optimize_streaming_latency: "3",
       output_format: outputFormat,
@@ -459,13 +502,15 @@ function createServer(overrides = {}) {
     const body = {
       text,
       model_id: cfg.ttsModel,
-      voice_settings: { stability: 0.4, similarity_boost: 0.75, speed: 1.0 },
+      voice_settings: { stability: 0.4, similarity_boost: 0.75, speed: hint ? hint.speed : 1.0 },
     };
     // flash/turbo v2.5 accept an explicit language, which stops the model from
     // guessing wrong on short utterances.
     if (/flash|turbo/.test(cfg.ttsModel) && isSupportedLanguage(lang)) body.language_code = iso2(lang);
 
-    return fetchImpl(`https://api.elevenlabs.io/v1/text-to-speech/${cfg.voiceId}/stream?${params}`, {
+    // The voice id always comes from server config, never from the client.
+    const voiceId = (hint && cfg.voiceCatalog && cfg.voiceCatalog[hint.register]) || cfg.voiceId;
+    return fetchImpl(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?${params}`, {
       method: "POST",
       headers: {
         Accept: "*/*",
@@ -480,6 +525,12 @@ function createServer(overrides = {}) {
   app.post("/api/tts", async (req, res) => {
     const { text, lang } = req.body || {};
     if (!validateText(text, res)) return;
+    let hint;
+    try {
+      hint = voiceHint(req.body?.voice);
+    } catch {
+      return res.status(400).json({ error: "invalid_voice_hint" });
+    }
     if (!cfg.elevenLabsApiKey) {
       return res.status(503).json({ error: "No ElevenLabs key configured", fallback: "browser" });
     }
@@ -495,13 +546,13 @@ function createServer(overrides = {}) {
       // Raw PCM lets the browser start playing on the first chunk without having
       // to parse a container. Not every account tier allows every PCM rate, so
       // fall back to MP3 if the format is rejected.
-      let upstream = await requestElevenTts(text, lang, `pcm_${cfg.pcmSampleRate}`, upstreamAbort.signal);
+      let upstream = await requestElevenTts(text, lang, `pcm_${cfg.pcmSampleRate}`, upstreamAbort.signal, hint);
       let format = "pcm";
 
       if (!upstream.ok && upstream.status >= 400 && upstream.status < 500) {
         const detail = await upstream.text();
         log(`TTS pcm rejected (${upstream.status}), retrying as mp3:`, detail.slice(0, 200));
-        upstream = await requestElevenTts(text, lang, "mp3_44100_128", upstreamAbort.signal);
+        upstream = await requestElevenTts(text, lang, "mp3_44100_128", upstreamAbort.signal, hint);
         format = "mp3";
       }
       clearTimeout(headerTimer);

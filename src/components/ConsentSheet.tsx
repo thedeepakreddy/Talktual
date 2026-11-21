@@ -9,6 +9,8 @@ interface ConsentSheetProps {
   granted: boolean;
   onAllow: () => void;
   onDecline: () => void;
+  /** Label for the accept button (default "Allow microphone"). */
+  allowLabel?: string;
 }
 
 /**
@@ -16,7 +18,7 @@ interface ConsentSheetProps {
  * first time on this device (and on demand). Nothing is captured until the
  * user chooses "Allow microphone".
  */
-export function ConsentSheet({ open, disclosure, granted, onAllow, onDecline }: ConsentSheetProps) {
+export function ConsentSheet({ open, disclosure, granted, onAllow, onDecline, allowLabel = 'Allow microphone' }: ConsentSheetProps) {
   return (
     <AnimatePresence>
       {open && disclosure && (
@@ -71,7 +73,7 @@ export function ConsentSheet({ open, disclosure, granted, onAllow, onDecline }: 
                     onClick={onAllow}
                     className="flex-1 rounded-2xl bg-[var(--blue)] py-3.5 text-[15px] font-semibold text-white"
                   >
-                    Allow microphone
+                    {allowLabel}
                   </button>
                 </>
               )}
