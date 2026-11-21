@@ -155,7 +155,14 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
             ? 'Hold to talk'
             : (statusLabel() ?? '');
 
-  const screenText = holding || continuous ? s?.partial.local || s?.partial.peer || '' : (s?.partial.peer ?? '');
+  const conv = s?.conversation;
+  // Phase 4: a held (pause-candidate) phrase stays visible while we wait to see if the thought continues,
+  // and the peer's provisional translation shows before their final arrives.
+  const peerProvisional = latestPeerProvisional(segments);
+  const screenText =
+    holding || continuous
+      ? s?.partial.local || conv?.held?.text || s?.partial.peer || ''
+      : s?.partial.peer || peerProvisional || '';
   const lastHeard = lastReceived(segments);
   const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
 
@@ -271,6 +278,27 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ---- Phase 4 conversation chips: overlap / peer turn / slow translation ---- */}
+      {conv?.enabled && (conv.overlapHeld > 0 || (conv.peerTalking && !playing) || conv.degraded) && (
+        <div className="mt-2 flex flex-wrap justify-center gap-2" role="status" aria-label="Conversation status">
+          {conv.overlapHeld > 0 && (
+            <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[12px] text-[var(--text-2)]">
+              {conv.overlapHeld === 1 ? '1 message waits' : `${conv.overlapHeld} messages wait`} until you finish
+            </span>
+          )}
+          {conv.peerTalking && !playing && (
+            <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[12px] text-[var(--text-2)]">
+              {s?.peer.name ?? 'They'} {s?.peer.name ? 'is' : 'are'} talking…
+            </span>
+          )}
+          {conv.degraded && (
+            <span className="rounded-full border border-[var(--amber)]/25 bg-[var(--amber)]/10 px-3 py-1 text-[12px] text-[#ffcf80]">
+              Slow translation — phrases combined
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ---- Speaker panel: grille + live caption readout ---- */}
       <div
@@ -535,8 +563,23 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
   );
 }
 
+/** Phase 4 markers: explicit, plain-language state for each transcript line. */
+function markersFor(seg: SegmentRecord): string[] {
+  const m: string[] = [];
+  if (seg.state === 'provisional') m.push(seg.speaker === 'peer' ? 'Still speaking — may change' : 'Draft');
+  if (seg.interrupted) m.push(seg.speaker === 'peer' ? 'Interrupted — not played' : 'Interrupted');
+  if (seg.overlapHeld && seg.playback !== 'started' && seg.playback !== 'ended' && !seg.interrupted) {
+    m.push(seg.playback === 'dropped' ? 'Skipped — arrived too late' : 'Waiting until you finish');
+  } else if (seg.playback === 'dropped') m.push('Skipped — arrived too late');
+  if (seg.uncertain) m.push('Unclear audio — may be inaccurate');
+  if (seg.repaired && seg.speaker === 'local') m.push('Tidied repeats');
+  return m;
+}
+
 function TranscriptBubble({ seg }: { seg: SegmentRecord; key?: string }) {
   const isMe = seg.speaker === 'local';
+  const markers = markersFor(seg);
+  const provisional = seg.state === 'provisional';
   const secondary = seg.untranslated
     ? 'Not translated — translation was unavailable'
     : isMe
@@ -550,11 +593,17 @@ function TranscriptBubble({ seg }: { seg: SegmentRecord; key?: string }) {
       <div
         className={cn(
           'max-w-[85%] rounded-[20px] px-4 py-3',
-          isMe ? 'rounded-br-[6px] bg-[var(--blue)] text-white' : 'rounded-bl-[6px] bg-white/[0.09] text-[var(--text-1)]'
+          isMe ? 'rounded-br-[6px] bg-[var(--blue)] text-white' : 'rounded-bl-[6px] bg-white/[0.09] text-[var(--text-1)]',
+          (provisional || seg.interrupted) && 'opacity-70',
+          provisional && 'border border-dashed border-white/25'
         )}
+        data-state={seg.state ?? 'final'}
       >
-        <p className="text-[16px] leading-snug">{isMe ? seg.original : seg.translated}</p>
+        <p className={cn('text-[16px] leading-snug', provisional && 'italic')}>{isMe ? seg.original : seg.translated || seg.original}</p>
         <p className={cn('mt-1.5 text-[13px] leading-snug', isMe ? 'text-white/65' : 'text-[var(--text-3)]')}>{secondary}</p>
+        {markers.length > 0 && (
+          <p className={cn('mt-1.5 text-[11px] font-medium tracking-wide', isMe ? 'text-white/70' : 'text-[var(--text-3)]')}>{markers.join(' · ')}</p>
+        )}
       </div>
     </div>
   );
@@ -563,7 +612,17 @@ function TranscriptBubble({ seg }: { seg: SegmentRecord; key?: string }) {
 /** The last thing the other person said, shown on the idle panel. */
 function lastReceived(segments: SessionSnapshot['segments']): string | null {
   for (let i = segments.length - 1; i >= 0; i--) {
-    if (segments[i].speaker === 'peer') return segments[i].translated;
+    if (segments[i].speaker === 'peer' && segments[i].state !== 'provisional') return segments[i].translated;
+  }
+  return null;
+}
+
+/** The peer's newest provisional (still-changing) translation, if it is the latest thing they said. */
+function latestPeerProvisional(segments: SessionSnapshot['segments']): string | null {
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const seg = segments[i];
+    if (seg.speaker !== 'peer') continue;
+    return seg.state === 'provisional' ? seg.translated || null : null;
   }
   return null;
 }

@@ -189,6 +189,74 @@ describe('CallRoom view over the engine', () => {
   });
 });
 
+describe('Phase 4 conversation affordances', () => {
+  async function connectCapable(f: ReturnType<typeof renderRoom>) {
+    await act(async () => {
+      f.call.status('waiting-for-peer');
+      f.call.status('connected');
+      f.call.receive({ t: 'hello', lang: 'es-ES', name: 'Luis', caps: ['conv1'] });
+      await settle();
+    });
+  }
+  const seg = { sourceLang: 'es-ES', targetLang: 'en-US', sentAt: 1 } as const;
+
+  it('provisional is visibly a draft; final replaces it; interrupted and uncertain lines are labelled', async () => {
+    const f = renderRoom({ consent: true, deps: { conversation: true } });
+    await connectCapable(f);
+    await act(async () => {
+      f.call.receive({ t: 'floor', turn: 'T1', open: true });
+      f.call.receive({ t: 'segment', id: 'a', original: 'quiero reservar una', translated: 'I want to book a', state: 'provisional', rev: 0, turn: 'T1', ...seg });
+      await settle();
+    });
+    expect(screen.getByText(/Luis is talking/)).toBeTruthy();
+    expect(screen.getByText(/I want to book a/)).toBeTruthy(); // live provisional caption
+    fireEvent.click(screen.getByRole('button', { name: 'Show transcript' }));
+    let dialog = screen.getByRole('dialog', { name: 'Transcript' });
+    expect(dialog.textContent).toContain('Still speaking — may change');
+    await act(async () => {
+      f.call.receive({ t: 'segment', id: 'a', original: 'quiero reservar una mesa', translated: 'I want to book a table', state: 'final', rev: 0, turn: 'T1', uncertain: true, ...seg });
+      await settle();
+    });
+    dialog = screen.getByRole('dialog', { name: 'Transcript' });
+    expect(dialog.textContent).not.toContain('Still speaking');
+    expect(dialog.textContent).toContain('I want to book a table');
+    expect(dialog.textContent).toContain('Unclear audio');
+    // We cut in while Luis still holds the floor → the rest of that turn is labelled, not played.
+    fireEvent.click(screen.getByRole('button', { name: 'Close transcript' }));
+    await act(async () => {
+      fireEvent.pointerDown(ptt());
+      await settle();
+      fireEvent.pointerUp(ptt());
+      await settle();
+      f.call.receive({ t: 'segment', id: 'b', original: 'y luego', translated: 'and then', state: 'final', turn: 'T1', ...seg });
+      await settle();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Show transcript' }));
+    dialog = screen.getByRole('dialog', { name: 'Transcript' });
+    expect(dialog.textContent).toContain('Interrupted — not played');
+    expect(f.playback.played.map((p) => p.segmentId)).not.toContain('b');
+  });
+
+  it('speech that arrives while we talk shows a waiting chip and plays after release', async () => {
+    const f = renderRoom({ consent: true, deps: { conversation: true } });
+    await connectCapable(f);
+    await act(async () => {
+      fireEvent.pointerDown(ptt());
+      await settle();
+      f.call.receive({ t: 'segment', id: 'c', original: 'hola', translated: 'hello', turn: 'T2', ...seg });
+      await settle();
+    });
+    expect(screen.getByText(/1 message waits until you finish/)).toBeTruthy();
+    expect(f.playback.played).toHaveLength(0);
+    await act(async () => {
+      fireEvent.pointerUp(ptt());
+      await settle();
+    });
+    expect(f.playback.played.map((p) => p.segmentId)).toEqual(['c']);
+    expect(screen.queryByText(/waits until you finish/)).toBeNull();
+  });
+});
+
 describe('VoiceMirror controls (Phase 3)', () => {
   it('hidden when the feature is off (default build)', async () => {
     const f = renderRoom({ consent: true });
