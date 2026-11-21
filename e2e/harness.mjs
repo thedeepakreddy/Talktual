@@ -170,6 +170,7 @@ export async function acceptConsentIfShown(page) {
 export async function talk(page, text) {
   const ptt = page.getByRole('button', { name: 'Push to talk' });
   await ptt.hover();
+  const pressedAt = await page.evaluate(() => Date.now());
   await page.mouse.down();
   await page.waitForFunction(() => window.__srRunning ? window.__srRunning() || window.__sr.length > 0 : true);
   const saidAt = await page.evaluate((t) => {
@@ -179,7 +180,7 @@ export async function talk(page, text) {
   }, text);
   const releasedAt = await page.evaluate(() => Date.now());
   await page.mouse.up();
-  return { saidAt, releasedAt };
+  return { pressedAt, saidAt, releasedAt };
 }
 
 /** Host starts a channel, guest joins via link; returns once both are in the call. */
