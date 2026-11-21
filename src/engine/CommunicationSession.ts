@@ -1081,8 +1081,10 @@ export class CommunicationSession {
     const p = q.take();
     if (!p) return;
     const { unit } = p;
-    const seq = this.ledger.get(unit.id)?.seq;
-    const sourceLang = this.config.lang;
+    const rec = this.ledger.get(unit.id);
+    const seq = rec?.seq;
+    // The language the words were spoken in (the user may have switched since).
+    const sourceLang = rec?.sourceLang ?? this.config.lang;
     const targetLang = this.snap.peer.lang ?? sourceLang;
     const started = this.now();
     this.deps
