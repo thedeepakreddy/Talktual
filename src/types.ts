@@ -8,6 +8,8 @@ export interface Message {
   targetLang: string;
   /** Milliseconds spent translating this segment, for the latency readout. */
   latencyMs?: number;
+  /** True when translation failed and translatedText is the original text. */
+  untranslated?: boolean;
 }
 
 export interface Language {

@@ -6,7 +6,7 @@ import { cn } from '../utils';
 
 import { connectCall, CallHandle, CallMessage, Transport } from '../lib/webrtc';
 import { createRecognizer, Recognizer, SttEngine } from '../lib/speechToText';
-import { translateText, getCapabilities, prewarm, Capabilities } from '../lib/translate';
+import { translateText, getCapabilities, prewarm, Capabilities, TranslationError } from '../lib/translate';
 import { enqueueSpeech, stopSpeaking, isSpeaking, preloadVoices } from '../lib/textToSpeech';
 import { unlockAudio, releaseMic } from '../lib/audio';
 import { SIGNALING_URL } from '../lib/config';
@@ -30,6 +30,7 @@ interface CallRoomProps {
 }
 
 const PARTIAL_SEND_INTERVAL_MS = 180;
+const NOTICE_MS = 5000;
 const PARTIAL_TRANSLATE_DEBOUNCE_MS = 400;
 
 function newId() {
@@ -91,6 +92,14 @@ export function CallRoom({
   const lastPartialSentAt = useRef(0);
   const partialTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const partialAbort = useRef<AbortController | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Shows a transient notice; a newer notice replaces (and re-times) the old one. */
+  const flashNotice = useCallback((message: string) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(message);
+    noticeTimer.current = setTimeout(() => setNotice(null), NOTICE_MS);
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -120,7 +129,18 @@ export function CallRoom({
 
     sendChain.current = sendChain.current
       .then(async () => {
-        const translated = await translateText(text, sourceLang, targetLang);
+        // A failed translation must not be passed off as a real one. The call
+        // stays alive — the original is sent — but it is explicitly marked so
+        // both sides know the listener is hearing untranslated speech.
+        let translated = text;
+        let untranslated = false;
+        try {
+          translated = await translateText(text, sourceLang, targetLang);
+        } catch (err) {
+          if (!(err instanceof TranslationError)) throw err;
+          untranslated = true;
+          flashNotice('Translation unavailable — your words were sent untranslated.');
+        }
         const latencyMs = Math.round(performance.now() - startedAt);
 
         callRef.current?.send({
@@ -131,6 +151,7 @@ export function CallRoom({
           sourceLang,
           targetLang,
           sentAt: Date.now(),
+          ...(untranslated ? { untranslated: true } : {}),
         });
 
         setLastLatencyMs(latencyMs);
@@ -145,11 +166,12 @@ export function CallRoom({
             sourceLang,
             targetLang,
             latencyMs,
+            untranslated,
           },
         ]);
       })
       .catch((err) => console.error('segment pipeline failed:', err));
-  }, [myId]);
+  }, [myId, flashNotice]);
 
   const handlePartial = useCallback((text: string) => {
     setMyPartial(text);
@@ -189,8 +211,10 @@ export function CallRoom({
         partialAbort.current = controller;
         try {
           setTheirPartial(await translateText(msg.text, msg.lang, myLang, controller.signal));
-        } catch {
-          /* superseded by a newer partial */
+        } catch (err) {
+          // Superseded by a newer partial: ignore. Real failure: show the raw
+          // interim text rather than nothing (it's labelled as a live caption).
+          if (err instanceof TranslationError) setTheirPartial(msg.text);
         }
       }, PARTIAL_TRANSLATE_DEBOUNCE_MS);
       return;
@@ -200,7 +224,7 @@ export function CallRoom({
       setTheirPartial('');
       if (partialTimer.current) clearTimeout(partialTimer.current);
 
-      const deliver = (text: string) => {
+      const deliver = (text: string, untranslated = false) => {
         setMessages((prev) => [
           ...prev,
           {
@@ -211,27 +235,34 @@ export function CallRoom({
             translatedText: text,
             sourceLang: msg.sourceLang,
             targetLang: myLang,
+            untranslated,
           },
         ]);
         haptic(12);
-        enqueueSpeech(text, myLang, {
+        if (untranslated) flashNotice('Translation unavailable — playing their original words.');
+        // Untranslated text is spoken with a voice for its own language;
+        // reading it with ours would mangle every word.
+        enqueueSpeech(text, untranslated ? msg.sourceLang : myLang, {
           onStart: () => setPlaying(true),
           onEnd: () => setPlaying(isSpeaking()),
         });
       };
 
+      const sameLanguage = msg.sourceLang.split('-')[0] === myLang.split('-')[0];
       // The sender normally translates into our language using the handshake.
-      // If their hello hadn't landed yet — or we just switched language — fix
-      // it up on this side.
-      if (msg.targetLang.split('-')[0] === myLang.split('-')[0]) {
+      // If their hello hadn't landed yet, we just switched language, or their
+      // translation failed, fix it up on this side.
+      if (!msg.untranslated && msg.targetLang.split('-')[0] === myLang.split('-')[0]) {
         deliver(msg.translated);
+      } else if (sameLanguage) {
+        deliver(msg.original);
       } else {
         translateText(msg.original, msg.sourceLang, myLang)
-          .then(deliver)
-          .catch(() => deliver(msg.translated));
+          .then((t) => deliver(t))
+          .catch(() => deliver(msg.original, true));
       }
     }
-  }, [peerName]);
+  }, [peerName, flashNotice]);
 
   // Keep callbacks reachable from the long-lived recognizer/call instances.
   const handleSegmentRef = useRef(handleSegment);
@@ -263,6 +294,7 @@ export function CallRoom({
     return () => {
       if (partialTimer.current) clearTimeout(partialTimer.current);
       partialAbort.current?.abort();
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
       stopSpeaking();
       releaseMic();
       call.close();
@@ -280,8 +312,12 @@ export function CallRoom({
       onPartial: (text) => handlePartialRef.current(text),
       onSpeechActivity: (active) => setHearingVoice(active && holdingRef.current),
       onError: (message, fatal) => {
-        setNotice(message);
-        if (!fatal) setTimeout(() => setNotice(null), 5000);
+        if (fatal) {
+          if (noticeTimer.current) clearTimeout(noticeTimer.current);
+          setNotice(message);
+        } else {
+          flashNotice(message);
+        }
       },
     });
     recognizerRef.current = recognizer;
@@ -292,7 +328,7 @@ export function CallRoom({
       recognizer.destroy();
       recognizerRef.current = null;
     };
-  }, [language.bcp47, muted]);
+  }, [language.bcp47, muted, flashNotice]);
 
   // Re-announce whenever our language changes so the peer retargets instantly.
   useEffect(() => {
@@ -413,6 +449,9 @@ export function CallRoom({
           <span className="tnum mt-0.5 text-[11px] text-[var(--text-3)]">
             {status === 'connected' ? mmss : (statusLabel() ?? '')}
           </span>
+          <span className="sr-only" role="status">
+            {status === 'connected' ? 'Connected' : (statusLabel() ?? '')}
+          </span>
         </div>
 
         <div className="flex shrink-0 gap-2">
@@ -450,6 +489,7 @@ export function CallRoom({
       <div className="flex items-center gap-2 py-2">
         <button
           onClick={() => setPickerOpen(true)}
+          aria-label={`You speak ${language.name}. Change language`}
           className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.06] px-3.5 py-2.5 text-left transition-colors hover:bg-white/[0.1] active:bg-white/[0.14]"
         >
           <span className="text-[20px] leading-none">{language.flag}</span>
@@ -486,7 +526,7 @@ export function CallRoom({
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <p className="mt-1 rounded-xl border border-[var(--amber)]/25 bg-[var(--amber)]/10 px-3.5 py-2.5 text-[13px] leading-snug text-[#ffcf80]">
+            <p role="status" className="mt-1 rounded-xl border border-[var(--amber)]/25 bg-[var(--amber)]/10 px-3.5 py-2.5 text-[13px] leading-snug text-[#ffcf80]">
               {notice}
             </p>
           </motion.div>
@@ -627,6 +667,7 @@ export function CallRoom({
         </div>
 
         <p
+          aria-live="polite"
           className={cn(
             'mt-5 text-center text-[15px] font-medium transition-colors',
             holding ? 'text-[var(--amber)]' : playing ? 'text-[var(--blue)]' : 'text-[var(--text-2)]'
@@ -666,6 +707,9 @@ export function CallRoom({
               className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
             />
             <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Transcript"
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
@@ -719,7 +763,11 @@ export function CallRoom({
                               isMe ? 'text-white/65' : 'text-[var(--text-3)]'
                             )}
                           >
-                            {isMe ? msg.translatedText : msg.originalText}
+                            {msg.untranslated
+                              ? 'Not translated — translation was unavailable'
+                              : isMe
+                                ? msg.translatedText
+                                : msg.originalText}
                           </p>
                         </div>
                       </div>

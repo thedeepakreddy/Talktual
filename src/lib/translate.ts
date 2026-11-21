@@ -14,6 +14,24 @@ export interface Capabilities {
   liveCaptions: boolean;
 }
 
+/**
+ * Raised when no translation could be produced. Callers decide how to keep the
+ * call going (e.g. send the original text, clearly marked) — the failure must
+ * never be passed off as a successful translation.
+ */
+export class TranslationError extends Error {
+  constructor(
+    message: string,
+    readonly reason: "http" | "timeout" | "network" | "malformed"
+  ) {
+    super(message);
+    this.name = "TranslationError";
+  }
+}
+
+/** Client-side budget; slightly above the server's provider timeout. */
+export const TRANSLATE_TIMEOUT_MS = 10_000;
+
 const cache = new Map<string, string>();
 const inFlight = new Map<string, Promise<string>>();
 const MAX_CACHE = 500;
@@ -31,6 +49,11 @@ function remember(k: string, value: string) {
   cache.set(k, value);
 }
 
+/**
+ * Translates one piece of text. Resolves with the translation, or rejects with
+ * a TranslationError (or the caller's AbortError). Only real translations are
+ * cached, so a transient provider outage can't poison later turns.
+ */
 export async function translateText(
   text: string,
   fromLang: string,
@@ -48,35 +71,76 @@ export async function translateText(
   const cached = cache.get(k);
   if (cached !== undefined) return cached;
 
-  const pending = inFlight.get(k);
+  // Callers with their own abort signal (live captions) don't share requests:
+  // aborting one must not reject another caller's promise.
+  const pending = signal ? undefined : inFlight.get(k);
   if (pending) return pending;
 
   const request = (async () => {
+    // Manual combine: AbortSignal.any/timeout are too new for older iOS Safari.
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, TRANSLATE_TIMEOUT_MS);
+    const onAbort = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
     try {
-      const res = await fetch(`${API_BASE}/api/translate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: trimmed, from, to }),
-        signal,
-      });
-      if (!res.ok) throw new Error(`translate failed: ${res.status}`);
-      const data = await res.json();
-      const out = (data.text as string) || trimmed;
-      remember(k, out);
-      return out;
-    } catch (err) {
-      if ((err as Error)?.name === "AbortError") throw err;
-      console.error("translateText error:", err);
-      // Never break the call over a translation failure — the untranslated
-      // text still carries meaning to someone with partial fluency.
-      return trimmed;
+      return await fetchTranslation(k, trimmed, from, to, controller.signal, () => timedOut, signal);
     } finally {
-      inFlight.delete(k);
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
     }
   })();
 
-  inFlight.set(k, request);
+  if (!signal) {
+    inFlight.set(k, request);
+    request.then(
+      () => inFlight.delete(k),
+      () => inFlight.delete(k)
+    );
+  }
   return request;
+}
+
+async function fetchTranslation(
+  k: string,
+  trimmed: string,
+  from: string,
+  to: string,
+  combined: AbortSignal,
+  timedOut: () => boolean,
+  callerSignal?: AbortSignal
+): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: trimmed, from, to }),
+      signal: combined,
+    });
+  } catch (err) {
+    if (callerSignal?.aborted && !timedOut()) throw err; // superseded by the caller — not a failure
+    if (timedOut()) throw new TranslationError("Translation timed out", "timeout");
+    throw new TranslationError(`Translation network error: ${String(err)}`, "network");
+  }
+  if (!res.ok) throw new TranslationError(`Translation failed (${res.status})`, "http");
+  let data: { text?: unknown; error?: unknown };
+  try {
+    data = await res.json();
+  } catch {
+    throw new TranslationError("Translation response was not JSON", "malformed");
+  }
+  if (data.error || typeof data.text !== "string" || !data.text.trim()) {
+    throw new TranslationError("Translation response had no text", "malformed");
+  }
+  remember(k, data.text);
+  return data.text;
 }
 
 let capsPromise: Promise<Capabilities> | null = null;

@@ -12,6 +12,8 @@ import { audioContext } from "./audio";
 
 interface PlaybackState {
   aborted: boolean;
+  /** Cancels the in-flight TTS request on barge-in so we stop downloading audio nobody will hear. */
+  controller: AbortController;
   sources: AudioBufferSourceNode[];
   gain: GainNode | null;
   element: HTMLAudioElement | null;
@@ -20,6 +22,10 @@ interface PlaybackState {
 let current: PlaybackState | null = null;
 let queueTail: Promise<void> = Promise.resolve();
 let queueDepth = 0;
+// Bumped by stopSpeaking(). Every queued segment remembers the generation it
+// was enqueued in and is skipped if a barge-in happened since — otherwise
+// segments already chained behind the one we cut off would still play.
+let generation = 0;
 
 export function isSpeaking(): boolean {
   return queueDepth > 0;
@@ -38,14 +44,20 @@ export function enqueueSpeech(
   if (!clean) return Promise.resolve();
 
   queueDepth++;
+  const myGeneration = generation;
   const run = queueTail.then(async () => {
+    if (myGeneration !== generation) {
+      // Dropped by a barge-in; its depth was already cleared by stopSpeaking().
+      hooks?.onEnd?.();
+      return;
+    }
     try {
       hooks?.onStart?.();
       await playOne(clean, lang);
     } catch (err) {
       console.error("TTS playback failed:", err);
     } finally {
-      queueDepth = Math.max(0, queueDepth - 1);
+      if (myGeneration === generation) queueDepth = Math.max(0, queueDepth - 1);
       hooks?.onEnd?.();
     }
   });
@@ -56,8 +68,10 @@ export function enqueueSpeech(
 
 /** Barge-in: kill whatever is playing and drop the rest of the queue. */
 export function stopSpeaking() {
+  generation++;
   if (current) {
     current.aborted = true;
+    current.controller.abort();
     current.sources.forEach((s) => {
       try {
         s.stop();
@@ -88,7 +102,13 @@ export function stopSpeaking() {
 }
 
 async function playOne(text: string, lang: string): Promise<void> {
-  const state: PlaybackState = { aborted: false, sources: [], gain: null, element: null };
+  const state: PlaybackState = {
+    aborted: false,
+    controller: new AbortController(),
+    sources: [],
+    gain: null,
+    element: null,
+  };
   current = state;
 
   try {
@@ -96,6 +116,7 @@ async function playOne(text: string, lang: string): Promise<void> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, lang }),
+      signal: state.controller.signal,
     });
 
     if (!res.ok || !res.body) throw new Error(`TTS request failed: ${res.status}`);
@@ -182,13 +203,23 @@ async function playPcmStream(res: Response, sampleRate: number, state: PlaybackS
     reader.cancel().catch(() => {});
   }
 
-  if (state.aborted || !lastSource) return;
+  if (state.aborted || !lastSource) {
+    if (!state.aborted) gain.disconnect();
+    return;
+  }
 
   await new Promise<void>((resolve) => {
     let settled = false;
     const finish = () => {
       if (settled) return;
       settled = true;
+      // Release the per-segment graph; otherwise every utterance leaves a
+      // GainNode wired to the destination for the rest of the call.
+      try {
+        gain.disconnect();
+      } catch {
+        /* already disconnected by stopSpeaking */
+      }
       resolve();
     };
     lastSource!.onended = finish;
@@ -229,7 +260,7 @@ async function playEncoded(res: Response, state: PlaybackState): Promise<void> {
 
 /** Last resort so a call never goes silent, even with no API key configured. */
 function browserSpeak(text: string, lang: string, state: PlaybackState): Promise<void> {
-  if (!("speechSynthesis" in window)) return Promise.resolve();
+  if (!("speechSynthesis" in window) || state.aborted) return Promise.resolve();
 
   return new Promise<void>((resolve) => {
     let settled = false;

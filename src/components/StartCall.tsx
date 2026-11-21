@@ -4,6 +4,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { ArrowLeft, Check, Copy, Share2 } from 'lucide-react';
 import { Language } from '../types';
 import { cn } from '../utils';
+import { SIGNALING_URL } from '../lib/config';
+import { generateRoomCode } from '../lib/roomCode';
 
 interface StartCallProps {
   language: Language;
@@ -16,10 +18,10 @@ export function StartCall({ language, onBack, onJoined }: StartCallProps) {
   const [copied, setCopied] = useState<'code' | 'link' | null>(null);
 
   useEffect(() => {
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const code = generateRoomCode();
     setRoomCode(code);
 
-    const wsUrl = import.meta.env.VITE_SIGNALING_URL || 'ws://localhost:8080';
+    const wsUrl = SIGNALING_URL;
     let ws: WebSocket;
     let isConnecting = false;
     let isMounted = true;
