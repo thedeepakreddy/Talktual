@@ -164,3 +164,39 @@ describe('segment identity', () => {
     expect([s.has('a'), s.has('b'), s.has('c')]).toEqual([false, true, true]);
   });
 });
+
+import { resolveFeatures, degradationMessage } from './capabilities';
+import { CHROME_LIKE, FIREFOX_LIKE } from '../test/engineFakes';
+
+describe('CapabilityRegistry', () => {
+  it('Chrome-like: streaming ASR, browser-speech route, hands-free available', () => {
+    const f = resolveFeatures(CHROME_LIKE, { tts: true, stt: true, translator: 'gemini', liveCaptions: true });
+    expect(f).toMatchObject({ stt: 'webspeech', route: 'browser-speech', canTalk: true, continuous: true, tts: 'server', liveCaptions: true });
+    expect(degradationMessage(f)).toBeNull();
+  });
+
+  it('Firefox-like: server STT only if the server has it; no hands-free', () => {
+    expect(resolveFeatures(FIREFOX_LIKE, { tts: false, stt: true, translator: 'mymemory', liveCaptions: false })).toMatchObject({
+      stt: 'server-stt',
+      route: 'server-stt',
+      continuous: false,
+      tts: 'browser',
+    });
+    const none = resolveFeatures(FIREFOX_LIKE, { tts: false, stt: false, translator: 'mymemory', liveCaptions: false });
+    expect(none).toMatchObject({ stt: null, canTalk: false });
+    expect(degradationMessage(none)).toMatch(/isn’t available/);
+  });
+
+  it('insecure context: no capture route at all, explained', () => {
+    const f = resolveFeatures({ ...CHROME_LIKE, secureContext: false }, { tts: false, stt: true, translator: 'mymemory', liveCaptions: false });
+    expect(f).toMatchObject({ stt: null, canTalk: false });
+    expect(f.reasons).toContain('insecure-context');
+    expect(degradationMessage(f)).toMatch(/secure \(https\)/);
+  });
+
+  it('no audio output anywhere is reported', () => {
+    const f = resolveFeatures({ ...CHROME_LIKE, speechSynthesis: false, webAudio: false }, { tts: false, stt: false, translator: 'x', liveCaptions: false });
+    expect(f.tts).toBe('none');
+    expect(f.reasons).toContain('no-audio-output');
+  });
+});
