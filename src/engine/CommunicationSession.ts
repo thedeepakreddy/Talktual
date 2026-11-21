@@ -341,6 +341,17 @@ export class CommunicationSession {
       this.activity.to('stopped', 'user-stop');
       this.emit({ type: 'interruption', kind: 'stop', cancelledSegments: 0 });
     } else {
+      // Retry after a denial/device loss: re-check rather than trust the old state.
+      if (this.snap.permission === 'denied') this.setPermission('unknown');
+      if (this.snap.notice && ['permission-denied', 'device-lost', 'capture-unavailable'].includes(this.snap.notice.code)) {
+        this.clearNotice();
+      }
+      this.deps.capture
+        .permission()
+        .then((state) => {
+          if (!this.isTerminal && state !== 'unknown') this.setPermission(state);
+        })
+        .catch(() => {});
       this.activity.to(this.privacy.hasConsent(this.snap.features.route) ? 'ready' : 'idle', 'user-start');
       if (this.privacy.mode === 'continuous' && this.phase.state === 'connected') this.startAsr('continuous');
     }
@@ -586,10 +597,10 @@ export class CommunicationSession {
             : 'No microphone is available. You can still hear the other person.';
       this.setNotice({ code: errCode, message: friendly, sticky: true });
       this.emit({ type: 'error', code: errCode, fatal: true, message: friendly });
-      if (code !== 'permission-denied') {
-        // Allow a retry on the next press.
-        this.micEnabled = true;
-      }
+      // The mic is now off. Turning it back on (setMicEnabled(true)) is the
+      // retry path: it re-checks the permission and returns to ready.
+      this.micEnabled = false;
+      this.emitPrivacy();
       return;
     }
     const msg = code === 'no-result' ? 'Nothing was transcribed — try holding a moment longer.' : message;

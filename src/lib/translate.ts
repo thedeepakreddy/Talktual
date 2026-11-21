@@ -168,7 +168,7 @@ export function prewarm() {
 
 // --- TranslationServiceAdapter ------------------------------------------------
 
-/** Retries are only for transient failures, and only once: a turn can't wait. */
+/** One retry, for transient network failures only: a turn can't wait. */
 export const TRANSLATE_MAX_ATTEMPTS = 2;
 export const TRANSLATE_RETRY_DELAY_MS = 300;
 
@@ -181,7 +181,10 @@ function errorCode(err: unknown): TranslationErrorCode {
   return "network";
 }
 
-const retryable = (code: TranslationErrorCode) => code === "timeout" || code === "network";
+// Only fast failures are retried. A timeout has already spent the full budget
+// and outgoing turns are serialized, so retrying it would hold the whole
+// conversation for a second budget.
+const retryable = (code: TranslationErrorCode) => code === "network";
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {

@@ -246,18 +246,53 @@ describe('failure handling', () => {
     expect(h.playback.played).toHaveLength(1);
   });
 
-  it('device removed: stopped with a notice; the next press re-acquires', async () => {
+  it('device removed: stopped + mic shown off; turning the mic back on and pressing re-acquires', async () => {
     const h = makeSession({ consent: true });
     await connected(h);
     h.session.pressTalk();
     await settle();
     h.capture.loseDevice();
     expect(h.session.getSnapshot().notice?.code).toBe('device-lost');
+    expect(h.session.getSnapshot().activity).toBe('stopped');
     h.session.releaseTalk();
-    h.session.setMicEnabled(true);
+    h.session.setMicEnabled(true); // the user's retry action
+    expect(h.session.getSnapshot().activity).toBe('ready');
+    expect(h.session.getSnapshot().notice).toBeNull();
     h.session.pressTalk();
     await settle();
     expect(capturing(h)).toBe(true);
+  });
+
+  it('permission denied → mic on re-checks the permission; if now granted the user can talk again', async () => {
+    const h = makeSession({ consent: true });
+    await connected(h);
+    FakeAsr.denyNext = true;
+    h.session.pressTalk();
+    await settle();
+    expect(h.session.getSnapshot().permission).toBe('denied');
+    // User fixes it in site settings, then taps the mic button.
+    h.capture.perm = 'granted';
+    h.session.setMicEnabled(true);
+    await settle();
+    expect(h.session.getSnapshot()).toMatchObject({ permission: 'granted', activity: 'ready' });
+    h.session.pressTalk();
+    await settle();
+    expect(capturing(h)).toBe(true);
+  });
+
+  it('permission still denied after retry: stays blocked (no prompt loop)', async () => {
+    const h = makeSession({ consent: true });
+    await connected(h);
+    FakeAsr.denyNext = true;
+    h.session.pressTalk();
+    await settle();
+    h.capture.perm = 'denied';
+    h.session.setMicEnabled(true);
+    await settle();
+    expect(h.session.getSnapshot().permission).toBe('denied');
+    h.session.pressTalk();
+    await settle();
+    expect(FakeAsr.all.at(-1)!.starts).toBe(1);
   });
 
   it('playback failure is recorded on the segment and counted, the call continues', async () => {

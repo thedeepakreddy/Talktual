@@ -165,7 +165,7 @@ An unexpected socket close no longer frees the seat immediately: it is held for 
 | Signaling socket lost, P2P down | `reconnecting`; exponential backoff 0.5→8 s, ≤6 attempts / ~30 s; rejoin with token; renegotiate P2P |
 | Rejoin refused (grace expired) | `failed` with "The call ended while you were offline" |
 | Outbound segments during reconnect | held in a bounded outbox (≤20 segments; partials dropped); resent with the same ids; peer dedupes |
-| Provider timeout / error / 429 | Translation `failed` with code; one retry for `timeout`/`network` only; then untranslated path (Phase 1) |
+| Provider timeout / error / 429 | Translation `failed` with code; one retry for fast `network` failures only (a timeout already spent the full 10 s budget and turns are serialized); then untranslated path (Phase 1) |
 | TTS failure | browser voice fallback (`playback.status engine: browser`); if that fails, `failed` — text still shown |
 | Permission denied | `stopped` + notice; listening to the peer continues; retry button |
 | Device removed (track ended) | `stopped` + notice; next press re-acquires |
