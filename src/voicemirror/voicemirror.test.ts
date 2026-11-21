@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { VoiceAnalyzer } from './analyzer';
-import { toDescriptor, isVoiceDescriptor, toRenderHints, descriptorF0Hz, MIN_CONFIDENCE } from './descriptor';
+import { toDescriptor, isVoiceDescriptor, toRenderHints, descriptorF0Hz, MIN_CONFIDENCE, TEMPO_TRANSFER_ENABLED } from './descriptor';
 import { VoiceMirrorController, isVoiceWireMessage } from './controller';
 import { FakeVoiceTap, synthVoice } from '../test/engineFakes';
 import type { VoiceDescriptor } from './types';
@@ -72,10 +72,15 @@ describe('descriptor (what is transmitted)', () => {
     expect(JSON.stringify(d).length).toBeLessThan(80);
   });
 
-  it('clamps tempo to 80–125% and pitch to the step range', () => {
-    expect(toDescriptor({ ...prof, syllableRate: 30 })!.tempoPct).toBe(125);
-    expect(toDescriptor({ ...prof, syllableRate: 1 })!.tempoPct).toBe(80);
+  it('clamps pitch to the step range', () => {
     expect(toDescriptor({ ...prof, f0MedianHz: 2000 })!.pitchStep).toBe(44);
+    expect(toDescriptor({ ...prof, f0MedianHz: 40 })!.pitchStep).toBe(0);
+  });
+
+  it('tempo transfer is disabled after evaluation: always neutral (100%), whatever the measured rate', () => {
+    expect(TEMPO_TRANSFER_ENABLED).toBe(false);
+    for (const syllableRate of [1, 3, 5.9, 9, 30]) expect(toDescriptor({ ...prof, syllableRate })!.tempoPct).toBe(100);
+    expect(toRenderHints(toDescriptor({ ...prof, syllableRate: 9 })!)).toMatchObject({ browserRate: 1, ttsSpeed: 1 });
   });
 
   it('low confidence → no descriptor (fallback to the default voice)', () => {

@@ -10,6 +10,16 @@ export const MIN_CONFIDENCE = 0.5;
  *  docs/phase3/PHASE3_EVALUATION_REPORT.md). The harness fails loudly if this drifts. */
 export const REFERENCE_SYLLABLE_RATE = 5.9;
 
+/**
+ * Tempo transfer is DISABLED. The full evaluation (18 synthetic speakers × 30
+ * language pairs) found the tempo estimate no better than not transferring
+ * tempo at all (median error 15.0% vs 14.6% baseline; p90 37.5% vs 25%; 31%
+ * for slow speakers). Until a validated estimator exists, a neutral tempo is
+ * sent: we don't transmit a characteristic we can't use reliably.
+ * See docs/phase3/PHASE3_EVALUATION_REPORT.md.
+ */
+export const TEMPO_TRANSFER_ENABLED = false;
+
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
 export function toDescriptor(p: VoiceProfile): VoiceDescriptor | null {
@@ -17,7 +27,7 @@ export function toDescriptor(p: VoiceProfile): VoiceDescriptor | null {
   const st = 12 * Math.log2(p.f0MedianHz / 55);
   const pitchStep = clamp(Math.round(st / 2) * 2, 0, 44);
   const pitchRange: PitchRange = p.f0IqrSemitones < 1.5 ? 'flat' : p.f0IqrSemitones > 4 ? 'lively' : 'normal';
-  const tempo = p.syllableRate > 0 ? p.syllableRate / REFERENCE_SYLLABLE_RATE : 1;
+  const tempo = TEMPO_TRANSFER_ENABLED && p.syllableRate > 0 ? p.syllableRate / REFERENCE_SYLLABLE_RATE : 1;
   const tempoPct = clamp(Math.round((tempo * 100) / 5) * 5, 80, 125);
   return { v: DESCRIPTOR_VERSION, pitchStep, pitchRange, tempoPct };
 }
