@@ -1,25 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Message, Language, findLanguage } from '../types';
-import { Mic, MicOff, PhoneOff, MessageSquareText, X, ArrowLeftRight } from 'lucide-react';
+import { Language, findLanguage } from '../types';
+import { Mic, MicOff, PhoneOff, MessageSquareText, X, ArrowLeftRight, Radio, ShieldCheck } from 'lucide-react';
 import { cn } from '../utils';
 
-import { connectCall, CallHandle, CallMessage, Transport } from '../lib/webrtc';
-import { createRecognizer, Recognizer, SttEngine } from '../lib/speechToText';
-import { translateText, getCapabilities, prewarm, Capabilities, TranslationError } from '../lib/translate';
-import { enqueueSpeech, stopSpeaking, isSpeaking, preloadVoices } from '../lib/textToSpeech';
-import { unlockAudio, releaseMic } from '../lib/audio';
-import { SIGNALING_URL } from '../lib/config';
+import { useCommunicationSession } from '../engine/useCommunicationSession';
+import type { SessionDeps, SessionSnapshot } from '../engine/CommunicationSession';
+import type { SegmentRecord } from '../engine/events';
 import { LanguagePicker } from './LanguagePicker';
-
-type CallStatus =
-  | 'waiting-for-peer'
-  | 'connecting'
-  | 'connected'
-  | 'peer-left'
-  | 'expired'
-  | 'error'
-  | 'disconnected';
+import { ConsentSheet } from './ConsentSheet';
 
 interface CallRoomProps {
   roomCode: string;
@@ -27,14 +16,8 @@ interface CallRoomProps {
   userName: string;
   onLanguageChange: (language: Language) => void;
   onEndCall: () => void;
-}
-
-const PARTIAL_SEND_INTERVAL_MS = 180;
-const NOTICE_MS = 5000;
-const PARTIAL_TRANSLATE_DEBOUNCE_MS = 400;
-
-function newId() {
-  return crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  /** Test/preview seam: inject engine dependencies. */
+  depsFactory?: () => SessionDeps;
 }
 
 function haptic(pattern: number | number[]) {
@@ -45,341 +28,70 @@ function haptic(pattern: number | number[]) {
   }
 }
 
-export function CallRoom({
-  roomCode,
-  language,
-  userName,
-  onLanguageChange,
-  onEndCall,
-}: CallRoomProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [status, setStatus] = useState<CallStatus>('waiting-for-peer');
-  const [transport, setTransport] = useState<Transport>('relay');
-  const [holding, setHolding] = useState(false);
-  const [hearingVoice, setHearingVoice] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [myPartial, setMyPartial] = useState('');
-  const [theirPartial, setTheirPartial] = useState('');
-  const [peerName, setPeerName] = useState<string | null>(null);
-  const [peerLanguage, setPeerLanguage] = useState<Language | null>(null);
-  const [engine, setEngine] = useState<SttEngine>('webspeech');
-  const [caps, setCaps] = useState<Capabilities | null>(null);
-  const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+/** How long a "they left" / "expired" message stays before returning home. */
+const END_NOTICE_MS = 1800;
+
+export function CallRoom({ roomCode, language, userName, onLanguageChange, onEndCall, depsFactory }: CallRoomProps) {
+  const { session, snapshot } = useCommunicationSession(
+    { roomCode, lang: language.bcp47, userName },
+    depsFactory
+  );
+
   const [showTranscript, setShowTranscript] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [myId] = useState(newId);
-
-  const callRef = useRef<CallHandle | null>(null);
-  const recognizerRef = useRef<Recognizer | null>(null);
-  const peerLangRef = useRef<string | null>(null);
-  const capsRef = useRef<Capabilities | null>(null);
-  const holdingRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // The call outlives any single render, so anything it reads back must come
-  // from a ref — otherwise switching language mid-call would need a reconnect.
-  const langRef = useRef(language);
-  langRef.current = language;
-  const nameRef = useRef(userName);
-  nameRef.current = userName;
-
-  // Translations are awaited, so two segments could finish out of order.
-  // Chaining them preserves the order the words were actually spoken in.
-  const sendChain = useRef<Promise<void>>(Promise.resolve());
-  const lastPartialSentAt = useRef(0);
-  const partialTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const partialAbort = useRef<AbortController | null>(null);
-  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  /** Shows a transient notice; a newer notice replaces (and re-times) the old one. */
-  const flashNotice = useCallback((message: string) => {
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    setNotice(message);
-    noticeTimer.current = setTimeout(() => setNotice(null), NOTICE_MS);
-  }, []);
+  const s = snapshot;
+  const phase = s?.phase ?? 'connecting';
+  const connected = phase === 'connected';
+  const continuous = s?.mode === 'continuous';
+  const micOff = s?.activity === 'stopped';
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, showTranscript]);
+  }, [s?.segments, showTranscript]);
 
   useEffect(() => {
-    if (status !== 'connected') return;
-    const started = Date.now();
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    if (!connected || !s?.connectedAt) return;
+    const started = s.connectedAt;
+    const tick = () => setElapsed(Math.floor((Date.now() - started) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [status]);
+  }, [connected, s?.connectedAt]);
 
   // Give the user a beat to read why the call ended.
   useEffect(() => {
-    if (status !== 'peer-left' && status !== 'expired') return;
-    const t = setTimeout(onEndCall, 1800);
+    if (phase !== 'ended' || (s?.phaseReason !== 'peer-left' && s?.phaseReason !== 'expired')) return;
+    const t = setTimeout(onEndCall, END_NOTICE_MS);
     return () => clearTimeout(t);
-  }, [status, onEndCall]);
+  }, [phase, s?.phaseReason, onEndCall]);
 
-  // ---- Outgoing: one finalized phrase -> translate -> ship ------------------
-
-  const handleSegment = useCallback((text: string) => {
-    const id = newId();
-    const sourceLang = langRef.current.bcp47;
-    const targetLang = peerLangRef.current ?? sourceLang;
-    const startedAt = performance.now();
-
-    sendChain.current = sendChain.current
-      .then(async () => {
-        // A failed translation must not be passed off as a real one. The call
-        // stays alive — the original is sent — but it is explicitly marked so
-        // both sides know the listener is hearing untranslated speech.
-        let translated = text;
-        let untranslated = false;
-        try {
-          translated = await translateText(text, sourceLang, targetLang);
-        } catch (err) {
-          if (!(err instanceof TranslationError)) throw err;
-          untranslated = true;
-          flashNotice('Translation unavailable — your words were sent untranslated.');
-        }
-        const latencyMs = Math.round(performance.now() - startedAt);
-
-        callRef.current?.send({
-          t: 'segment',
-          id,
-          original: text,
-          translated,
-          sourceLang,
-          targetLang,
-          sentAt: Date.now(),
-          ...(untranslated ? { untranslated: true } : {}),
-        });
-
-        setLastLatencyMs(latencyMs);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id,
-            speakerId: myId,
-            speakerName: nameRef.current,
-            originalText: text,
-            translatedText: translated,
-            sourceLang,
-            targetLang,
-            latencyMs,
-            untranslated,
-          },
-        ]);
-      })
-      .catch((err) => console.error('segment pipeline failed:', err));
-  }, [myId, flashNotice]);
-
-  const handlePartial = useCallback((text: string) => {
-    setMyPartial(text);
-    const now = Date.now();
-    if (!text || now - lastPartialSentAt.current < PARTIAL_SEND_INTERVAL_MS) return;
-    lastPartialSentAt.current = now;
-    callRef.current?.send({ t: 'partial', text, lang: langRef.current.bcp47 });
-  }, []);
-
-  // ---- Incoming ------------------------------------------------------------
-
-  const handleMessage = useCallback((msg: CallMessage) => {
-    const myLang = langRef.current.bcp47;
-
-    if (msg.t === 'hello') {
-      peerLangRef.current = msg.lang;
-      setPeerLanguage(findLanguage(msg.lang) ?? null);
-      setPeerName(msg.name || null);
-      return;
-    }
-
-    if (msg.t === 'partial') {
-      if (!msg.text) {
-        setTheirPartial('');
-        return;
-      }
-      // Without a fast translator, showing raw source text is more honest than
-      // burning a rate-limited quota on text that changes every 200ms.
-      if (!capsRef.current?.liveCaptions) {
-        setTheirPartial(msg.text);
-        return;
-      }
-      if (partialTimer.current) clearTimeout(partialTimer.current);
-      partialTimer.current = setTimeout(async () => {
-        partialAbort.current?.abort();
-        const controller = new AbortController();
-        partialAbort.current = controller;
-        try {
-          setTheirPartial(await translateText(msg.text, msg.lang, myLang, controller.signal));
-        } catch (err) {
-          // Superseded by a newer partial: ignore. Real failure: show the raw
-          // interim text rather than nothing (it's labelled as a live caption).
-          if (err instanceof TranslationError) setTheirPartial(msg.text);
-        }
-      }, PARTIAL_TRANSLATE_DEBOUNCE_MS);
-      return;
-    }
-
-    if (msg.t === 'segment') {
-      setTheirPartial('');
-      if (partialTimer.current) clearTimeout(partialTimer.current);
-
-      const deliver = (text: string, untranslated = false) => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: msg.id,
-            speakerId: 'peer',
-            speakerName: peerName ?? 'Them',
-            originalText: msg.original,
-            translatedText: text,
-            sourceLang: msg.sourceLang,
-            targetLang: myLang,
-            untranslated,
-          },
-        ]);
-        haptic(12);
-        if (untranslated) flashNotice('Translation unavailable — playing their original words.');
-        // Untranslated text is spoken with a voice for its own language;
-        // reading it with ours would mangle every word.
-        enqueueSpeech(text, untranslated ? msg.sourceLang : myLang, {
-          onStart: () => setPlaying(true),
-          onEnd: () => setPlaying(isSpeaking()),
-        });
-      };
-
-      const sameLanguage = msg.sourceLang.split('-')[0] === myLang.split('-')[0];
-      // The sender normally translates into our language using the handshake.
-      // If their hello hadn't landed yet, we just switched language, or their
-      // translation failed, fix it up on this side.
-      if (!msg.untranslated && msg.targetLang.split('-')[0] === myLang.split('-')[0]) {
-        deliver(msg.translated);
-      } else if (sameLanguage) {
-        deliver(msg.original);
-      } else {
-        translateText(msg.original, msg.sourceLang, myLang)
-          .then((t) => deliver(t))
-          .catch(() => deliver(msg.original, true));
-      }
-    }
-  }, [peerName, flashNotice]);
-
-  // Keep callbacks reachable from the long-lived recognizer/call instances.
-  const handleSegmentRef = useRef(handleSegment);
-  const handlePartialRef = useRef(handlePartial);
-  const handleMessageRef = useRef(handleMessage);
-  handleSegmentRef.current = handleSegment;
-  handlePartialRef.current = handlePartial;
-  handleMessageRef.current = handleMessage;
-
-  // ---- The call itself: created once, survives language changes -------------
-
-  useEffect(() => {
-    preloadVoices();
-    prewarm();
-
-    getCapabilities().then((c) => {
-      capsRef.current = c;
-      setCaps(c);
-    });
-
-    const call = connectCall(roomCode, SIGNALING_URL, {
-      onMessage: (msg) => handleMessageRef.current(msg),
-      onStatus: (s) => setStatus(s as CallStatus),
-      onTransport: setTransport,
-    });
-    callRef.current = call;
-    call.send({ t: 'hello', lang: langRef.current.bcp47, name: nameRef.current });
-
-    return () => {
-      if (partialTimer.current) clearTimeout(partialTimer.current);
-      partialAbort.current?.abort();
-      if (noticeTimer.current) clearTimeout(noticeTimer.current);
-      stopSpeaking();
-      releaseMic();
-      call.close();
-      callRef.current = null;
-    };
-  }, [roomCode]);
-
-  // ---- Recognition: rebuilt when the language (or mute) changes -------------
-
-  useEffect(() => {
-    if (muted) return;
-
-    const recognizer = createRecognizer(language.bcp47, {
-      onSegment: (text) => handleSegmentRef.current(text),
-      onPartial: (text) => handlePartialRef.current(text),
-      onSpeechActivity: (active) => setHearingVoice(active && holdingRef.current),
-      onError: (message, fatal) => {
-        if (fatal) {
-          if (noticeTimer.current) clearTimeout(noticeTimer.current);
-          setNotice(message);
-        } else {
-          flashNotice(message);
-        }
-      },
-    });
-    recognizerRef.current = recognizer;
-    setEngine(recognizer.engine);
-    recognizer.arm().catch((err) => setNotice(String(err)));
-
-    return () => {
-      recognizer.destroy();
-      recognizerRef.current = null;
-    };
-  }, [language.bcp47, muted, flashNotice]);
-
-  // Browsers without Web Speech depend on the server's STT. If the server has
-  // none, every push would fail after the fact — say so up front instead.
-  const sttUnavailable = engine === 'scribe' && caps !== null && !caps.stt;
-  useEffect(() => {
-    if (!sttUnavailable) return;
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    setNotice(
-      'Speech recognition isn’t available in this browser on this server. Try Chrome, Edge or Safari — you can still hear the other person.'
-    );
-  }, [sttUnavailable]);
-
-  // Re-announce whenever our language changes so the peer retargets instantly.
-  useEffect(() => {
-    if (status === 'connected') {
-      callRef.current?.send({ t: 'hello', lang: language.bcp47, name: userName });
-    }
-  }, [status, language.bcp47, userName]);
+  const leave = useCallback(() => {
+    session?.leave();
+    onEndCall();
+  }, [session, onEndCall]);
 
   // ---- Push to talk --------------------------------------------------------
 
-  const canTalk = status === 'connected' && !muted && !sttUnavailable;
+  const canPress = connected && !micOff && Boolean(s?.features.canTalk) && s?.permission !== 'denied';
 
   const startTalking = useCallback(() => {
-    if (!canTalk || holdingRef.current) return;
-    if (isSpeaking()) {
-      stopSpeaking();
-      setPlaying(false);
-    }
-    holdingRef.current = true;
-    setHolding(true);
-    setMyPartial('');
+    if (!session || !canPress || continuous) return;
     haptic(18);
-    void unlockAudio();
-    recognizerRef.current?.hold();
-  }, [canTalk]);
+    session.pressTalk();
+  }, [session, canPress, continuous]);
 
   const stopTalking = useCallback(() => {
-    if (!holdingRef.current) return;
-    holdingRef.current = false;
-    setHolding(false);
-    setHearingVoice(false);
-    haptic(10);
-    recognizerRef.current?.release();
-    callRef.current?.send({ t: 'partial', text: '', lang: langRef.current.bcp47 });
-  }, []);
+    if (!session) return;
+    if (session.getSnapshot().holding) haptic(10);
+    session.releaseTalk();
+  }, [session]);
 
   useEffect(() => {
     const isTypingTarget = (el: EventTarget | null) =>
       el instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
-
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat || isTypingTarget(e.target)) return;
       e.preventDefault();
@@ -390,7 +102,6 @@ export function CallRoom({
       e.preventDefault();
       stopTalking();
     };
-
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     return () => {
@@ -401,37 +112,50 @@ export function CallRoom({
 
   // ---- Presentation --------------------------------------------------------
 
-  const statusLabel = () => {
-    if (status === 'waiting-for-peer') return 'Waiting for them to join';
-    if (status === 'connecting') return 'Connecting';
-    if (status === 'peer-left') return `${peerName ?? 'They'} left the channel`;
-    if (status === 'expired') return 'Channel expired';
-    if (status === 'error') return 'Connection problem';
-    if (status === 'disconnected') return 'Disconnected';
+  const holding = Boolean(s?.holding);
+  const playing = Boolean(s?.playing);
+  const hearingVoice = Boolean(s?.hearingVoice);
+  const peerName = s?.peer.name ?? null;
+  const peerLanguage = findLanguage(s?.peer.lang) ?? null;
+  const segments = s?.segments ?? [];
+
+  const statusLabel = (): string | null => {
+    if (phase === 'idle' || phase === 'connecting') return 'Connecting';
+    if (phase === 'waiting-for-peer') return s?.phaseReason === 'peer-away' ? `Waiting for ${peerName ?? 'them'} to reconnect` : 'Waiting for them to join';
+    if (phase === 'reconnecting') return `Reconnecting${s && s.reconnectAttempt > 1 ? ` (try ${s.reconnectAttempt})` : ''}…`;
+    if (phase === 'ended' && s?.phaseReason === 'peer-left') return `${peerName ?? 'They'} left the channel`;
+    if (phase === 'ended' && s?.phaseReason === 'expired') return 'Channel expired';
+    if (phase === 'ended') return 'Call ended';
+    if (phase === 'failed') return s?.phaseReason === 'connection-lost' ? 'Disconnected' : 'Connection problem';
     return null;
   };
 
-  const ledColor =
-    status === 'connected'
-      ? 'var(--green)'
-      : status === 'connecting' || status === 'waiting-for-peer'
-        ? 'var(--amber)'
-        : 'var(--red)';
+  const ledColor = connected
+    ? 'var(--green)'
+    : phase === 'connecting' || phase === 'waiting-for-peer' || phase === 'reconnecting' || phase === 'idle'
+      ? 'var(--amber)'
+      : 'var(--red)';
 
-  const primaryHint = muted
+  const primaryHint = micOff
     ? 'Microphone off'
-    : holding
-      ? hearingVoice
-        ? 'Listening…'
-        : 'Speak now'
-      : playing
-        ? 'Receiving — press to cut in'
-        : status === 'connected'
-          ? 'Hold to talk'
-          : (statusLabel() ?? '');
+    : continuous && connected
+      ? s?.activity === 'paused'
+        ? 'Hands-free — paused while they speak'
+        : hearingVoice
+          ? 'Listening…'
+          : 'Hands-free — listening'
+      : holding
+        ? hearingVoice
+          ? 'Listening…'
+          : 'Speak now'
+        : playing
+          ? 'Receiving — press to cut in'
+          : connected
+            ? 'Hold to talk'
+            : (statusLabel() ?? '');
 
-  const screenText = holding ? myPartial : theirPartial;
-  const lastHeard = lastReceived(messages, myId);
+  const screenText = holding || continuous ? s?.partial.local || s?.partial.peer || '' : (s?.partial.peer ?? '');
+  const lastHeard = lastReceived(segments);
   const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
 
   return (
@@ -439,7 +163,7 @@ export function CallRoom({
       {/* ---- Top bar ---- */}
       <div className="safe-t flex items-center justify-between gap-3 py-3">
         <button
-          onClick={onEndCall}
+          onClick={leave}
           aria-label="Leave channel"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--red)]/25 bg-[var(--red)]/12 text-[var(--red)] transition-colors hover:bg-[var(--red)]/20"
         >
@@ -448,35 +172,25 @@ export function CallRoom({
 
         <div className="flex min-w-0 flex-col items-center">
           <div className="flex items-center gap-2">
-            <span
-              className={cn('led', status !== 'connected' && 'led-pulse')}
-              style={{ background: ledColor }}
-              aria-hidden="true"
-            />
-            <span className="font-mono text-[13px] font-semibold tracking-[0.14em] text-[var(--text-1)]">
-              {roomCode}
-            </span>
+            <span className={cn('led', !connected && 'led-pulse')} style={{ background: ledColor }} aria-hidden="true" />
+            <span className="font-mono text-[13px] font-semibold tracking-[0.14em] text-[var(--text-1)]">{roomCode}</span>
           </div>
-          <span className="tnum mt-0.5 text-[11px] text-[var(--text-3)]">
-            {status === 'connected' ? mmss : (statusLabel() ?? '')}
-          </span>
+          <span className="tnum mt-0.5 text-[11px] text-[var(--text-3)]">{connected ? mmss : (statusLabel() ?? '')}</span>
         </div>
 
         <div className="flex shrink-0 gap-2">
           <button
-            onClick={() => {
-              setMuted((v) => !v);
-              if (!muted) stopTalking();
-            }}
-            aria-label={muted ? 'Turn microphone on' : 'Turn microphone off'}
+            onClick={() => session?.setMicEnabled(micOff)}
+            aria-label={micOff ? 'Turn microphone on' : 'Turn microphone off'}
+            aria-pressed={micOff}
             className={cn(
               'flex h-10 w-10 items-center justify-center rounded-full border transition-colors',
-              muted
+              micOff
                 ? 'border-[var(--red)]/25 bg-[var(--red)]/12 text-[var(--red)]'
                 : 'border-white/10 bg-white/[0.06] text-[var(--text-2)] hover:bg-white/[0.1]'
             )}
           >
-            {muted ? <MicOff className="h-[17px] w-[17px]" /> : <Mic className="h-[17px] w-[17px]" />}
+            {micOff ? <MicOff className="h-[17px] w-[17px]" /> : <Mic className="h-[17px] w-[17px]" />}
           </button>
           <button
             onClick={() => setShowTranscript(true)}
@@ -484,14 +198,33 @@ export function CallRoom({
             className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-[var(--text-2)] transition-colors hover:bg-white/[0.1]"
           >
             <MessageSquareText className="h-[17px] w-[17px]" />
-            {messages.length > 0 && (
+            {segments.length > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[var(--blue)] px-1 text-[10px] font-semibold text-white">
-                {messages.length > 99 ? '99' : messages.length}
+                {segments.length > 99 ? '99' : segments.length}
               </span>
             )}
           </button>
         </div>
       </div>
+
+      {/* ---- Hands-free indicator: always visible while it's on ---- */}
+      {continuous && (
+        <div
+          role="status"
+          className="mb-1 flex items-center justify-between gap-3 rounded-xl border border-[var(--green)]/30 bg-[var(--green)]/10 px-3.5 py-2"
+        >
+          <span className="flex items-center gap-2 text-[13px] font-medium text-[#9be8b0]">
+            <Radio className="h-4 w-4" aria-hidden="true" />
+            {s?.capturing ? 'Hands-free: listening continuously' : 'Hands-free on (paused)'}
+          </span>
+          <button
+            onClick={() => session?.setListeningMode('push-to-talk')}
+            className="rounded-full bg-white/[0.12] px-3 py-1 text-[12px] font-semibold text-[var(--text-1)]"
+          >
+            Stop
+          </button>
+        </div>
+      )}
 
       {/* ---- Language rail ---- */}
       <div className="flex items-center gap-2 py-2">
@@ -502,12 +235,8 @@ export function CallRoom({
         >
           <span className="text-[20px] leading-none">{language.flag}</span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)]">
-              You speak
-            </span>
-            <span className="block truncate text-[14px] font-medium text-[var(--text-1)]">
-              {language.native}
-            </span>
+            <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)]">You speak</span>
+            <span className="block truncate text-[14px] font-medium text-[var(--text-1)]">{language.native}</span>
           </span>
         </button>
 
@@ -519,23 +248,24 @@ export function CallRoom({
             <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)]">
               {peerName ?? 'They'} hear{peerName ? 's' : ''}
             </span>
-            <span className="block truncate text-[14px] font-medium text-[var(--text-1)]">
-              {peerLanguage?.native ?? '—'}
-            </span>
+            <span className="block truncate text-[14px] font-medium text-[var(--text-1)]">{peerLanguage?.native ?? '—'}</span>
           </span>
         </div>
       </div>
 
       <AnimatePresence>
-        {notice && (
+        {s?.notice && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <p role="status" className="mt-1 rounded-xl border border-[var(--amber)]/25 bg-[var(--amber)]/10 px-3.5 py-2.5 text-[13px] leading-snug text-[#ffcf80]">
-              {notice}
+            <p
+              role="status"
+              className="mt-1 rounded-xl border border-[var(--amber)]/25 bg-[var(--amber)]/10 px-3.5 py-2.5 text-[13px] leading-snug text-[#ffcf80]"
+            >
+              {s.notice.message}
             </p>
           </motion.div>
         )}
@@ -548,10 +278,7 @@ export function CallRoom({
           playing ? 'bg-[var(--blue)]/[0.07]' : 'bg-black/25'
         )}
       >
-        <div
-          className={cn('grille absolute inset-0', playing ? 'opacity-100' : 'opacity-45')}
-          aria-hidden="true"
-        />
+        <div className={cn('grille absolute inset-0', playing ? 'opacity-100' : 'opacity-45')} aria-hidden="true" />
 
         <div className="sheet-scroll relative flex flex-1 items-center justify-center overflow-y-auto px-6 py-6">
           <AnimatePresence>
@@ -561,10 +288,7 @@ export function CallRoom({
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className={cn(
-                  'text-center text-[17px] leading-relaxed',
-                  holding ? 'text-[#ffd9a0]' : 'text-[var(--text-1)]'
-                )}
+                className={cn('text-center text-[17px] leading-relaxed', holding ? 'text-[#ffd9a0]' : 'text-[var(--text-1)]')}
               >
                 {screenText}
                 <span className="opacity-50">…</span>
@@ -579,9 +303,7 @@ export function CallRoom({
                   'text-center',
                   // The last thing they said is content, not a hint — it stays
                   // legible so you can re-read it while composing a reply.
-                  lastHeard
-                    ? 'text-[17px] leading-relaxed text-[var(--text-2)]'
-                    : 'text-[14px] leading-snug text-[var(--text-3)]'
+                  lastHeard ? 'text-[17px] leading-relaxed text-[var(--text-2)]' : 'text-[14px] leading-snug text-[var(--text-3)]'
                 )}
               >
                 {lastHeard ?? 'Whatever you say appears here, translated.'}
@@ -595,7 +317,7 @@ export function CallRoom({
       <div className="safe-b flex flex-col items-center pt-6">
         <div className="relative flex h-[212px] w-[212px] items-center justify-center">
           <AnimatePresence>
-            {holding && (
+            {(holding || (continuous && s?.capturing)) && (
               <>
                 <motion.span
                   key="r1"
@@ -636,9 +358,7 @@ export function CallRoom({
             }}
             onPointerUp={(e) => {
               try {
-                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                  e.currentTarget.releasePointerCapture(e.pointerId);
-                }
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
               } catch {
                 /* nothing to release */
               }
@@ -646,21 +366,19 @@ export function CallRoom({
             }}
             onPointerCancel={stopTalking}
             onContextMenu={(e) => e.preventDefault()}
-            disabled={!canTalk}
+            disabled={!canPress || continuous}
             aria-label="Push to talk"
+            aria-pressed={holding}
             className={cn(
               'ptt-bezel no-touch h-[188px] w-[188px]',
-              holding && 'ptt-live ptt-pressed',
+              (holding || (continuous && s?.capturing)) && 'ptt-live ptt-pressed',
               playing && !holding && 'ptt-recv',
-              !canTalk && 'ptt-disabled'
+              (!canPress || continuous) && 'ptt-disabled'
             )}
           >
             <span className="ptt-face flex h-full w-full flex-col items-center justify-center gap-1.5">
               <Mic
-                className={cn(
-                  'h-9 w-9 transition-colors',
-                  holding ? 'text-black/80' : playing ? 'text-white' : 'text-[var(--text-2)]'
-                )}
+                className={cn('h-9 w-9 transition-colors', holding ? 'text-black/80' : playing ? 'text-white' : 'text-[var(--text-2)]')}
               />
               <span
                 className={cn(
@@ -668,7 +386,7 @@ export function CallRoom({
                   holding ? 'text-black/60' : 'text-[var(--text-3)]'
                 )}
               >
-                {holding ? 'On air' : 'Hold'}
+                {holding ? 'On air' : continuous ? 'Hands-free' : 'Hold'}
               </span>
             </span>
           </button>
@@ -684,22 +402,43 @@ export function CallRoom({
           {primaryHint}
         </p>
 
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-[var(--text-3)]">
-          <span>{transport === 'p2p' ? 'Direct' : 'Relayed'}</span>
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-[11px] text-[var(--text-3)]">
+          <span>{s?.transport === 'p2p' ? 'Direct' : 'Relayed'}</span>
           <span aria-hidden="true">·</span>
-          <span>{engine === 'webspeech' ? 'Live transcribe' : 'Batch transcribe'}</span>
-          {lastLatencyMs !== null && (
+          <span>{s?.features.stt === 'server-stt' ? 'Batch transcribe' : 'Live transcribe'}</span>
+          {s?.lastLatencyMs != null && (
             <>
               <span aria-hidden="true">·</span>
-              <span className="tnum">{lastLatencyMs}ms</span>
+              <span className="tnum">{s.lastLatencyMs}ms</span>
             </>
           )}
-          {caps && !caps.tts && (
+          {s?.features.serverKnown && s.features.tts !== 'server' && (
             <>
               <span aria-hidden="true">·</span>
               <span>System voice</span>
             </>
           )}
+        </div>
+
+        {/* ---- Listening mode + disclosure ---- */}
+        <div className="mt-3 flex items-center gap-3 text-[12px]">
+          {s?.features.continuous && (
+            <button
+              onClick={() => session?.setListeningMode(continuous ? 'push-to-talk' : 'continuous')}
+              disabled={!connected || micOff}
+              aria-pressed={continuous}
+              className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 font-medium text-[var(--text-2)] transition-colors hover:bg-white/[0.1] disabled:opacity-40"
+            >
+              {continuous ? 'Hands-free: on' : 'Hands-free: off'}
+            </button>
+          )}
+          <button
+            onClick={() => session?.showDisclosure()}
+            className="flex items-center gap-1 text-[var(--text-3)] underline-offset-2 hover:text-[var(--text-2)] hover:underline"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+            How your voice is processed
+          </button>
         </div>
       </div>
 
@@ -739,48 +478,10 @@ export function CallRoom({
               </div>
 
               <div ref={scrollRef} className="sheet-scroll flex-1 space-y-4 overflow-y-auto px-5 pb-6">
-                {messages.length === 0 ? (
-                  <p className="pt-16 text-center text-[15px] text-[var(--text-3)]">
-                    Nothing said yet.
-                  </p>
+                {segments.length === 0 ? (
+                  <p className="pt-16 text-center text-[15px] text-[var(--text-3)]">Nothing said yet.</p>
                 ) : (
-                  messages.map((msg) => {
-                    const isMe = msg.speakerId === myId;
-                    return (
-                      <div
-                        key={msg.id}
-                        className={cn('flex flex-col', isMe ? 'items-end' : 'items-start')}
-                      >
-                        <span className="mb-1 px-1 text-[11px] font-medium text-[var(--text-3)]">
-                          {isMe ? 'You' : msg.speakerName || 'Them'}
-                        </span>
-                        <div
-                          className={cn(
-                            'max-w-[85%] rounded-[20px] px-4 py-3',
-                            isMe
-                              ? 'rounded-br-[6px] bg-[var(--blue)] text-white'
-                              : 'rounded-bl-[6px] bg-white/[0.09] text-[var(--text-1)]'
-                          )}
-                        >
-                          <p className="text-[16px] leading-snug">
-                            {isMe ? msg.originalText : msg.translatedText}
-                          </p>
-                          <p
-                            className={cn(
-                              'mt-1.5 text-[13px] leading-snug',
-                              isMe ? 'text-white/65' : 'text-[var(--text-3)]'
-                            )}
-                          >
-                            {msg.untranslated
-                              ? 'Not translated — translation was unavailable'
-                              : isMe
-                                ? msg.translatedText
-                                : msg.originalText}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })
+                  segments.map((seg) => <TranscriptBubble key={seg.id} seg={seg} />)
                 )}
               </div>
             </motion.div>
@@ -796,14 +497,47 @@ export function CallRoom({
         onSelect={onLanguageChange}
         onClose={() => setPickerOpen(false)}
       />
+
+      <ConsentSheet
+        open={Boolean(s?.consent.prompt)}
+        disclosure={s?.consent.disclosure ?? null}
+        granted={Boolean(s?.consent.granted)}
+        onAllow={() => session?.grantConsent()}
+        onDecline={() => session?.declineConsent()}
+      />
+    </div>
+  );
+}
+
+function TranscriptBubble({ seg }: { seg: SegmentRecord; key?: string }) {
+  const isMe = seg.speaker === 'local';
+  const secondary = seg.untranslated
+    ? 'Not translated — translation was unavailable'
+    : isMe
+      ? seg.translation === 'pending'
+        ? 'Translating…'
+        : seg.translated
+      : seg.original;
+  return (
+    <div className={cn('flex flex-col', isMe ? 'items-end' : 'items-start')}>
+      <span className="mb-1 px-1 text-[11px] font-medium text-[var(--text-3)]">{isMe ? 'You' : seg.speakerName || 'Them'}</span>
+      <div
+        className={cn(
+          'max-w-[85%] rounded-[20px] px-4 py-3',
+          isMe ? 'rounded-br-[6px] bg-[var(--blue)] text-white' : 'rounded-bl-[6px] bg-white/[0.09] text-[var(--text-1)]'
+        )}
+      >
+        <p className="text-[16px] leading-snug">{isMe ? seg.original : seg.translated}</p>
+        <p className={cn('mt-1.5 text-[13px] leading-snug', isMe ? 'text-white/65' : 'text-[var(--text-3)]')}>{secondary}</p>
+      </div>
     </div>
   );
 }
 
 /** The last thing the other person said, shown on the idle panel. */
-function lastReceived(messages: Message[], myId: string): string | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].speakerId !== myId) return messages[i].translatedText;
+function lastReceived(segments: SessionSnapshot['segments']): string | null {
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i].speaker === 'peer') return segments[i].translated;
   }
   return null;
 }

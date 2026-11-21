@@ -3,12 +3,16 @@
 // anything. Acquiring the mic once per call (rather than once per push) is what
 // keeps the first word of an utterance from being swallowed.
 
+import type { CapturePort } from "../engine/ports";
+import type { PermissionState } from "../engine/events";
+
 let ctx: AudioContext | null = null;
 let micStream: MediaStream | null = null;
 let micRequest: Promise<MediaStream> | null = null;
 // Bumped by releaseMic(). A getUserMedia that resolves after the call was left
 // (e.g. the permission prompt was answered late) must not resurrect the mic.
 let micEpoch = 0;
+const deviceLostListeners = new Set<() => void>();
 
 export function audioContext(): AudioContext {
   if (!ctx) {
@@ -74,6 +78,15 @@ export async function getMic(): Promise<MediaStream> {
           throw new DOMException("Microphone released before it was acquired", "AbortError");
         }
         micStream = s;
+        // 'ended' fires when the device goes away (unplugged, revoked, taken
+        // by another app) — never for our own stop() calls.
+        s.getAudioTracks().forEach((t) =>
+          t.addEventListener?.("ended", () => {
+            if (micStream !== s) return;
+            micStream = null;
+            deviceLostListeners.forEach((fn) => fn());
+          })
+        );
         return s;
       })
       .finally(() => {
@@ -135,3 +148,25 @@ export function createLevelMeter(stream: MediaStream, onLevel: (level: number) =
     analyser.disconnect();
   };
 }
+
+/** Microphone permission without prompting, where the browser supports asking. */
+export async function micPermission(): Promise<PermissionState> {
+  try {
+    const status = await navigator.permissions?.query({ name: "microphone" as PermissionName });
+    if (!status) return "unknown";
+    return status.state === "granted" ? "granted" : status.state === "denied" ? "denied" : "prompt";
+  } catch {
+    // Firefox and older Safari reject the "microphone" permission name.
+    return "unknown";
+  }
+}
+
+/** The capture port the engine uses. */
+export const captureAdapter: CapturePort = {
+  permission: micPermission,
+  release: releaseMic,
+  onDeviceLost(fn: () => void) {
+    deviceLostListeners.add(fn);
+    return () => deviceLostListeners.delete(fn);
+  },
+};

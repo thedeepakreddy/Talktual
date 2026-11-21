@@ -1,0 +1,142 @@
+// Versioned contracts for the communication engine.
+//
+// Two families:
+//   * EngineEvent — internal events the engine emits to its consumers (UI,
+//     diagnostics). Typed, versioned, never sent over the network.
+//   * PeerMessage — the wire protocol between the two browsers (data channel
+//     or relay). External input: always validated before use.
+
+export const ENGINE_EVENT_VERSION = 1 as const;
+export const WIRE_VERSION = 1 as const;
+
+// --- State vocabularies -------------------------------------------------------
+
+export type CallPhase = 'idle' | 'connecting' | 'waiting-for-peer' | 'connected' | 'reconnecting' | 'ended' | 'failed';
+
+export type Activity = 'idle' | 'permission-pending' | 'ready' | 'listening' | 'processing' | 'paused' | 'stopped';
+
+export type ListeningMode = 'push-to-talk' | 'continuous';
+/** Where captured audio is processed — what the user consents to. */
+export type ProcessingRoute = 'browser-speech' | 'server-stt';
+export type Transport = 'p2p' | 'relay' | 'none';
+export type PermissionState = 'unknown' | 'prompt' | 'granted' | 'denied';
+
+export type TranslationStatus = 'pending' | 'translated' | 'passthrough' | 'failed' | 'cancelled';
+export type PlaybackStatus = 'queued' | 'started' | 'ended' | 'cancelled' | 'failed' | 'dropped';
+
+export type ErrorCode =
+  | 'permission-denied'
+  | 'device-lost'
+  | 'capture-unavailable'
+  | 'stt-unavailable'
+  | 'stt-failed'
+  | 'translation-failed'
+  | 'playback-failed'
+  | 'session-full'
+  | 'session-invalid'
+  | 'resume-failed'
+  | 'connection-lost'
+  | 'server-error';
+
+// --- Segments -------------------------------------------------------------------
+
+export interface SegmentRecord {
+  /** Identity of the utterance end to end (sender-generated UUID). */
+  id: string;
+  /** Sender's monotonic sequence number, when known. */
+  seq?: number;
+  speaker: 'local' | 'peer';
+  speakerName?: string;
+  original: string;
+  translated: string;
+  sourceLang: string;
+  targetLang: string;
+  translation: TranslationStatus;
+  playback?: PlaybackStatus;
+  /** Translation failed: `translated` holds the original text. */
+  untranslated?: boolean;
+  /** Milliseconds from phrase final to translation done (local segments). */
+  latencyMs?: number;
+  createdAt: number;
+}
+
+// --- Internal events --------------------------------------------------------------
+
+type Ev<T extends string, P> = { v: typeof ENGINE_EVENT_VERSION; type: T; at: number } & P;
+
+export type EngineEvent =
+  | Ev<'session.phase', { from: CallPhase; to: CallPhase; reason?: string }>
+  | Ev<'session.activity', { from: Activity; to: Activity; reason?: string }>
+  | Ev<'transport.changed', { transport: Transport }>
+  | Ev<'privacy.changed', { mode: ListeningMode; route: ProcessingRoute | null; consent: boolean; capturing: boolean }>
+  | Ev<'permission.changed', { state: PermissionState }>
+  | Ev<'peer.updated', { name: string | null; lang: string | null }>
+  | Ev<'transcript.partial', { speaker: 'local' | 'peer'; text: string; lang: string }>
+  | Ev<'transcript.final', { segment: SegmentRecord }>
+  | Ev<'translation.updated', { segmentId: string; status: TranslationStatus; provider?: string; error?: string }>
+  | Ev<'playback.status', { segmentId: string; status: PlaybackStatus; engine?: 'server' | 'browser' }>
+  | Ev<'interruption', { kind: 'barge-in' | 'stop' | 'leave'; cancelledSegments: number }>
+  | Ev<'recovery', { kind: 'reconnecting' | 'reconnected' | 'gave-up' | 'peer-away' | 'peer-back'; attempt?: number }>
+  | Ev<'error', { code: ErrorCode; fatal: boolean; message: string }>;
+
+export type EngineEventType = EngineEvent['type'];
+export type EngineEventOf<T extends EngineEventType> = Extract<EngineEvent, { type: T }>;
+
+type Payload<E> = E extends unknown ? Omit<E, 'v' | 'at'> : never;
+/** Builds a stamped event; `at` can be injected for deterministic tests. */
+export function makeEvent(e: Payload<EngineEvent>, at = Date.now()): EngineEvent {
+  return { ...(e as object), v: ENGINE_EVENT_VERSION, at } as EngineEvent;
+}
+
+// --- Peer wire protocol v1 -------------------------------------------------------
+
+export type PeerMessage =
+  | { v?: 1; t: 'hello'; lang: string; name: string }
+  | { v?: 1; t: 'partial'; text: string; lang: string }
+  | {
+      v?: 1;
+      t: 'segment';
+      id: string;
+      seq?: number;
+      original: string;
+      translated: string;
+      sourceLang: string;
+      targetLang: string;
+      sentAt: number;
+      /** Set when the sender's translation failed and `translated` is just the original. */
+      untranslated?: boolean;
+    };
+
+const MAX_TEXT = 4000;
+const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
+
+/**
+ * Runtime check for messages from the other peer. Everything arriving over the
+ * data channel or the relay is untrusted input. Messages without `v` are
+ * Phase 1 peers and are treated as v1; any other version is rejected.
+ */
+export function isPeerMessage(value: unknown): value is PeerMessage {
+  if (!value || typeof value !== 'object') return false;
+  const m = value as Record<string, unknown>;
+  if (m.v !== undefined && m.v !== WIRE_VERSION) return false;
+  switch (m.t) {
+    case 'hello':
+      return isStr(m.lang, 35) && isStr(m.name, 80);
+    case 'partial':
+      return isStr(m.text, MAX_TEXT) && isStr(m.lang, 35);
+    case 'segment':
+      return (
+        isStr(m.id, 64) &&
+        m.id.length > 0 &&
+        isStr(m.original, MAX_TEXT) &&
+        isStr(m.translated, MAX_TEXT) &&
+        isStr(m.sourceLang, 35) &&
+        isStr(m.targetLang, 35) &&
+        typeof m.sentAt === 'number' &&
+        (m.seq === undefined || (Number.isInteger(m.seq) && (m.seq as number) >= 0)) &&
+        (m.untranslated === undefined || typeof m.untranslated === 'boolean')
+      );
+    default:
+      return false;
+  }
+}
