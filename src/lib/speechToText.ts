@@ -101,7 +101,7 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
     restartTimer = tailTimer = finalizeTimer = null;
   };
 
-  function emit(text: string) {
+  function emit(text: string, confidence?: number) {
     const clean = text.trim();
     if (!clean) return;
     // Chrome occasionally replays the last final result when a session ends.
@@ -109,7 +109,15 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
     lastEmitted = clean;
     lastEmittedAt = Date.now();
     const endedAt = Date.now();
-    cb.onFinal({ text: clean, lang, startedAt: phraseStartedAt || endedAt, endedAt, engine: "webspeech" });
+    cb.onFinal({
+      text: clean,
+      lang,
+      startedAt: phraseStartedAt || endedAt,
+      endedAt,
+      engine: "webspeech",
+      // Many browsers report 0 ("unknown"); the conversation layer treats 0 as absent.
+      ...(typeof confidence === "number" && Number.isFinite(confidence) ? { confidence } : {}),
+    });
     phraseStartedAt = endedAt;
   }
 
@@ -143,7 +151,7 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         const text = result[0]?.transcript ?? "";
-        if (result.isFinal) emit(text);
+        if (result.isFinal) emit(text, result[0]?.confidence);
         else interim += text;
       }
       cb.onPartial(interim.trim());

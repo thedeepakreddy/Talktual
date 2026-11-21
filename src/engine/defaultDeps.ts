@@ -14,6 +14,12 @@ import { createBrowserVoiceTap } from '../voicemirror/browserTap';
 /** VoiceMirror is a Phase 3 prototype: off unless the build sets VITE_VOICEMIRROR=1. */
 export const VOICEMIRROR_FLAG = import.meta.env.VITE_VOICEMIRROR === '1';
 
+/**
+ * Phase 4 conversation layer: ON by default. VITE_CONVERSATION_LAYER=0 (or
+ * "off") at build time rolls back to Phase 3 behaviour without code changes.
+ */
+export const CONVERSATION_FLAG = !['0', 'off', 'false'].includes(String(import.meta.env.VITE_CONVERSATION_LAYER ?? '').toLowerCase());
+
 function browserStorage(): StorageLike | null {
   try {
     const s = window.localStorage;
@@ -39,6 +45,7 @@ export function createDefaultDeps(): SessionDeps {
     browser: detectBrowserCapabilities(),
     storage: browserStorage(),
     onUserGesture: () => void unlockAudio(),
+    conversation: CONVERSATION_FLAG,
     voiceTap: VOICEMIRROR_FLAG && Boolean(navigator.mediaDevices?.getUserMedia) ? createBrowserVoiceTap() : undefined,
   };
 }

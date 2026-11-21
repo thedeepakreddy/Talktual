@@ -82,6 +82,20 @@ describe('PlaybackController (M2.2)', () => {
     expect(synth.spoken[1].text).toBe('w3');
   });
 
+  it('Phase 4 age bound: a waiting item past notAfter is dropped instead of played late', async () => {
+    const { PlaybackController } = await load();
+    const c = new PlaybackController();
+    const log = track(c);
+    c.enqueue({ segmentId: 'p', text: 'playing', lang: 'en' });
+    await vi.waitFor(() => expect(synth.spoken).toHaveLength(1));
+    c.enqueue({ segmentId: 'old', text: 'old', lang: 'en', notAfter: Date.now() - 1 });
+    c.enqueue({ segmentId: 'fresh', text: 'fresh', lang: 'en', notAfter: Date.now() + 60_000 });
+    synth.finishLast();
+    await vi.waitFor(() => expect(synth.spoken).toHaveLength(2));
+    expect(synth.spoken[1].text).toBe('fresh');
+    expect(log).toContain('old:dropped');
+  });
+
   it('reports failed (not ended) when neither server audio nor a browser voice could play', async () => {
     const { PlaybackController } = await load();
     const c = new PlaybackController();

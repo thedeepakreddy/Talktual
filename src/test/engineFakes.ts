@@ -282,6 +282,8 @@ export function makeSession(
       browser: opts.browser ?? CHROME_LIKE,
       storage,
       onUserGesture: gesture,
+      // TALKTUAL_CONV_LAYER=1 re-runs the Phase 2/3 engine suites with the Phase 4 layer on.
+      ...(process.env.TALKTUAL_CONV_LAYER === '1' ? { conversation: true } : {}),
       ...opts.deps,
     }
   );

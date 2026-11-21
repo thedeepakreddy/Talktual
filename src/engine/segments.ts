@@ -51,6 +51,15 @@ export class SegmentLedger {
     return true;
   }
 
+  /** True if a FINAL segment with this id was already accepted. */
+  hasSeenPeer(id: string): boolean {
+    return this.seenPeerIds.has(id);
+  }
+
+  remove(id: string): boolean {
+    return this.records.delete(id);
+  }
+
   upsert(record: SegmentRecord): void {
     this.records.delete(record.id);
     this.records.set(record.id, record);
