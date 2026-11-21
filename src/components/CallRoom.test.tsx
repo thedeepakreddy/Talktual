@@ -97,6 +97,32 @@ describe('CallRoom view over the engine', () => {
     expect(f.capture.releases).toBeGreaterThan(0);
   });
 
+  it('device lost: notice + mic shown off; the mic button is the way back (UI recovery path)', async () => {
+    const f = renderRoom({ consent: true });
+    await connect(f);
+    await act(async () => {
+      fireEvent.pointerDown(ptt());
+      await settle();
+    });
+    await act(async () => {
+      f.capture.loseDevice();
+      fireEvent.pointerUp(ptt());
+      await settle();
+    });
+    expect(screen.getByText(/microphone was disconnected/i)).toBeTruthy();
+    expect(ptt().disabled).toBe(true);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Turn microphone on' }));
+      await settle();
+    });
+    expect(ptt().disabled).toBe(false);
+    await act(async () => {
+      fireEvent.pointerDown(ptt());
+      await settle();
+    });
+    expect(f.asr()!.active).toBe(true);
+  });
+
   it('leaving tears down the transport and returns home', async () => {
     const f = renderRoom({ consent: true });
     await connect(f);

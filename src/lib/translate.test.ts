@@ -184,3 +184,20 @@ describe('translateSegment (normalized adapter, M2.3)', () => {
     expect((await translateSegment(req)).error?.code).toBe('malformed');
   });
 });
+
+describe('translateSegment retry policy', () => {
+  afterEach(() => vi.useRealTimers());
+  it('a timeout is NOT retried (it already used the whole budget; turns are serialized)', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(
+      (_u: string, init: RequestInit) =>
+        new Promise((_r, rej) => init.signal!.addEventListener('abort', () => rej(new DOMException('a', 'AbortError'))))
+    );
+    const { translateSegment, TRANSLATE_TIMEOUT_MS } = await load();
+    const p = translateSegment({ segmentId: 's', text: 'hello', from: 'en', to: 'es' });
+    await vi.advanceTimersByTimeAsync(TRANSLATE_TIMEOUT_MS + 1);
+    const r = await p;
+    expect(r).toMatchObject({ status: 'failed', attempts: 1, error: { code: 'timeout' } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
