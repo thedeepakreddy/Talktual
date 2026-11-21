@@ -222,6 +222,26 @@ describe('VoiceMirrorController', () => {
     expect(sent[1]).toEqual(sent[0]);
   });
 
+  it('revocation issued during an outage is re-delivered on reconnect', async () => {
+    const { c, tap, sent } = make();
+    c.optIn();
+    c.onCaptureStart();
+    await settle();
+    tap.feed(synthVoice(200, 3), 16000);
+    c.onCaptureStop();
+    c.optOut(); // suppose this revoke was lost while the transport was down
+    c.onConnected();
+    expect(sent.at(-1)).toEqual({ t: 'voice', revoked: true });
+  });
+
+  it('never-shared user sends nothing on reconnect', () => {
+    const { c, sent } = make();
+    c.onConnected();
+    c.optIn();
+    c.onConnected(); // opted in but nothing analysed yet
+    expect(sent).toHaveLength(0);
+  });
+
   it('dispose clears everything, is idempotent, and ignores later input', async () => {
     const { c, tap } = make();
     c.optIn();

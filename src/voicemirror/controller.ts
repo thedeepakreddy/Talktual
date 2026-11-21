@@ -61,6 +61,8 @@ export class VoiceMirrorController {
   private peer: VoiceDescriptor | null = null;
   private _sharing = false;
   private disposed = false;
+  /** A descriptor was sent at some point this call (so a revocation may need re-delivery). */
+  private everSent = false;
 
   constructor(
     private readonly deps: {
@@ -144,15 +146,21 @@ export class VoiceMirrorController {
     }
     if (this.sent && sameDescriptor(this.sent, d)) return;
     this.sent = d;
+    this.everSent = true;
     this.deps.send({ t: 'voice', descriptor: d });
     this.deps.diag('descriptor-sent');
     this.deps.onChange();
   }
 
-  /** Session: (re)connected — the peer may have missed our last message. */
+  /**
+   * Session: (re)connected — the peer may have missed our last message (the
+   * transport outbox doesn't keep voice messages). Re-send the CURRENT state,
+   * including a revocation issued while the connection was down.
+   */
   onConnected(): void {
     if (this.disposed) return;
     if (this._sharing && this.sent) this.deps.send({ t: 'voice', descriptor: this.sent });
+    else if (this.everSent) this.deps.send({ t: 'voice', revoked: true });
   }
 
   onPeerMessage(m: unknown): void {
