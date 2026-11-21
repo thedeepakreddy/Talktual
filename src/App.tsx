@@ -6,6 +6,7 @@ import { CallRoom } from './components/CallRoom';
 import { Language } from './types';
 import { unlockAudio } from './lib/audio';
 import { prewarm } from './lib/translate';
+import { normalizeRoomCode } from './lib/roomCode';
 
 type Screen = 'home' | 'start' | 'join' | 'call';
 
@@ -24,9 +25,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    const joinCode = new URLSearchParams(window.location.search).get('join');
+    const joinCode = normalizeRoomCode(new URLSearchParams(window.location.search).get('join'));
     if (joinCode) {
-      setRoomCode(joinCode.toUpperCase());
+      setRoomCode(joinCode);
       setCurrentScreen('join');
     }
   }, []);

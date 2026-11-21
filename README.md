@@ -47,31 +47,45 @@ Text goes peer to peer over a WebRTC data channel when ICE succeeds. Behind symm
 
 ### Prerequisites
 
-- Node.js v18+
+- Node.js 20+ (verified on Node 22.23.5 / npm 10.9.9)
 - Optional: an ElevenLabs API key (natural voices) and a Gemini or DeepL key (fast, high-quality translation)
 
-The app runs with no keys at all — it falls back to the browser's built-in voice and the keyless MyMemory translator.
+The app runs with no keys at all — it falls back to the browser's built-in voice and the keyless MyMemory translator. Without an ElevenLabs key, browsers that lack the Web Speech API (e.g. Firefox) cannot transmit speech; the call screen says so up front.
 
 ### Backend
 
 ```bash
 cd signaling-server
-npm install
+npm ci
 cp ../.env.example .env   # then fill in the keys you have
 npm start
 ```
 
-Runs on `http://localhost:8080`. On boot it logs which providers it found.
+Runs on `http://localhost:8080`. On boot it logs which providers it found and warns about unset hardening options.
 
 ### Frontend
 
 ```bash
-npm install
+npm ci
 echo 'VITE_SIGNALING_URL=ws://localhost:8080' > .env.local
 npm run dev
 ```
 
 Speech recognition requires a secure context: `localhost` is fine, but any other host needs HTTPS.
+
+## Testing
+
+| Command | What it runs |
+| --- | --- |
+| `npm run lint` | TypeScript type-check (`tsc --noEmit`) |
+| `npm test` | Client unit/component tests (Vitest + jsdom) |
+| `npm run test:server` | Server API + signaling tests (`node:test`, providers stubbed) |
+| `npm run build` | Production build |
+| `npm run test:all` | All four of the above — the CI gate |
+| `npm run test:e2e` | Two-browser Chromium smoke test against the production build and a real server instance (needs Playwright + Chromium installed) |
+| `node e2e/perf.mjs` | Server latency / memory benchmark |
+
+No test makes a live call to a translation, speech or TTS provider: providers are stubbed at the server's `fetch`, and the E2E test scripts the browser's speech recognizer and records speech synthesis. See [docs/phase1/TEST_REPORT.md](docs/phase1/TEST_REPORT.md).
 
 ## Configuration
 
@@ -80,12 +94,27 @@ See [.env.example](.env.example) for the full list. The ones that matter most:
 | Variable | Where | Effect |
 | --- | --- | --- |
 | `VITE_SIGNALING_URL` | frontend | Signaling server; its http(s) form is also the API proxy |
-| `ELEVENLABS_API_KEY` | backend | Natural TTS voices; without it the browser voice is used |
+| `ELEVENLABS_API_KEY` | backend | Natural TTS voices and STT for browsers without Web Speech |
 | `GEMINI_API_KEY` / `DEEPL_API_KEY` | backend | Fast, good translation, and enables live translated captions |
 | `ELEVENLABS_TTS_MODEL` | backend | Defaults to `eleven_flash_v2_5`; `eleven_multilingual_v2` sounds better but costs about a second |
-| `VITE_TURN_URL` | frontend | TURN server for P2P behind symmetric NAT |
+| `ALLOWED_ORIGINS` | backend | **Set in production.** Browser origins allowed to use the API and signaling |
+| `RATE_LIMIT_PER_MINUTE` / `TRUST_PROXY` | backend | **Set in production.** Per-IP limit on paid endpoints; trust the platform proxy for client IPs |
+| `VITE_TURN_URL` | frontend | TURN server for P2P behind symmetric NAT (note: `VITE_*` values are public) |
 
 ## Deployment
 
-- **Frontend:** static site (Vercel, Render). Vite inlines `VITE_*` variables at build time, so rebuild after changing them.
-- **Backend:** Node web service. Serves the WebSocket signaling endpoint and the HTTP API proxy on one port.
+- **Frontend:** static site (Vercel, Render). Vite inlines `VITE_*` variables at build time, so rebuild after changing them. Never put a secret in a `VITE_*` variable.
+- **Backend:** Node web service. Serves the WebSocket signaling endpoint and the HTTP API proxy on one port. Set `ALLOWED_ORIGINS`, `RATE_LIMIT_PER_MINUTE` and (behind a proxy) `TRUST_PROXY=1`.
+
+## Limitations and troubleshooting
+
+- **"Speech recognition isn't available…"** — the browser has no Web Speech API and the server has no `ELEVENLABS_API_KEY`. Use Chrome/Edge/Safari or configure the key.
+- **"Translation unavailable — …"** — every configured translator failed or timed out (8 s). The original words are sent and clearly marked; nothing is passed off as a translation. Check the server log.
+- **"No one is waiting on that channel"** — the joiner waited 12 s without the host. Check the code; codes expire after 10 minutes unpaired.
+- **Call shows "Disconnected"** — both the signaling socket and the P2P channel dropped. There is no automatic reconnect yet: leave and start a new channel.
+- **Privacy:** while a call is open on Web Speech browsers, the recognizer listens continuously (results are only *used* while the button is held), so audio goes to the browser's speech service for the duration of the call. See [docs/phase1/SECURITY_REPORT.md](docs/phase1/SECURITY_REPORT.md).
+- Verified browsers: headless Chromium only. See [docs/phase1/COMPATIBILITY_REPORT.md](docs/phase1/COMPATIBILITY_REPORT.md).
+
+## Phase 1 audit
+
+Audit, repairs and release-gate evidence live in [docs/phase1/](docs/phase1/STABILIZATION_REPORT.md).
