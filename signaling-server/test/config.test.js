@@ -107,3 +107,12 @@ test("startup with NODE_ENV=production but no allowlist still starts (warnings o
   assert.match(out, /signaling \+ API proxy on/);
   assert.match(out, /WARNING: ALLOWED_ORIGINS is not set/);
 });
+
+test("VoiceMirror server settings are validated", () => {
+  assert.deepEqual(validateEnv({ VOICEMIRROR_ENABLED: "1", VOICEMIRROR_VOICE_CATALOG: '{"low":"abcdefgh12","high":"ijklmnop34"}' }).errors, []);
+  assert.equal(validateEnv({ VOICEMIRROR_ENABLED: "yes" }).errors.length, 1);
+  assert.equal(validateEnv({ VOICEMIRROR_VOICE_CATALOG: "{not json" }).errors.length, 1);
+  assert.equal(validateEnv({ VOICEMIRROR_VOICE_CATALOG: '{"loud":"abcdefgh12"}' }).errors.length, 1);
+  assert.equal(validateEnv({ VOICEMIRROR_VOICE_CATALOG: '{"low":"../../etc"}' }).errors.length, 1);
+  assert.ok(validateEnv({ VOICEMIRROR_VOICE_CATALOG: '{"low":"abcdefgh12"}' }).warnings.some((w) => w.includes("unused")));
+});

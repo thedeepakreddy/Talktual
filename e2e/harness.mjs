@@ -101,7 +101,7 @@ export function initScript(opts = {}) {
   window.__spoken = [];
   const synth = {
     speak(u) {
-      if (u.text) window.__spoken.push({ text: u.text, lang: u.lang, t: Date.now() });
+      if (u.text) window.__spoken.push({ text: u.text, lang: u.lang, t: Date.now(), pitch: u.pitch, rate: u.rate });
       setTimeout(() => u.onend && u.onend(), 30);
     },
     cancel() {},
@@ -113,7 +113,7 @@ export function initScript(opts = {}) {
   Object.defineProperty(window, 'speechSynthesis', { value: synth, configurable: true });
 }
 
-export async function startStack({ apiPort, webPort, serverOverrides = {}, fetchOpts = {}, outDir, cwd = root }) {
+export async function startStack({ apiPort, webPort, serverOverrides = {}, fetchOpts = {}, outDir, cwd = root, buildEnv = {} }) {
   const { createServer } = require(path.join(cwd, 'signaling-server/server.js'));
   const providerCalls = [];
   const api = createServer({
@@ -130,7 +130,7 @@ export async function startStack({ apiPort, webPort, serverOverrides = {}, fetch
   const dist = outDir || path.join(cwd, 'e2e/.dist');
   const build = spawnSync('npx', ['vite', 'build', '--outDir', dist, '--emptyOutDir', '--logLevel', 'error'], {
     cwd,
-    env: { ...process.env, VITE_SIGNALING_URL: `ws://127.0.0.1:${apiPort}` },
+    env: { ...process.env, VITE_SIGNALING_URL: `ws://127.0.0.1:${apiPort}`, ...buildEnv },
     stdio: 'inherit',
   });
   if (build.status !== 0) throw new Error('vite build failed');
@@ -195,7 +195,7 @@ export async function pairPeers(browser, web, initOpts = {}) {
   };
   const host = await mk('en-US', initOpts.host || {});
   const guest = await mk('es-ES', initOpts.guest || {});
-  await host.page.goto(web);
+  await host.page.goto(initOpts.debug ? `${web}/?debug=1` : web);
   await host.page.getByLabel('Your name').fill('Ana');
   await host.page.getByRole('button', { name: /start a channel/i }).click();
   await host.page.waitForFunction(

@@ -9,6 +9,10 @@ import { SIGNALING_URL } from '../lib/config';
 import { detectBrowserCapabilities } from './capabilities';
 import type { SessionDeps } from './CommunicationSession';
 import type { StorageLike } from './ports';
+import { createBrowserVoiceTap } from '../voicemirror/browserTap';
+
+/** VoiceMirror is a Phase 3 prototype: off unless the build sets VITE_VOICEMIRROR=1. */
+export const VOICEMIRROR_FLAG = import.meta.env.VITE_VOICEMIRROR === '1';
 
 function browserStorage(): StorageLike | null {
   try {
@@ -35,5 +39,6 @@ export function createDefaultDeps(): SessionDeps {
     browser: detectBrowserCapabilities(),
     storage: browserStorage(),
     onUserGesture: () => void unlockAudio(),
+    voiceTap: VOICEMIRROR_FLAG && Boolean(navigator.mediaDevices?.getUserMedia) ? createBrowserVoiceTap() : undefined,
   };
 }

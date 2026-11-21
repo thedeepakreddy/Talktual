@@ -188,3 +188,35 @@ describe('CallRoom view over the engine', () => {
     expect(dialog.textContent).toContain('hola');
   });
 });
+
+describe('VoiceMirror controls (Phase 3)', () => {
+  it('hidden when the feature is off (default build)', async () => {
+    const f = renderRoom({ consent: true });
+    await connect(f);
+    expect(screen.queryByRole('button', { name: /voice match/i })).toBeNull();
+  });
+
+  it('flag on: toggle opens the VoiceMirror disclosure; accepting turns it on; toggling again turns it off', async () => {
+    const { FakeVoiceTap } = await import('../test/engineFakes');
+    const f = renderRoom({ consent: true, deps: { voiceTap: new FakeVoiceTap() } });
+    await connect(f);
+    fireEvent.click(screen.getByRole('button', { name: 'Voice match: off' }));
+    const dialog = await screen.findByRole('dialog', { name: /share your voice style/i });
+    expect(dialog.textContent).toMatch(/does not copy or clone your voice/);
+    expect(dialog.textContent).toMatch(/Nothing is stored/);
+    fireEvent.click(screen.getByRole('button', { name: 'Share voice style' }));
+    expect(screen.getByRole('button', { name: 'Voice match: on' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Voice match: on' }));
+    expect(screen.getByRole('button', { name: 'Voice match: off' })).toBeTruthy();
+  });
+
+  it('shows when the other person’s voice style is applied', async () => {
+    const { FakeVoiceTap } = await import('../test/engineFakes');
+    const f = renderRoom({ consent: true, deps: { voiceTap: new FakeVoiceTap() } });
+    await connect(f);
+    await act(async () => f.call.receive({ t: 'voice', descriptor: { v: 1, pitchStep: 20, pitchRange: 'normal', tempoPct: 100 } }));
+    expect(screen.getByText('Their voice style matched')).toBeTruthy();
+    await act(async () => f.call.receive({ t: 'voice', revoked: true }));
+    expect(screen.queryByText('Their voice style matched')).toBeNull();
+  });
+});
