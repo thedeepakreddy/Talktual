@@ -330,6 +330,17 @@ export function CallRoom({
     };
   }, [language.bcp47, muted, flashNotice]);
 
+  // Browsers without Web Speech depend on the server's STT. If the server has
+  // none, every push would fail after the fact — say so up front instead.
+  const sttUnavailable = engine === 'scribe' && caps !== null && !caps.stt;
+  useEffect(() => {
+    if (!sttUnavailable) return;
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(
+      'Speech recognition isn’t available in this browser on this server. Try Chrome, Edge or Safari — you can still hear the other person.'
+    );
+  }, [sttUnavailable]);
+
   // Re-announce whenever our language changes so the peer retargets instantly.
   useEffect(() => {
     if (status === 'connected') {
@@ -339,7 +350,7 @@ export function CallRoom({
 
   // ---- Push to talk --------------------------------------------------------
 
-  const canTalk = status === 'connected' && !muted;
+  const canTalk = status === 'connected' && !muted && !sttUnavailable;
 
   const startTalking = useCallback(() => {
     if (!canTalk || holdingRef.current) return;
@@ -448,9 +459,6 @@ export function CallRoom({
           </div>
           <span className="tnum mt-0.5 text-[11px] text-[var(--text-3)]">
             {status === 'connected' ? mmss : (statusLabel() ?? '')}
-          </span>
-          <span className="sr-only" role="status">
-            {status === 'connected' ? 'Connected' : (statusLabel() ?? '')}
           </span>
         </div>
 
