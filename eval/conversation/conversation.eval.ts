@@ -34,7 +34,12 @@ for (const s of SCENARIOS) {
       const duplicates = [...counts.values()].reduce((a, c) => a + Math.max(0, c - 1), 0);
       // Fragments: spoken units that are a strict part of an ideal unit (premature split).
       const fragments = spokenTexts.filter((t) => !ideal.includes(t) && !stale.includes(t) && ideal.some((i) => i.includes(t) && i !== t)).length;
-      const unexpected = spokenTexts.filter((t) => !ideal.includes(t) && !stale.includes(t) && !ideal.some((i) => i.includes(t))).length;
+      // Merged: one spoken unit carrying 2+ ideal units (merge-under-pressure).
+      const isMerged = (t: string) => !ideal.includes(t) && ideal.filter((i) => t.includes(i)).length >= 2;
+      const merged = spokenTexts.filter(isMerged).length;
+      const unexpected = spokenTexts.filter((t) => !ideal.includes(t) && !stale.includes(t) && !isMerged(t) && !ideal.some((i) => i.includes(t))).length;
+      // Covered: ideal content heard exactly or inside a merged unit.
+      const idealCovered = ideal.filter((i) => spokenTexts.some((t) => t === i || (isMerged(t) && t.includes(i)))).length;
 
       const firstStartAfter = (t: number) => {
         const r = spoken.find((x) => x.startedAt! - sim.t0 >= t);
@@ -80,6 +85,8 @@ for (const s of SCENARIOS) {
         idealUnits: ideal.length,
         spokenUnits: spokenTexts.length,
         idealHeard,
+        idealCovered,
+        merged,
         fragments,
         unexpected,
         staleSpoken,
@@ -114,7 +121,7 @@ for (const s of SCENARIOS) {
 afterAll(() => {
   mkdirSync(OUT, { recursive: true });
   writeFileSync(path.join(OUT, `${LABEL}.json`), JSON.stringify({ label: LABEL, generatedAt: new Date().toISOString(), node: process.version, results }, null, 1));
-  const cols = ['scenario', 'lagMedianMs', 'lagMaxMs', 'timeToFirstProvisionalMs', 'idealUnits', 'spokenUnits', 'idealHeard', 'fragments', 'staleSpoken', 'duplicates', 'unexpected', 'finalsSent', 'provisionalSent', 'maxPlaybackQueue', 'maxQueueWaitMs', 'timeToFirstSpeechAfterEndMs', 'interruptionStopMs', 'playedDuringOverlap', 'workAfterEnd', 'diagnosticsTextLeaks'];
+  const cols = ['scenario', 'lagMedianMs', 'lagMaxMs', 'timeToFirstProvisionalMs', 'idealUnits', 'spokenUnits', 'idealHeard', 'idealCovered', 'merged', 'fragments', 'staleSpoken', 'duplicates', 'unexpected', 'finalsSent', 'provisionalSent', 'maxPlaybackQueue', 'maxQueueWaitMs', 'timeToFirstSpeechAfterEndMs', 'interruptionStopMs', 'playedDuringOverlap', 'workAfterEnd', 'diagnosticsTextLeaks'];
   console.log('\n' + cols.join('\t'));
   for (const r of results) console.log(cols.map((c) => String((r as Record<string, unknown>)[c] ?? '—')).join('\t'));
 });
