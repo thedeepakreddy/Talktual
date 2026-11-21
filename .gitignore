@@ -8,3 +8,6 @@ coverage/
 !.env.example
 e2e/.dist/
 e2e/.dist-latency/
+e2e/.dist-vm/
+e2e/.dist-latency-mic.wav
+__pycache__/

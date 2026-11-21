@@ -20,7 +20,8 @@ describe("health and capabilities", () => {
       assert.equal((await fetch(srv.http + "/health")).status, 200);
       const res = await fetch(srv.http + "/api/capabilities");
       const body = await res.json();
-      assert.deepEqual(body, { tts: false, stt: false, translator: "gemini", liveCaptions: true });
+      // voiceHints: additive Phase 3 field (VoiceMirror prototype, off by default)
+      assert.deepEqual(body, { tts: false, stt: false, translator: "gemini", liveCaptions: true, voiceHints: false });
       assert.ok(!JSON.stringify(body).includes("gm-secret-test"));
     }));
 
@@ -285,5 +286,53 @@ describe("abuse controls", () => {
       assert.deepEqual(statuses, [200, 200, 200, 429, 429]);
       // capabilities is exempt
       assert.equal((await fetch(srv.http + "/api/capabilities")).status, 200);
+    }));
+});
+
+describe("VoiceMirror TTS hints (Phase 3)", () => {
+  const pcm = () => new Response(new Uint8Array([1, 0]), { status: 200 });
+  const CATALOG = { low: "lowVoice00001", mid: "midVoice00001", high: "highVoice0001" };
+
+  test("disabled (default): a voice hint is ignored — fixed voice, speed 1.0", () =>
+    withServer({ elevenLabsApiKey: "k", fetch: async () => pcm() }, async (srv) => {
+      const r = await postJson(srv.http, "/api/tts", { text: "hola", lang: "es", voice: { register: "high", speed: 1.15 } });
+      assert.equal(r.status, 200);
+      const call = srv.fetchCalls[0];
+      assert.match(call.url, /21m00Tcm4TlvDq8ikWAM/);
+      assert.equal(JSON.parse(call.init.body).voice_settings.speed, 1.0);
+    }));
+
+  test("enabled: register picks the SERVER catalog voice and speed is applied", () =>
+    withServer({ elevenLabsApiKey: "k", voiceMirrorEnabled: true, voiceCatalog: CATALOG, fetch: async () => pcm() }, async (srv) => {
+      const caps = await (await fetch(srv.http + "/api/capabilities")).json();
+      assert.equal(caps.voiceHints, true);
+      await postJson(srv.http, "/api/tts", { text: "hola", lang: "es", voice: { register: "low", speed: 0.9 } });
+      const call = srv.fetchCalls[0];
+      assert.match(call.url, /lowVoice00001/);
+      assert.equal(JSON.parse(call.init.body).voice_settings.speed, 0.9);
+    }));
+
+  test("enabled without a catalog: default voice, speed still applied", () =>
+    withServer({ elevenLabsApiKey: "k", voiceMirrorEnabled: true, voiceCatalog: null, fetch: async () => pcm() }, async (srv) => {
+      await postJson(srv.http, "/api/tts", { text: "hola", voice: { register: "high", speed: 1.2 } });
+      assert.match(srv.fetchCalls[0].url, /21m00Tcm4TlvDq8ikWAM/);
+      assert.equal(JSON.parse(srv.fetchCalls[0].init.body).voice_settings.speed, 1.2);
+    }));
+
+  test("malformed hints are refused before any paid call; clients cannot choose a voice id", () =>
+    withServer({ elevenLabsApiKey: "k", voiceMirrorEnabled: true, voiceCatalog: CATALOG, fetch: async () => pcm() }, async (srv) => {
+      const bad = [
+        { register: "loud", speed: 1 },
+        { register: "low", speed: 3 },
+        { register: "low", speed: "1" },
+        { register: "low", speed: 1, voiceId: "attackerVoice1" },
+        ["low", 1],
+        "high",
+      ];
+      for (const voice of bad) {
+        const r = await postJson(srv.http, "/api/tts", { text: "hola", voice });
+        assert.equal(r.status, 400, JSON.stringify(voice));
+      }
+      assert.equal(srv.fetchCalls.length, 0);
     }));
 });

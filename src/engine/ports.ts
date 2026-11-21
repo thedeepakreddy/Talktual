@@ -79,6 +79,11 @@ export interface PlaybackItem {
   segmentId: string;
   text: string;
   lang: string;
+  /**
+   * VoiceMirror (Phase 3, optional): resolved when the segment STARTS playing,
+   * so revoking stops affecting every segment that hasn't started yet.
+   */
+  voice?: () => import('../voicemirror/types').RenderHints | undefined;
 }
 
 export type PlaybackListener = (segmentId: string, status: PlaybackStatus, engine?: 'server' | 'browser') => void;

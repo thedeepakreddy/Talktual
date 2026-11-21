@@ -11,6 +11,7 @@ import { API_BASE } from "./config";
 import { audioContext } from "./audio";
 
 import type { PlaybackItem, PlaybackListener, PlaybackPort } from "../engine/ports";
+import type { RenderHints } from "../voicemirror/types";
 import type { PlaybackStatus } from "../engine/events";
 
 /** Pending (not yet started) segments kept before the oldest is dropped. */
@@ -158,7 +159,7 @@ export class PlaybackController implements PlaybackPort {
         this.emit(item.segmentId, "started");
         let outcome: Engine | "none" | "cancelled" = "none";
         try {
-          outcome = await playOne(item.text, item.lang, state);
+          outcome = await playOne(item.text, item.lang, state, safeHints(item.voice));
         } catch (err) {
           console.error("TTS playback failed:", err);
           outcome = state.aborted ? "cancelled" : "none";
@@ -216,12 +217,26 @@ export function stopSpeaking() {
 }
 
 /** Which engine actually produced audio, "none" if nothing could, "cancelled" if cut off. */
-async function playOne(text: string, lang: string, state: PlaybackState): Promise<Engine | "none" | "cancelled"> {
+function safeHints(resolve?: () => RenderHints | undefined): RenderHints | undefined {
+  try {
+    return resolve?.();
+  } catch {
+    return undefined; // a hint failure must never block playback
+  }
+}
+
+async function playOne(
+  text: string,
+  lang: string,
+  state: PlaybackState,
+  hints?: RenderHints
+): Promise<Engine | "none" | "cancelled"> {
   try {
     const res = await fetch(`${API_BASE}/api/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, lang }),
+      // Only coarse, non-identifying hints go to the server; it picks the voice.
+      body: JSON.stringify(hints ? { text, lang, voice: { register: hints.register, speed: hints.ttsSpeed } } : { text, lang }),
       signal: state.controller.signal,
     });
 
@@ -238,7 +253,7 @@ async function playOne(text: string, lang: string, state: PlaybackState): Promis
   } catch (err) {
     if (state.aborted) return "cancelled";
     console.warn("Falling back to browser speech synthesis:", err);
-    const spoke = await browserSpeak(text, lang, state);
+    const spoke = await browserSpeak(text, lang, state, hints);
     if (state.aborted) return "cancelled";
     return spoke ? "browser" : "none";
   }
@@ -378,7 +393,7 @@ async function playEncoded(res: Response, state: PlaybackState): Promise<void> {
 }
 
 /** Last resort so a call never goes silent, even with no API key configured. */
-function browserSpeak(text: string, lang: string, state: PlaybackState): Promise<boolean> {
+function browserSpeak(text: string, lang: string, state: PlaybackState, hints?: RenderHints): Promise<boolean> {
   if (!("speechSynthesis" in window) || state.aborted) return Promise.resolve(false);
 
   return new Promise<boolean>((resolve) => {
@@ -391,6 +406,10 @@ function browserSpeak(text: string, lang: string, state: PlaybackState): Promise
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = lang;
+    if (hints) {
+      utterance.pitch = hints.browserPitch;
+      utterance.rate = hints.browserRate;
+    }
 
     const voice = window.speechSynthesis
       .getVoices()

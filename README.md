@@ -124,7 +124,12 @@ See [.env.example](.env.example) for the full list. The ones that matter most:
 
 Realtime behaviour lives in a React-free engine, `src/engine/CommunicationSession.ts`, with explicit state machines, versioned events, privacy gates and bounded buffers. Components read it through `useCommunicationSession()`. Provider/device adapters are in `src/lib/`. See [docs/phase2/PHASE2_ARCHITECTURE.md](docs/phase2/PHASE2_ARCHITECTURE.md).
 
+## VoiceMirror (Phase 3, experimental, off by default)
+
+Builds with `VITE_VOICEMIRROR=1` show a **Voice match** toggle. With the speaker's explicit, per-call consent, the device measures their pitch level while they talk (on device, nothing recorded or stored). It shares one coarse setting so the other person's translated voice follows that pitch level. It **does not clone or reproduce anyone's voice**; see [the evaluation](docs/phase3/PHASE3_EVALUATION_REPORT.md) for what it does and doesn't preserve. Server side: `VOICEMIRROR_ENABLED=1` and an optional `VOICEMIRROR_VOICE_CATALOG` (validated by `check-config`). Evaluation harness: `eval/voicemirror/`.
+
 ## Audit and engineering reports
 
 - Phase 1 (stabilization): [docs/phase1/](docs/phase1/STABILIZATION_REPORT.md)
 - Phase 2 (communication engine): [docs/phase2/](docs/phase2/PHASE2_HANDOFF.md)
+- Phase 3 (VoiceMirror research & prototype): [docs/phase3/](docs/phase3/PHASE3_HANDOFF.md)
