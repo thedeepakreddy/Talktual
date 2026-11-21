@@ -82,8 +82,10 @@ Speech recognition requires a secure context: `localhost` is fine, but any other
 | `npm run test:server` | Server API + signaling tests (`node:test`, providers stubbed) |
 | `npm run build` | Production build |
 | `npm run test:all` | All four of the above — the CI gate |
-| `npm run test:e2e` | Two-browser Chromium smoke test against the production build and a real server instance (needs Playwright + Chromium installed) |
-| `node e2e/perf.mjs` | Server latency / memory benchmark |
+| `npm run test:e2e` | Browser suites against the production build and a real server: smoke, relay-only recovery, emulated compatibility (needs Playwright + Chromium installed) |
+| `node e2e/privacy-probe.mjs` | Checks that nothing listens in an idle call |
+| `node e2e/latency.mjs . 30` / `node e2e/perf.mjs` | Emulated turn latency / server benchmark |
+| `cd signaling-server && npm run check-config -- --production` | Validates server settings for production (never prints secrets) |
 
 No test makes a live call to a translation, speech or TTS provider: providers are stubbed at the server's `fetch`, and the E2E test scripts the browser's speech recognizer and records speech synthesis. See [docs/phase1/TEST_REPORT.md](docs/phase1/TEST_REPORT.md).
 
@@ -99,6 +101,7 @@ See [.env.example](.env.example) for the full list. The ones that matter most:
 | `ELEVENLABS_TTS_MODEL` | backend | Defaults to `eleven_flash_v2_5`; `eleven_multilingual_v2` sounds better but costs about a second |
 | `ALLOWED_ORIGINS` | backend | **Set in production.** Browser origins allowed to use the API and signaling |
 | `RATE_LIMIT_PER_MINUTE` / `TRUST_PROXY` | backend | **Set in production.** Per-IP limit on paid endpoints; trust the platform proxy for client IPs |
+| `RESUME_GRACE_MS` | backend | How long a dropped participant's seat is held for reconnect (default 20000) |
 | `VITE_TURN_URL` | frontend | TURN server for P2P behind symmetric NAT (note: `VITE_*` values are public) |
 
 ## Deployment
@@ -112,9 +115,16 @@ See [.env.example](.env.example) for the full list. The ones that matter most:
 - **"Translation unavailable — …"** — every configured translator failed or timed out (8 s). The original words are sent and clearly marked; nothing is passed off as a translation. Check the server log.
 - **"No one is waiting on that channel"** — the joiner waited 12 s without the host. Check the code; codes expire after 10 minutes unpaired.
 - **Call shows "Disconnected"** — both the signaling socket and the P2P channel dropped. There is no automatic reconnect yet: leave and start a new channel.
-- **Privacy:** while a call is open on Web Speech browsers, the recognizer listens continuously (results are only *used* while the button is held), so audio goes to the browser's speech service for the duration of the call. See [docs/phase1/SECURITY_REPORT.md](docs/phase1/SECURITY_REPORT.md).
+- **Privacy:** nothing is captured before you accept the disclosure. Push-to-talk (default) sends audio to the speech service only while the button is held (+0.45 s). Hands-free mode is opt-in, shown by a banner, and paused while the other person's translation plays. See [docs/phase2/PHASE2_PRIVACY_REPORT.md](docs/phase2/PHASE2_PRIVACY_REPORT.md).
+- **Network blips:** the call reconnects automatically (the seat is held for 20 s); the other person sees "lost connection — waiting…".
+- **Microphone blocked or unplugged:** a notice explains it; fix the cause, then tap the mic button to retry.
 - Verified browsers: headless Chromium only. See [docs/phase1/COMPATIBILITY_REPORT.md](docs/phase1/COMPATIBILITY_REPORT.md).
 
-## Phase 1 audit
+## Architecture (Phase 2)
 
-Audit, repairs and release-gate evidence live in [docs/phase1/](docs/phase1/STABILIZATION_REPORT.md).
+Realtime behaviour lives in a React-free engine, `src/engine/CommunicationSession.ts`, with explicit state machines, versioned events, privacy gates and bounded buffers. Components read it through `useCommunicationSession()`. Provider/device adapters are in `src/lib/`. See [docs/phase2/PHASE2_ARCHITECTURE.md](docs/phase2/PHASE2_ARCHITECTURE.md).
+
+## Audit and engineering reports
+
+- Phase 1 (stabilization): [docs/phase1/](docs/phase1/STABILIZATION_REPORT.md)
+- Phase 2 (communication engine): [docs/phase2/](docs/phase2/PHASE2_HANDOFF.md)

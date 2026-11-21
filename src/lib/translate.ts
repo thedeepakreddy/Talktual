@@ -3,6 +3,7 @@
 // falls back to MyMemory, which needs no key at all.
 
 import { API_BASE } from "./config";
+import type { TranslationRequest, TranslationResult, TranslationErrorCode } from "../engine/ports";
 
 export type TranslatorId = "gemini" | "deepl" | "mymemory";
 
@@ -22,7 +23,8 @@ export interface Capabilities {
 export class TranslationError extends Error {
   constructor(
     message: string,
-    readonly reason: "http" | "timeout" | "network" | "malformed"
+    readonly reason: "http" | "timeout" | "network" | "malformed",
+    readonly status?: number
   ) {
     super(message);
     this.name = "TranslationError";
@@ -129,7 +131,7 @@ async function fetchTranslation(
     if (timedOut()) throw new TranslationError("Translation timed out", "timeout");
     throw new TranslationError(`Translation network error: ${String(err)}`, "network");
   }
-  if (!res.ok) throw new TranslationError(`Translation failed (${res.status})`, "http");
+  if (!res.ok) throw new TranslationError(`Translation failed (${res.status})`, "http", res.status);
   let data: { text?: unknown; error?: unknown };
   try {
     data = await res.json();
@@ -162,4 +164,71 @@ export function getCapabilities(): Promise<Capabilities> {
 /** Warms DNS/TLS to the proxy so the first real request isn't paying for it. */
 export function prewarm() {
   fetch(`${API_BASE}/api/capabilities`).catch(() => {});
+}
+
+// --- TranslationServiceAdapter ------------------------------------------------
+
+/** One retry, for transient network failures only: a turn can't wait. */
+export const TRANSLATE_MAX_ATTEMPTS = 2;
+export const TRANSLATE_RETRY_DELAY_MS = 300;
+
+function errorCode(err: unknown): TranslationErrorCode {
+  if (err instanceof TranslationError) {
+    if (err.reason === "http") return err.status === 429 ? "rate-limited" : "http";
+    return err.reason;
+  }
+  if ((err as Error)?.name === "AbortError") return "cancelled";
+  return "network";
+}
+
+// Only fast failures are retried. A timeout has already spent the full budget
+// and outgoing turns are serialized, so retrying it would hold the whole
+// conversation for a second budget.
+const retryable = (code: TranslationErrorCode) => code === "network";
+
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(t);
+      resolve();
+    }, { once: true });
+  });
+
+/**
+ * Normalized translation for one segment. Never rejects. A failure returns the
+ * ORIGINAL text with status "failed" — callers must not present it as a
+ * translation (Phase 1 DEF-C02).
+ */
+export async function translateSegment(req: TranslationRequest): Promise<TranslationResult> {
+  const started = Date.now();
+  const base = { segmentId: req.segmentId };
+  if (req.from.split("-")[0] === req.to.split("-")[0]) {
+    return { ...base, status: "passthrough", text: req.text.trim(), attempts: 0, latencyMs: 0 };
+  }
+  let attempts = 0;
+  for (;;) {
+    attempts++;
+    try {
+      const text = await translateText(req.text, req.from, req.to, req.signal);
+      return { ...base, status: "translated", text, attempts, latencyMs: Date.now() - started };
+    } catch (err) {
+      const code = errorCode(err);
+      if (code === "cancelled" || req.signal?.aborted) {
+        return { ...base, status: "cancelled", text: req.text, error: { code: "cancelled", message: "cancelled" }, attempts, latencyMs: Date.now() - started };
+      }
+      if (retryable(code) && attempts < TRANSLATE_MAX_ATTEMPTS) {
+        await sleep(TRANSLATE_RETRY_DELAY_MS, req.signal);
+        continue; // an abort during the wait surfaces as "cancelled" on the next attempt
+      }
+      return {
+        ...base,
+        status: "failed",
+        text: req.text,
+        error: { code, message: (err as Error)?.message ?? String(err) },
+        attempts,
+        latencyMs: Date.now() - started,
+      };
+    }
+  }
 }
