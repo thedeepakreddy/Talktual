@@ -10,7 +10,7 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:server": "npm --prefix signaling-server test",
-    "test:e2e": "node e2e/smoke.mjs",
+    "test:e2e": "node e2e/smoke.mjs && node e2e/recovery.mjs",
     "test:all": "npm run lint && npm test && npm run test:server && npm run build"
   },
   "dependencies": {
