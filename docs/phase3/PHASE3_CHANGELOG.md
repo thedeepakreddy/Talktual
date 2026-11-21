@@ -6,7 +6,9 @@ Branch `claude/kind-archimedes-n6y11p`, restarted from `main` @ `b5d365c` (Phase
 | --- | --- | --- |
 | `adfb91c` | M3.0/M3.1 | Baseline audit, plan, feasibility probe |
 | `969af78` | M3.2–M3.5 | Contracts, analyzer/descriptor/controller, browser tap, engine/playback/server/UI integration, evaluation harness, tests, VoiceMirror E2E |
-| *(next)* | M3.6/M3.7 | Revocation re-delivery fix, evaluation-driven fixes, reports |
+| `5881d9f` | M3.6 | Revocation re-delivery on reconnect; research, architecture, evaluation plan, privacy, failure, integration reports |
+| `705fd95` | M3.6/M3.7 | Tempo transfer disabled after evaluation run 1 (evidence committed) |
+| *(final)* | M3.7 | Run-2 (shipped) evidence; evaluation, test and handoff reports; README |
 
 ## New files
 | Path | Purpose |
@@ -49,3 +51,4 @@ Branch `claude/kind-archimedes-n6y11p`, restarted from `main` @ `b5d365c` (Phase
 * Evaluation oracles initially used espeak pitch *parameters* across different voices (not a real pitch oracle); corrected to measured pitch.
 * Revocation issued during a network outage could be lost; now re-sent on reconnect.
 * A flaky test (substring `f0` matched inside random UUIDs); replaced with a key-based leak check.
+* **Tempo transfer disabled** after evaluation run 1 showed it no better than baseline (worse tail).

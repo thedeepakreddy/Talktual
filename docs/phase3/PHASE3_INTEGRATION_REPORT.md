@@ -33,8 +33,8 @@ VoiceMirror is integrated through Phase 2 extension points only. Each M3.5 item 
 
 | Suite | Result |
 | --- | --- |
-| Client unit/component/engine (`npm test`) | see TEST_REPORT (all Phase 2 tests unchanged and passing) |
-| Server (`npm run test:server`) | see TEST_REPORT (one Phase 2 assertion updated for the additive `voiceHints` capability) |
+| Client unit/component/engine (`npm test`) | 261/261: all 207 Phase 2 tests unchanged and passing, plus 54 new |
+| Server (`npm run test:server`) | 58/58: one Phase 2 assertion updated for the additive `voiceHints` capability, plus 5 new |
 | Browser smoke / recovery / compat (flag off) | 17/17, 8/8, 5/5 |
 | Browser VoiceMirror (flag on) | 8/8 |
 
@@ -46,11 +46,11 @@ Real `getUserMedia` (Chromium fake device playing a **synthetic** espeak voice) 
 | Before opt-in | utterance pitch 1, rate 1 |
 | Opt-in | disclosure shown; "Share voice style" turns it on |
 | First short turn (3 s hold) | still default: the analyzer saw ~0.9 s of voiced speech, below the confidence rule (fails closed) |
-| After more speech | listener renders at **pitch 0.69**, rate 1.20; for an ~82 Hz source voice, the damped mapping predicts ≈ 0.71 |
+| After more speech | listener renders at **pitch 0.69**; for an ~82 Hz source voice, the damped mapping predicts ≈ 0.71. Rate was 1.20 before tempo transfer was disabled and is 1 in the shipped configuration |
 | Revocation | next segment back to pitch 1 / rate 1; "Their voice style matched" disappears |
 | Integrity | each turn spoken exactly once; no page errors; server sessions 0 after leave |
 
-**Finding from this run:** the synthetic voice spoke at 150 wpm (slower than the 175 wpm reference), yet the tempo hint was 1.20 (faster). The evaluation report quantifies tempo reliability across voices and languages and states the resulting product decision.
+**Finding from this run:** the synthetic voice spoke at 150 wpm (slower than the 175 wpm reference), yet the tempo hint was 1.20 (faster). The full evaluation confirmed tempo transfer was unreliable, so it was **disabled** (EVALUATION_REPORT §2).
 
 ## 5. Bundle impact
 Default build JS: 610.36 kB → ≈620 kB (the VoiceMirror code is included even when the flag is off; the browser tap is only constructed when the flag is on). Tree-shaking it out of default builds is a follow-up if size matters.
