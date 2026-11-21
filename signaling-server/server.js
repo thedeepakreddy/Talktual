@@ -70,6 +70,87 @@ function loadConfig(env = process.env) {
   };
 }
 
+// ==========================================
+// CONFIG VALIDATION (Phase 2 / Phase 1 condition: production settings)
+// ==========================================
+//
+// Validates the *raw* environment so typos aren't silently replaced by
+// defaults (e.g. RATE_LIMIT_PER_MINUTE="six hundred" would otherwise mean
+// "off"). Never prints secret values — only names and presence.
+//   errors   → the server refuses to start
+//   warnings → printed at boot; with { production: true } the production
+//              requirements become errors (used by `npm run check-config -- --production`)
+
+const SECRET_KEYS = ["ELEVENLABS_API_KEY", "VITE_ELEVENLABS_API_KEY", "GEMINI_API_KEY", "DEEPL_API_KEY"];
+const TRUST_PROXY_WORDS = new Set(["true", "false", "loopback", "linklocal", "uniquelocal"]);
+
+function validateEnv(env = process.env, { production = false } = {}) {
+  const errors = [];
+  const warnings = [];
+  const prodIssue = (msg) => (production ? errors : warnings).push(msg);
+
+  const intVar = (name, { min = 0 } = {}) => {
+    const raw = env[name];
+    if (raw === undefined || raw === "") return;
+    if (!/^\d+$/.test(String(raw).trim()) || Number(raw) < min) {
+      errors.push(`${name} must be a whole number >= ${min} (got a non-numeric or out-of-range value)`);
+    }
+  };
+
+  if (env.PORT !== undefined && env.PORT !== "" && !/^\d+$/.test(env.PORT)) errors.push("PORT must be a number");
+  intVar("RATE_LIMIT_PER_MINUTE");
+  intVar("MAX_TEXT_CHARS", { min: 1 });
+  intVar("MAX_UPLOAD_BYTES", { min: 1 });
+  intVar("MAX_WS_PAYLOAD_BYTES", { min: 1024 });
+  intVar("TRANSLATE_TIMEOUT_MS", { min: 100 });
+  intVar("TTS_TIMEOUT_MS", { min: 100 });
+  intVar("STT_TIMEOUT_MS", { min: 100 });
+  intVar("SESSION_TIMEOUT_MS", { min: 1000 });
+  intVar("RESUME_GRACE_MS");
+  intVar("TTS_SAMPLE_RATE", { min: 8000 });
+
+  // ALLOWED_ORIGINS: each entry must be exactly an origin (scheme://host[:port]).
+  const origins = (env.ALLOWED_ORIGINS || "").split(",").map((x) => x.trim()).filter(Boolean);
+  for (const o of origins) {
+    let ok = false;
+    try {
+      const u = new URL(o);
+      ok = (u.protocol === "https:" || u.protocol === "http:") && u.origin === o.replace(/\/$/, "");
+    } catch {
+      ok = false;
+    }
+    if (!ok) errors.push(`ALLOWED_ORIGINS entry "${o}" is not an origin (expected e.g. https://app.example.com — no path, no wildcard)`);
+    else if (o.startsWith("http://") && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(o)) {
+      warnings.push(`ALLOWED_ORIGINS entry "${o}" uses http:// — browsers need https for the microphone outside localhost`);
+    }
+  }
+
+  const tp = env.TRUST_PROXY;
+  if (tp !== undefined && tp !== "") {
+    const valid =
+      TRUST_PROXY_WORDS.has(tp) ||
+      /^\d+$/.test(tp) ||
+      tp.split(",").every((part) => /^[0-9a-fA-F:.]+(\/\d{1,3})?$/.test(part.trim()));
+    if (!valid) errors.push('TRUST_PROXY must be true/false, a hop count (e.g. 1), "loopback", or IP/CIDR list');
+  }
+
+  // Production requirements (values are deployment decisions — never guessed here).
+  if (origins.length === 0) prodIssue("ALLOWED_ORIGINS is not set: any website can use this API proxy and its provider quota");
+  if (!env.RATE_LIMIT_PER_MINUTE || Number(env.RATE_LIMIT_PER_MINUTE) === 0) {
+    prodIssue("RATE_LIMIT_PER_MINUTE is not set: /api/* is not rate limited");
+  }
+  if (env.RATE_LIMIT_PER_MINUTE && Number(env.RATE_LIMIT_PER_MINUTE) > 0 && !tp) {
+    warnings.push("RATE_LIMIT_PER_MINUTE is set but TRUST_PROXY is not: behind a reverse proxy every client shares one bucket");
+  }
+  if (!env.ELEVENLABS_API_KEY && env.VITE_ELEVENLABS_API_KEY) {
+    warnings.push("ElevenLabs key is supplied as VITE_ELEVENLABS_API_KEY; rename it to ELEVENLABS_API_KEY (VITE_* names are for browser bundles)");
+  }
+  if (env.RESUME_GRACE_MS === "0") warnings.push("RESUME_GRACE_MS=0 disables reconnect: any network blip ends the call");
+
+  const secrets = Object.fromEntries(SECRET_KEYS.map((k) => [k, Boolean(env[k])]));
+  return { errors, warnings, secretsPresent: secrets };
+}
+
 const LANGUAGE_NAMES = {
   en: "English",
   es: "Spanish",
@@ -757,24 +838,24 @@ function createServer(overrides = {}) {
   return { app, server, wss, sessions, config: cfg, activeTranslator, close };
 }
 
-module.exports = { createServer, loadConfig, LANGUAGE_NAMES, SESSION_ID_RE };
+module.exports = { createServer, loadConfig, validateEnv, LANGUAGE_NAMES, SESSION_ID_RE };
 
 if (require.main === module) {
   require("dotenv").config({ quiet: true });
+  // Only malformed values block startup. Missing production settings are
+  // warnings here (refusing to start could take a live deployment down);
+  // enforce them as a deploy gate with `npm run check-config -- --production`.
+  const check = validateEnv(process.env);
+  if (check.errors.length) {
+    defaultLog("Refusing to start — invalid configuration:");
+    check.errors.forEach((e) => defaultLog(`  ERROR: ${e}`));
+    process.exit(1);
+  }
   const { server, config, activeTranslator } = createServer();
   server.listen(config.port, () => {
     defaultLog(`Talktual signaling + API proxy on :${config.port}`);
     defaultLog(`  translator: ${activeTranslator()}`);
     defaultLog(`  elevenlabs: ${config.elevenLabsApiKey ? `configured (${config.ttsModel})` : "NOT configured"}`);
-    if (config.elevenLabsKeyFromViteVar) {
-      defaultLog("  WARNING: ElevenLabs key read from VITE_ELEVENLABS_API_KEY. Rename it to ELEVENLABS_API_KEY;");
-      defaultLog("           VITE_* variables are meant for the browser bundle and must never hold secrets.");
-    }
-    if (config.allowedOrigins.length === 0) {
-      defaultLog("  WARNING: ALLOWED_ORIGINS is unset — any website can use this API proxy and its provider quota.");
-    }
-    if (!config.rateLimitPerMinute) {
-      defaultLog("  WARNING: RATE_LIMIT_PER_MINUTE is unset — /api/* is not rate limited.");
-    }
+    check.warnings.forEach((w) => defaultLog(`  WARNING: ${w}`));
   });
 }

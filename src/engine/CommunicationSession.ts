@@ -497,13 +497,30 @@ export class CommunicationSession {
     if (!this.privacy.mayCapture(this.snap.features.route) || !this.snap.features.stt) return;
     if (this.pausedForPlayback && reason === 'continuous') return;
     if (!this.asr) {
-      this.asr = this.deps.createAsr(this.config.lang, this.privacy.mode, {
-        onFinal: (seg) => this.onLocalFinal(seg),
-        onPartial: (text) => this.onLocalPartial(text),
-        onSpeechActivity: (active) => this.commit({ hearingVoice: active && (this.snap.holding || this.privacy.mode === 'continuous') }),
-        onError: (code, message, fatal) => this.onAsrError(code, message, fatal),
-        onEnd: () => this.onAsrEnd(),
+      // Callbacks from a recognizer that is no longer current (aborted by
+      // stop/leave/mode change) are ignored: nothing captured after a stop
+      // can be sent, even if an adapter misbehaves.
+      let created: AsrAdapter | null = null;
+      const current = () => created !== null && this.asr === created;
+      created = this.deps.createAsr(this.config.lang, this.privacy.mode, {
+        onFinal: (seg) => {
+          if (current()) this.onLocalFinal(seg);
+          else this.diag.count('stale_asr_results_dropped');
+        },
+        onPartial: (text) => {
+          if (current()) this.onLocalPartial(text);
+        },
+        onSpeechActivity: (active) => {
+          if (current()) this.commit({ hearingVoice: active && (this.snap.holding || this.privacy.mode === 'continuous') });
+        },
+        onError: (code, message, fatal) => {
+          if (current()) this.onAsrError(code, message, fatal);
+        },
+        onEnd: () => {
+          if (current()) this.onAsrEnd();
+        },
       });
+      this.asr = created;
     }
     if (this.activity.state === 'idle' || this.activity.state === 'stopped') this.activity.to('ready', 'start');
     if (this.snap.permission !== 'granted') this.activity.to('permission-pending', reason);

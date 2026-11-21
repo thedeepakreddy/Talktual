@@ -48,6 +48,16 @@ export function makeFakeFetch({ dict = {}, providerCalls = [], sttText = 'hello 
  * server-STT path. Speech synthesis records `{text, lang, t}` (t = Date.now()).
  */
 export function initScript(opts = {}) {
+  // Track this page's WebSockets so a test can cut *this* peer's connection.
+  const NativeWS = window.WebSocket;
+  window.__sockets = [];
+  window.WebSocket = class extends NativeWS {
+    constructor(...args) {
+      super(...args);
+      window.__sockets.push(this);
+    }
+  };
+  window.__dropSockets = () => window.__sockets.forEach((s) => s.readyState <= 1 && s.close(4000, 'test drop'));
   window.__sr = [];
   window.__srLog = [];
   if (opts.noWebSpeech) {

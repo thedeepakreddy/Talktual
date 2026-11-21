@@ -126,12 +126,8 @@ try {
 
   await step('recovery: host signaling socket dropped → reconnects, call continues, nothing spoken twice', async () => {
     const before = await guest.page.evaluate(() => window.__spoken.length);
-    // Kill the host's socket server-side (simulates a network blip).
-    const sockets = [...stack.api.wss.clients];
-    const hostSeat = [...stack.api.sessions.values()].flatMap((s) => s.seats).find((seat) => seat.role === 'offerer');
-    assert.ok(hostSeat?.ws, 'host seat found');
-    hostSeat.ws.terminate();
-    assert.ok(sockets.length >= 2);
+    // Cut the host's signaling socket (simulates a network blip on the host).
+    await host.page.evaluate(() => window.__dropSockets());
     // P2P may carry the call through the blip; either way the next turn arrives once.
     await host.page.waitForTimeout(2500);
     await talk(host.page, 'after the blip');

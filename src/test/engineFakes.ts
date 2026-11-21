@@ -126,6 +126,14 @@ export class FakePlayback implements PlaybackPort {
     if (this.queue.length) this.next();
     this.emit(cur.segmentId, 'ended');
   }
+  /** Driver: the current segment fails to play (no voice available). */
+  fail() {
+    const cur = this.playingItem;
+    if (!cur) return;
+    this.playingItem = null;
+    if (this.queue.length) this.next();
+    this.emit(cur.segmentId, 'failed');
+  }
   cancelAll() {
     const items = [...(this.playingItem ? [this.playingItem] : []), ...this.queue];
     this.playingItem = null;
