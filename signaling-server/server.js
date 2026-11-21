@@ -29,6 +29,8 @@ function loadConfig(env = process.env) {
     port: env.PORT || 8080,
     // Rooms are shared by QR code, which takes a moment in the real world.
     sessionTimeoutMs: toInt(env.SESSION_TIMEOUT_MS, 10 * 60 * 1000),
+    /** How long a dropped participant's seat is held for them to reconnect. 0 disables resume. */
+    resumeGraceMs: toInt(env.RESUME_GRACE_MS, 20_000),
     elevenLabsApiKey: elevenKey,
     elevenLabsKeyFromViteVar: !env.ELEVENLABS_API_KEY && Boolean(env.VITE_ELEVENLABS_API_KEY),
     voiceId: env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM", // Rachel
@@ -524,16 +526,122 @@ function createServer(overrides = {}) {
     verifyClient: (info) => originAllowed(info.origin || info.req.headers.origin),
   });
 
-  // sessionId -> { peers: [ws, ws], createdAt: number }
+  // sessionId -> Session. A session has up to two *seats*. A seat survives an
+  // unexpected socket drop for `resumeGraceMs` and can be reclaimed with its
+  // resume token; an intentional `leave` frees it at once.
+  //   seat = { ws: WebSocket|null, token, role: "offerer"|"answerer", awayTimer }
   const sessions = new Map();
 
+  const crypto = require("crypto");
+  const newToken = () => crypto.randomBytes(16).toString("base64url");
+  const isLobby = (id) => id.endsWith("_signal");
+
+  function newSession() {
+    return {
+      seats: [],
+      createdAt: Date.now(),
+      /** Sockets currently connected (Phase 1 shape, still used by callers/tests). */
+      get peers() {
+        return this.seats.filter((s) => s.ws).map((s) => s.ws);
+      },
+    };
+  }
+
   const sendJson = (ws, payload) => {
-    if (ws.readyState === 1) ws.send(JSON.stringify(payload));
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(payload));
   };
+
+  const others = (session, seat) => session.seats.filter((s) => s !== seat && s.ws);
+
+  function freeSeat(id, session, seat, notify = true) {
+    clearTimeout(seat.awayTimer);
+    session.seats = session.seats.filter((s) => s !== seat);
+    if (seat.ws) {
+      seat.ws.sessionId = null;
+      seat.ws.seat = null;
+    }
+    if (session.seats.length === 0 || session.seats.every((s) => !s.ws)) {
+      session.seats.forEach((s) => clearTimeout(s.awayTimer));
+      sessions.delete(id);
+      log("session emptied and removed");
+      return;
+    }
+    if (notify) others(session, seat).forEach((s) => sendJson(s.ws, { type: "peer-left" }));
+  }
+
+  function seatSocket(id, session, seat, ws) {
+    seat.ws = ws;
+    ws.sessionId = id;
+    ws.seat = seat;
+  }
+
+  function handleJoin(ws, msg) {
+    if (ws.sessionId) {
+      sendJson(ws, { type: "error", code: "already_joined", message: "Already in a session" });
+      return;
+    }
+    if (typeof msg.sessionId !== "string" || !SESSION_ID_RE.test(msg.sessionId)) {
+      sendJson(ws, { type: "error", code: "invalid_session", message: "Invalid session id" });
+      return;
+    }
+    const id = msg.sessionId;
+    let session = sessions.get(id);
+
+    // --- Resume a held seat -------------------------------------------------
+    if (msg.resumeToken !== undefined) {
+      const seat =
+        typeof msg.resumeToken === "string" && session
+          ? session.seats.find((s) => s.token === msg.resumeToken)
+          : null;
+      if (!seat || (seat.ws && seat.ws.readyState === 1)) {
+        sendJson(ws, { type: "error", code: "resume_failed", message: "That call is no longer available" });
+        return;
+      }
+      clearTimeout(seat.awayTimer);
+      seat.awayTimer = null;
+      seatSocket(id, session, seat, ws);
+      log("seat resumed");
+      sendJson(ws, { type: "role", role: seat.role });
+      sendJson(ws, { type: "joined", role: seat.role, resumeToken: seat.token, resumed: true });
+      const rest = others(session, seat);
+      rest.forEach((s) => sendJson(s.ws, { type: "peer-back" }));
+      if (rest.length === 1) {
+        [seat, ...rest].forEach((s) => sendJson(s.ws, { type: "ready", resumed: true }));
+      }
+      return;
+    }
+
+    // --- Fresh join ---------------------------------------------------------
+    if (!session) {
+      session = newSession();
+      sessions.set(id, session);
+    }
+    // Sockets that died without a close event (no timer running) are ghosts.
+    session.seats = session.seats.filter((s) => (s.ws && s.ws.readyState === 1) || s.awayTimer);
+
+    if (session.seats.length >= 2) {
+      sendJson(ws, { type: "error", code: "session_full", message: "Session full" });
+      return;
+    }
+    const taken = new Set(session.seats.map((s) => s.role));
+    const role = taken.has("offerer") ? "answerer" : "offerer";
+    const seat = { ws: null, token: newToken(), role, awayTimer: null };
+    session.seats.push(seat);
+    seatSocket(id, session, seat, ws);
+    log("joined session seats:", session.seats.length);
+
+    sendJson(ws, { type: "role", role });
+    sendJson(ws, { type: "joined", role, resumeToken: seat.token });
+
+    if (session.seats.length === 2 && session.seats.every((s) => s.ws)) {
+      session.seats.forEach((s) => sendJson(s.ws, { type: "ready" }));
+    }
+  }
 
   wss.on("connection", (ws) => {
     ws.isAlive = true;
     ws.sessionId = null;
+    ws.seat = null;
     ws.on("pong", () => {
       ws.isAlive = true;
     });
@@ -552,34 +660,15 @@ function createServer(overrides = {}) {
       }
       if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return;
 
-      if (msg.type === "join") {
-        if (ws.sessionId) {
-          sendJson(ws, { type: "error", code: "already_joined", message: "Already in a session" });
-          return;
-        }
-        if (typeof msg.sessionId !== "string" || !SESSION_ID_RE.test(msg.sessionId)) {
-          sendJson(ws, { type: "error", code: "invalid_session", message: "Invalid session id" });
-          return;
-        }
-        const existing = sessions.get(msg.sessionId);
-        // Drop peers whose sockets are already gone so a ghost can't hold a seat.
-        const peers = existing ? existing.peers.filter((p) => p.readyState === 1) : [];
+      if (msg.type === "join") return handleJoin(ws, msg);
 
-        if (peers.length >= 2) {
-          sendJson(ws, { type: "error", code: "session_full", message: "Session full" });
-          return;
-        }
+      const session = ws.sessionId ? sessions.get(ws.sessionId) : null;
+      const seat = ws.seat;
+      if (!session || !seat || !session.seats.includes(seat) || seat.ws !== ws) return;
 
-        peers.push(ws);
-        sessions.set(msg.sessionId, { peers, createdAt: existing?.createdAt ?? Date.now() });
-        ws.sessionId = msg.sessionId;
-        log("joined session peers:", peers.length);
-
-        sendJson(ws, { type: "role", role: peers.length === 1 ? "offerer" : "answerer" });
-
-        if (peers.length === 2) {
-          peers.forEach((p) => sendJson(p, { type: "ready" }));
-        }
+      if (msg.type === "leave") {
+        // Intentional: free the seat now so the other side learns immediately.
+        freeSeat(ws.sessionId, session, seat);
         return;
       }
 
@@ -592,24 +681,36 @@ function createServer(overrides = {}) {
       // sending a Buffer produces a *binary* frame. The browser then surfaces it
       // as a Blob, JSON.parse throws, and every relayed message — offers,
       // answers, ICE candidates — is silently swallowed.
-      const session = ws.sessionId ? sessions.get(ws.sessionId) : null;
-      if (!session || !session.peers.includes(ws)) return;
       const text = JSON.stringify(msg);
-      session.peers.forEach((peer) => {
-        if (peer !== ws && peer.readyState === 1) peer.send(text);
+      others(session, seat).forEach((s) => {
+        if (s.ws.readyState === 1) s.ws.send(text);
       });
     });
 
     ws.on("close", () => {
-      const session = ws.sessionId ? sessions.get(ws.sessionId) : null;
-      if (!session || !session.peers.includes(ws)) return;
-      session.peers = session.peers.filter((p) => p !== ws);
-      if (session.peers.length === 0) {
-        sessions.delete(ws.sessionId);
-        log("session emptied and removed");
-      } else {
-        session.peers.forEach((p) => sendJson(p, { type: "peer-left" }));
+      const id = ws.sessionId;
+      const session = id ? sessions.get(id) : null;
+      const seat = ws.seat;
+      if (!session || !seat || seat.ws !== ws || !session.seats.includes(seat)) return;
+      const remaining = others(session, seat);
+      // Lobbies don't resume, and with nobody left there's nobody to resume to.
+      if (isLobby(id) || remaining.length === 0 || cfg.resumeGraceMs <= 0) {
+        freeSeat(id, session, seat);
+        return;
       }
+      // Unexpected drop: hold the seat so the same user can come back.
+      seat.ws = null;
+      ws.sessionId = null;
+      ws.seat = null;
+      remaining.forEach((s) => sendJson(s.ws, { type: "peer-away" }));
+      seat.awayTimer = setTimeout(() => {
+        seat.awayTimer = null;
+        if (sessions.get(id) === session && session.seats.includes(seat) && !seat.ws) {
+          log("held seat expired");
+          freeSeat(id, session, seat);
+        }
+      }, cfg.resumeGraceMs);
+      seat.awayTimer.unref?.();
     });
   });
 
@@ -624,10 +725,14 @@ function createServer(overrides = {}) {
   const cleanup = setInterval(() => {
     const now = Date.now();
     for (const [id, session] of sessions.entries()) {
-      if (session.peers.length < 2 && now - session.createdAt > cfg.sessionTimeoutMs) {
-        session.peers.forEach((p) => {
-          sendJson(p, { type: "expired" });
-          p.sessionId = null;
+      if (session.seats.length < 2 && now - session.createdAt > cfg.sessionTimeoutMs) {
+        session.seats.forEach((seat) => {
+          clearTimeout(seat.awayTimer);
+          sendJson(seat.ws, { type: "expired" });
+          if (seat.ws) {
+            seat.ws.sessionId = null;
+            seat.ws.seat = null;
+          }
         });
         sessions.delete(id);
         log("session expired");
@@ -641,6 +746,7 @@ function createServer(overrides = {}) {
   function close() {
     clearInterval(heartbeat);
     clearInterval(cleanup);
+    for (const session of sessions.values()) session.seats.forEach((seat) => clearTimeout(seat.awayTimer));
     wss.clients.forEach((ws) => ws.terminate());
     return new Promise((resolve) => {
       wss.close(() => server.close(() => resolve()));

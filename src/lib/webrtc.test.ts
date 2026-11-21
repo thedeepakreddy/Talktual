@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FakeWebSocket, FakePeerConnection, flush } from '../test/fakes';
-import { connectCall, isCallMessage, CallMessage } from './webrtc';
+import { connectCall, isCallMessage, CallMessage, reconnectDelay, OUTBOX_MAX_SEGMENTS } from './webrtc';
 
 beforeEach(() => {
   FakeWebSocket.instances = [];
@@ -67,7 +67,7 @@ describe('connectCall', () => {
     ws.receive({ type: 'ready' });
     expect(onTransport).toHaveBeenCalledWith('relay');
     expect(onStatus).toHaveBeenLastCalledWith('connected');
-    expect(ws.sent).toContainEqual({ type: 'app', payload: { t: 'hello', lang: 'en-US', name: 'Me' } });
+    expect(ws.sent).toContainEqual({ type: 'app', payload: { v: 1, t: 'hello', lang: 'en-US', name: 'Me' } });
   });
 
   it('delivers valid relayed messages and drops malformed ones without throwing', async () => {
@@ -97,7 +97,7 @@ describe('connectCall', () => {
     pc.channel!.open();
     expect(onTransport).toHaveBeenLastCalledWith('p2p');
     call.send(segment);
-    expect(pc.channel!.sent).toEqual([segment]);
+    expect(pc.channel!.sent).toEqual([{ ...segment, v: 1 }]);
     pc.channel!.onmessage!({ data: JSON.stringify(segment) });
     pc.channel!.onmessage!({ data: JSON.stringify({ t: 'segment' }) });
     expect(onMessage).toHaveBeenCalledTimes(1);
@@ -151,5 +151,165 @@ describe('connectCall', () => {
     ws.drop();
     expect(onStatus).not.toHaveBeenCalled();
     call.send(segment); // no throw, nothing sent
+  });
+});
+
+describe('Phase 2 transport: versioning, leave, outbox, resume', () => {
+  it('rejects unknown wire versions but accepts unversioned (Phase 1) and v1', () => {
+    expect(isCallMessage({ ...segment, v: 1 })).toBe(true);
+    expect(isCallMessage(segment)).toBe(true);
+    expect(isCallMessage({ ...segment, v: 2 })).toBe(false);
+    expect(isCallMessage({ ...segment, seq: -1 })).toBe(false);
+    expect(isCallMessage({ ...segment, seq: 3 })).toBe(true);
+  });
+
+  it('close() sends an intentional leave before closing', () => {
+    const { call, ws } = setup();
+    ws.open();
+    call.close();
+    expect(ws.sent.at(-1)).toEqual({ type: 'leave' });
+    expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+  });
+
+  it('does not relay into an empty room: holds segments, drops partials, keeps the latest hello', () => {
+    const { call, ws } = setup();
+    ws.open(); // joined, but no peer yet
+    call.send({ t: 'hello', lang: 'en', name: 'A' });
+    call.send({ t: 'hello', lang: 'fr', name: 'A' });
+    call.send({ t: 'partial', text: 'stale', lang: 'en' });
+    call.send(segment);
+    expect(ws.sent.filter((m) => (m as { type: string }).type === 'app')).toEqual([]);
+    ws.receive({ type: 'ready' });
+    const apps = ws.sent.filter((m) => (m as { type: string }).type === 'app').map((m) => (m as { payload: CallMessage }).payload);
+    expect(apps).toEqual([
+      { v: 1, t: 'hello', lang: 'fr', name: 'A' },
+      { ...segment, v: 1 },
+    ]);
+  });
+
+  it('outbox is bounded: keeps the newest segments', () => {
+    const { call, ws } = setup();
+    for (let i = 0; i < OUTBOX_MAX_SEGMENTS + 5; i++) call.send({ ...segment, id: `s${i}` });
+    ws.open();
+    ws.receive({ type: 'ready' });
+    const ids = ws.sent
+      .filter((m) => (m as { type: string }).type === 'app')
+      .map((m) => ((m as { payload: { id: string } }).payload.id));
+    expect(ids).toHaveLength(OUTBOX_MAX_SEGMENTS);
+    expect(ids[0]).toBe('s5');
+  });
+
+  it('maps server error codes and peer presence', () => {
+    const { ws, onStatus } = setup();
+    ws.open();
+    ws.receive({ type: 'error', code: 'session_full' });
+    expect(onStatus).toHaveBeenLastCalledWith('session-full');
+    ws.receive({ type: 'error', code: 'invalid_session' });
+    expect(onStatus).toHaveBeenLastCalledWith('invalid-session');
+    ws.receive({ type: 'peer-away' });
+    expect(onStatus).toHaveBeenLastCalledWith('peer-away');
+    ws.receive({ type: 'peer-back' });
+    expect(onStatus).toHaveBeenLastCalledWith('peer-back');
+  });
+
+  it('backoff doubles and is capped', () => {
+    expect([1, 2, 3, 4, 5, 6, 7].map((n) => reconnectDelay(n))).toEqual([500, 1000, 2000, 4000, 8000, 8000, 8000]);
+  });
+
+  describe('reconnect', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    function joinedCall() {
+      const ctx = setup();
+      ctx.ws.open();
+      ctx.ws.receive({ type: 'role', role: 'answerer' });
+      ctx.ws.receive({ type: 'joined', role: 'answerer', resumeToken: 'tok-1' });
+      ctx.ws.receive({ type: 'ready' });
+      return ctx;
+    }
+
+    it('signaling drop without P2P → reconnecting, rejoins with the token, renegotiates, resends held segments', async () => {
+      const ctx = joinedCall();
+      ctx.ws.drop();
+      expect(ctx.onStatus).toHaveBeenLastCalledWith('reconnecting');
+      ctx.call.send(segment); // produced while offline → held
+      vi.advanceTimersByTime(500);
+      const ws2 = FakeWebSocket.instances[1];
+      expect(ws2).toBeDefined();
+      ws2.open();
+      expect(ws2.sent[0]).toEqual({ type: 'join', sessionId: 'ROOM01', resumeToken: 'tok-1' });
+      ws2.receive({ type: 'joined', role: 'answerer', resumeToken: 'tok-1', resumed: true });
+      ws2.receive({ type: 'ready', resumed: true });
+      expect(ctx.onStatus).toHaveBeenLastCalledWith('connected');
+      expect(ws2.sent).toContainEqual({ type: 'app', payload: { ...segment, v: 1 } });
+      // A fresh peer connection is used for renegotiation.
+      ws2.receive({ type: 'offer', offer: { type: 'offer', sdp: 'o2' } });
+      await flush();
+      expect(FakePeerConnection.instances.length).toBe(2);
+      expect(ws2.sent).toContainEqual({ type: 'answer', answer: { type: 'answer', sdp: 'a' } });
+    });
+
+    it('signaling drop with P2P up → call stays connected while signaling recovers in the background', async () => {
+      const ctx = setup();
+      ctx.ws.open();
+      ctx.ws.receive({ type: 'role', role: 'offerer' });
+      ctx.ws.receive({ type: 'joined', role: 'offerer', resumeToken: 'tok-2' });
+      ctx.ws.receive({ type: 'ready' });
+      await flush();
+      ctx.pc.channel!.open();
+      ctx.onStatus.mockClear();
+      ctx.ws.drop();
+      expect(ctx.onStatus).not.toHaveBeenCalled();
+      ctx.call.send(segment);
+      expect(ctx.pc.channel!.sent).toContainEqual({ ...segment, v: 1 });
+      vi.advanceTimersByTime(500);
+      expect(FakeWebSocket.instances).toHaveLength(2);
+    });
+
+    it('gives up after the attempt budget and reports disconnected', () => {
+      const ctx = joinedCall();
+      const attempts = vi.fn();
+      ctx.ws.drop();
+      for (let i = 0; i < 6; i++) {
+        vi.advanceTimersByTime(10_000);
+        FakeWebSocket.instances.at(-1)!.drop(); // each attempt fails
+      }
+      vi.advanceTimersByTime(10_000);
+      expect(FakeWebSocket.instances).toHaveLength(7);
+      expect(ctx.onStatus).toHaveBeenLastCalledWith('disconnected');
+      void attempts;
+    });
+
+    it('resume refused → resume-failed, no further attempts', () => {
+      const ctx = joinedCall();
+      ctx.ws.drop();
+      vi.advanceTimersByTime(500);
+      const ws2 = FakeWebSocket.instances[1];
+      ws2.open();
+      ws2.receive({ type: 'error', code: 'resume_failed' });
+      expect(ctx.onStatus).toHaveBeenLastCalledWith('resume-failed');
+      ws2.drop();
+      vi.advanceTimersByTime(60_000);
+      expect(FakeWebSocket.instances).toHaveLength(2);
+    });
+
+    it('leaving during reconnect cancels the pending attempt', () => {
+      const ctx = joinedCall();
+      ctx.ws.drop();
+      ctx.call.close();
+      vi.advanceTimersByTime(60_000);
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    });
+
+    it('without a resume token (Phase 1 server) a drop is final, as before', () => {
+      const ctx = setup();
+      ctx.ws.open();
+      ctx.ws.receive({ type: 'ready' });
+      ctx.ws.drop();
+      expect(ctx.onStatus).toHaveBeenLastCalledWith('disconnected');
+      vi.advanceTimersByTime(60_000);
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    });
   });
 });
