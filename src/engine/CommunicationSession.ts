@@ -38,6 +38,7 @@ import type {
   Translator,
 } from './ports';
 import type { CallHandle, TransportStatus } from '../lib/webrtc';
+import { VoiceMirrorController, type VoiceTapPort } from '../voicemirror/controller.ts';
 
 export const PARTIAL_SEND_INTERVAL_MS = 180;
 export const PARTIAL_TRANSLATE_DEBOUNCE_MS = 400;
@@ -65,6 +66,8 @@ export interface SessionDeps {
   storage: StorageLike | null;
   /** Called synchronously inside the talk gesture (mobile audio unlock). */
   onUserGesture?: () => void;
+  /** VoiceMirror (Phase 3): present only when the feature flag is on. */
+  voiceTap?: VoiceTapPort;
   now?: () => number;
   setTimeout?: typeof setTimeout;
   clearTimeout?: typeof clearTimeout;
@@ -99,6 +102,15 @@ export interface SessionSnapshot {
   lastLatencyMs: number | null;
   connectedAt: number | null;
   reconnectAttempt: number;
+  /** VoiceMirror (Phase 3). */
+  voice: {
+    available: boolean;
+    /** Disclosure for sharing voice characteristics is open. */
+    prompt: boolean;
+    sharing: boolean;
+    descriptorSent: boolean;
+    peerActive: boolean;
+  };
 }
 
 export class CommunicationSession {
@@ -132,6 +144,7 @@ export class CommunicationSession {
   private partialAbort: AbortController | null = null;
   private noticeTimer: ReturnType<typeof setTimeout> | null = null;
   private unsubs: Array<() => void> = [];
+  private voice: VoiceMirrorController | null = null;
 
   constructor(
     private config: SessionConfig,
@@ -195,7 +208,56 @@ export class CommunicationSession {
       lastLatencyMs: null,
       connectedAt: null,
       reconnectAttempt: 0,
+      voice: { available: Boolean(deps.voiceTap), prompt: false, sharing: false, descriptorSent: false, peerActive: false },
     };
+    if (deps.voiceTap) {
+      this.voice = new VoiceMirrorController({
+        tap: deps.voiceTap,
+        send: (m) => this.call?.send(m),
+        // Enum status only: no voice-derived numbers ever reach diagnostics.
+        diag: (status) => this.diag.record('voicemirror', { status }),
+        onChange: () => {
+          if (this.voice) this.commit({ voice: { ...this.snap.voice, ...this.voice.state } });
+        },
+      });
+    }
+  }
+
+  // ==========================================================================
+  // VoiceMirror (Phase 3) — opt-in per call, never persisted
+  // ==========================================================================
+
+  /** Opens the VoiceMirror disclosure (or turns it off if it is on). */
+  toggleVoiceMirror(): void {
+    if (!this.voice || this.isTerminal) return;
+    if (this.voice.state.sharing) {
+      this.voice.optOut();
+      return;
+    }
+    this.commit({ voice: { ...this.snap.voice, prompt: true } });
+  }
+
+  acceptVoiceMirror(): void {
+    if (!this.voice || this.isTerminal) return;
+    this.commit({ voice: { ...this.snap.voice, prompt: false } });
+    this.voice.optIn();
+    // Already talking (hands-free): start analysing now.
+    if (this.asr?.active) this.voice.onCaptureStart();
+  }
+
+  declineVoiceMirror(): void {
+    if (!this.voice) return;
+    this.commit({ voice: { ...this.snap.voice, prompt: false } });
+  }
+
+  /** Revocation: stops analysis, deletes local data, tells the peer to delete theirs. */
+  stopVoiceMirror(): void {
+    this.voice?.optOut();
+  }
+
+  /** For tests/diagnostics: is any voice-derived data held in memory? */
+  holdsVoiceData(): boolean {
+    return this.voice?.holdsVoiceData() ?? false;
   }
 
   // ==========================================================================
@@ -413,6 +475,7 @@ export class CommunicationSession {
         }
         if (this.snap.notice?.code === 'peer-away' || this.snap.notice?.code === 'connection-lost') this.clearNotice();
         this.sendHello();
+        this.voice?.onConnected();
         this.refreshFeatures();
         if (this.privacy.mode === 'continuous' && this.micEnabled && !this.asr?.active) this.startAsr('continuous');
         break;
@@ -477,6 +540,7 @@ export class CommunicationSession {
     this.work.abort();
     const cancelled = this.deps.playback.cancelAll();
     this.stopAsr('abort', 'teardown', true);
+    this.voice?.dispose();
     this.deps.capture.release();
     this.unsubs.forEach((u) => u());
     this.unsubs = [];
@@ -545,6 +609,8 @@ export class CommunicationSession {
         this.activity.to('listening', reason);
         this.commitActivity();
         this.emitPrivacy();
+        // VoiceMirror analyses only while capture is active (same gate as ASR).
+        this.voice?.onCaptureStart();
       })
       .catch(() => {
         /* adapter reports failures through onError */
@@ -556,6 +622,7 @@ export class CommunicationSession {
   private stopAsr(how: 'stop' | 'abort', reason: string, disposing = false): void {
     const asr = this.asr;
     if (!asr) return;
+    this.voice?.onCaptureStop();
     if (how === 'abort' || disposing) {
       this.asr = null;
       asr.abort();
@@ -574,6 +641,7 @@ export class CommunicationSession {
 
   private onAsrEnd(): void {
     if (this.isTerminal) return;
+    this.voice?.onCaptureStop();
     if (this.activity.state === 'processing') this.activity.to('ready', 'flushed');
     this.commitActivity();
     this.emitPrivacy();
@@ -711,6 +779,12 @@ export class CommunicationSession {
     if (this.isTerminal) return;
     const myLang = this.config.lang;
 
+    if (msg.t === 'voice') {
+      if (this.voice) this.voice.onPeerMessage(msg);
+      else this.diag.count('voice_messages_ignored');
+      return;
+    }
+
     if (msg.t === 'hello') {
       this.commit({ peer: { name: msg.name || null, lang: msg.lang } });
       this.emit({ type: 'peer.updated', name: msg.name || null, lang: msg.lang });
@@ -789,7 +863,13 @@ export class CommunicationSession {
       // Untranslated text is spoken with a voice for its own language;
       // reading it with ours would mangle every word.
       this.receivedAt.set(msg.id, receivedAt);
-      this.deps.playback.enqueue({ segmentId: msg.id, text, lang: untranslated ? msg.sourceLang : myLang });
+      this.deps.playback.enqueue({
+        segmentId: msg.id,
+        text,
+        lang: untranslated ? msg.sourceLang : myLang,
+        // Resolved at playback start → a revocation applies to queued segments too.
+        voice: this.voice ? () => this.voice?.peerHints() : undefined,
+      });
     };
 
     const sameLanguage = msg.sourceLang.split('-')[0] === myLang.split('-')[0];

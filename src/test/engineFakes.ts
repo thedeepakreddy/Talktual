@@ -235,6 +235,7 @@ export function makeDeps(opts: Parameters<typeof makeSession>[0] = {}) {
     browser: opts.browser ?? CHROME_LIKE,
     storage: h.storage,
     onUserGesture: h.gesture as unknown as () => void,
+    ...opts.deps,
   };
   h.session.dispose();
   return { ...h, deps };
@@ -307,4 +308,49 @@ export async function connected(h: Harness, peerLang = 'es-ES') {
   h.call.status('connected');
   h.call.receive({ t: 'hello', lang: peerLang, name: 'Luis' });
   await settle();
+}
+
+// --- VoiceMirror fakes (Phase 3) ---------------------------------------------------------
+
+export class FakeVoiceTap {
+  opens = 0;
+  closes = 0;
+  failNext = false;
+  private sink: ((s: Float32Array, rate: number) => void) | null = null;
+  get open() {
+    return this.sink !== null;
+  }
+  start = async (onChunk: (s: Float32Array, rate: number) => void) => {
+    if (this.failNext) {
+      this.failNext = false;
+      throw new Error('mic unavailable');
+    }
+    this.opens++;
+    this.sink = onChunk;
+    return () => {
+      this.closes++;
+      this.sink = null;
+    };
+  };
+  /** Driver: deliver audio as a live callback would (in 2048-sample chunks). */
+  feed(samples: Float32Array, rate: number) {
+    for (let i = 0; i < samples.length; i += 2048) this.sink?.(samples.subarray(i, i + 2048), rate);
+  }
+}
+
+/** A voice-like synthetic signal: harmonic tone at f0 with light vibrato, pulsed at `pulseHz`. */
+export function synthVoice(f0: number, seconds: number, rate = 16000, pulseHz = 4): Float32Array {
+  const n = Math.round(seconds * rate);
+  const out = new Float32Array(n);
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / rate;
+    const f = f0 * 2 ** ((0.5 * Math.sin(2 * Math.PI * 5 * t)) / 12);
+    phase += (2 * Math.PI * f) / rate;
+    let x = 0;
+    for (let k = 1; k < 12; k++) x += (0.6 / k) * Math.sin(k * phase);
+    const env = (0.5 - 0.5 * Math.cos(2 * Math.PI * pulseHz * t)) ** 2;
+    out[i] = 0.3 * x * env;
+  }
+  return out;
 }
