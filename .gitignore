@@ -11,3 +11,5 @@ e2e/.dist-latency/
 e2e/.dist-vm/
 e2e/.dist-latency-mic.wav
 __pycache__/
+e2e/.dist-conv/
+e2e/.dist-conv-off/
