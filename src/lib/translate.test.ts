@@ -112,3 +112,75 @@ describe('getCapabilities', () => {
     expect(await getCapabilities()).toEqual({ tts: false, stt: false, translator: 'mymemory', liveCaptions: false });
   });
 });
+
+describe('translateSegment (normalized adapter, M2.3)', () => {
+  const req = { segmentId: 's1', text: 'hello', from: 'en-US', to: 'es-ES' };
+
+  it('success carries status, attempts and the segment id', async () => {
+    fetchMock.mockResolvedValue(ok('hola'));
+    const { translateSegment } = await load();
+    const r = await translateSegment(req);
+    expect(r).toMatchObject({ segmentId: 's1', status: 'translated', text: 'hola', attempts: 1 });
+    expect(r.error).toBeUndefined();
+  });
+
+  it('same language is passthrough with no request', async () => {
+    const { translateSegment } = await load();
+    const r = await translateSegment({ ...req, to: 'en-GB' });
+    expect(r).toMatchObject({ status: 'passthrough', text: 'hello', attempts: 0 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('never fakes success: failure returns the original text with status failed and a code', async () => {
+    fetchMock.mockResolvedValue(new Response('{"error":"translation_failed"}', { status: 502 }));
+    const { translateSegment } = await load();
+    const r = await translateSegment(req);
+    expect(r.status).toBe('failed');
+    expect(r.text).toBe('hello');
+    expect(r.error?.code).toBe('http');
+    expect(r.attempts).toBe(1); // HTTP errors are not retried
+  });
+
+  it('429 is reported as rate-limited and not retried', async () => {
+    fetchMock.mockResolvedValue(new Response('{"error":"rate_limited"}', { status: 429 }));
+    const { translateSegment } = await load();
+    const r = await translateSegment(req);
+    expect(r).toMatchObject({ status: 'failed', attempts: 1, error: { code: 'rate-limited' } });
+  });
+
+  it('a transient network error is retried once, then succeeds', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(ok('hola'));
+    const { translateSegment } = await load();
+    const r = await translateSegment(req);
+    expect(r).toMatchObject({ status: 'translated', text: 'hola', attempts: 2 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries are bounded: two network failures → failed after 2 attempts (no retry storm)', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    const { translateSegment } = await load();
+    const r = await translateSegment(req);
+    expect(r).toMatchObject({ status: 'failed', attempts: 2, error: { code: 'network' } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancellation returns status cancelled and does not retry', async () => {
+    fetchMock.mockImplementation(
+      (_u: string, init: RequestInit) =>
+        new Promise((_r, rej) => init.signal!.addEventListener('abort', () => rej(new DOMException('a', 'AbortError'))))
+    );
+    const { translateSegment } = await load();
+    const c = new AbortController();
+    const p = translateSegment({ ...req, signal: c.signal });
+    c.abort();
+    const r = await p;
+    expect(r.status).toBe('cancelled');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('malformed provider payload → failed/malformed', async () => {
+    fetchMock.mockResolvedValue(new Response('{"text":null}', { status: 200 }));
+    const { translateSegment } = await load();
+    expect((await translateSegment(req)).error?.code).toBe('malformed');
+  });
+});

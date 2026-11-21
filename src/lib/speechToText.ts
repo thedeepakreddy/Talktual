@@ -1,40 +1,33 @@
-// Push-to-talk speech recognition.
+// Speech recognition adapters (SpeechRecognitionAdapter).
 //
-// The whole point of this module is that transcription finishes *while* the
-// user is still holding the button, not after they let go. The Web Speech API
-// gives us that for free: it streams interim text continuously and finalizes
-// each phrase at natural pauses, so a long utterance turns into several
-// segments that we can translate and ship one at a time.
+// Contract (engine/ports.ts): a recognizer listens ONLY between start() and
+// stop()/abort(). Nothing here starts on its own. That is what makes the
+// listening mode enforceable:
+//   * push-to-talk — the session calls start() on press and stop() on release;
+//     stop() keeps accepting for a short tail, forces the engine to flush the
+//     last phrase, then ends for good;
+//   * continuous — the session calls start() when the user turns it on and
+//     stop()/abort() when they turn it off; while active, an engine that ends
+//     by itself (Chrome does this every so often) is restarted.
 //
-// Browsers without Web Speech (Firefox, mostly) fall back to recording the
-// whole push and posting it to ElevenLabs Scribe on release. That path is
-// correct but not instant — roughly a second of upload-and-transcribe.
+// Phase 1 kept the Web Speech recognizer running for the whole call so the
+// first word wasn't clipped; that streamed audio to the browser vendor while
+// the user wasn't talking (Phase 1 SEC-R1). It no longer does.
+//
+// Two engines:
+//   * webspeech — the browser's streaming recognizer (interim + final text).
+//   * server-stt — records the push and posts it to our server (ElevenLabs
+//     Scribe) on release. Browsers without Web Speech (Firefox, mostly).
 
-import { API_BASE, RELEASE_TAIL_MS } from "./config";
-import { getMic } from "./audio";
+import { API_BASE, FINALIZE_TIMEOUT_MS, RELEASE_TAIL_MS } from "./config";
+import { getMic, setMicEnabled } from "./audio";
+import type { AsrAdapter, AsrCallbacks, AsrEngine, AsrErrorCode } from "../engine/ports";
+import type { ListeningMode, ProcessingRoute } from "../engine/events";
 
-export type SttEngine = "webspeech" | "scribe";
+export type SttEngine = AsrEngine;
 
-export interface RecognizerCallbacks {
-  /** A finalized phrase, ready to translate and send. */
-  onSegment: (text: string) => void;
-  /** Live interim text for on-screen captions. Fires often; cheap to ignore. */
-  onPartial: (text: string) => void;
-  /** The mic is picking up actual speech (Web Speech engine only). */
-  onSpeechActivity?: (active: boolean) => void;
-  onError: (message: string, fatal: boolean) => void;
-}
-
-export interface Recognizer {
-  engine: SttEngine;
-  /** Begin listening for the call. Safe to call more than once. */
-  arm: () => Promise<void>;
-  /** User pressed the PTT button. */
-  hold: () => void;
-  /** User released the PTT button. */
-  release: () => void;
-  destroy: () => void;
-}
+/** A single server-STT recording is cut off (and sent) after this long. */
+export const MAX_RECORDING_MS = 60_000;
 
 // --- Minimal Web Speech typings (not in lib.dom for all TS versions) ---------
 
@@ -85,28 +78,28 @@ export function supportsStreamingStt(): boolean {
 
 // --- Public factory ---------------------------------------------------------
 
-export function createRecognizer(lang: string, cb: RecognizerCallbacks): Recognizer {
-  return getSpeechRecognitionCtor()
-    ? createWebSpeechRecognizer(lang, cb)
-    : createScribeRecognizer(lang, cb);
+export function createAsr(lang: string, mode: ListeningMode, cb: AsrCallbacks): AsrAdapter {
+  return getSpeechRecognitionCtor() ? createWebSpeechAdapter(lang, mode, cb) : createServerSttAdapter(lang, cb);
 }
 
 // --- Web Speech engine (the fast path) --------------------------------------
 
-function createWebSpeechRecognizer(lang: string, cb: RecognizerCallbacks): Recognizer {
+function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallbacks): AsrAdapter {
   const Ctor = getSpeechRecognitionCtor()!;
   let rec: SpeechRecognitionLike | null = null;
-  let armed = false;
-  let holding = false;
-  let tailUntil = 0;
-  let pendingInterim = "";
+  let active = false; // between start() and the end of stop()/abort()
+  let stopping = false;
   let lastEmitted = "";
   let lastEmittedAt = 0;
+  let phraseStartedAt = 0;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
-  let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+  let tailTimer: ReturnType<typeof setTimeout> | null = null;
+  let finalizeTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** Results only count while the button is down, plus a short trailing grace. */
-  const accepting = () => holding || Date.now() < tailUntil;
+  const clearTimers = () => {
+    [restartTimer, tailTimer, finalizeTimer].forEach((t) => t && clearTimeout(t));
+    restartTimer = tailTimer = finalizeTimer = null;
+  };
 
   function emit(text: string) {
     const clean = text.trim();
@@ -115,7 +108,26 @@ function createWebSpeechRecognizer(lang: string, cb: RecognizerCallbacks): Recog
     if (clean === lastEmitted && Date.now() - lastEmittedAt < 1500) return;
     lastEmitted = clean;
     lastEmittedAt = Date.now();
-    cb.onSegment(clean);
+    const endedAt = Date.now();
+    cb.onFinal({ text: clean, lang, startedAt: phraseStartedAt || endedAt, endedAt, engine: "webspeech" });
+    phraseStartedAt = endedAt;
+  }
+
+  function finish() {
+    if (!active) return;
+    active = false;
+    stopping = false;
+    clearTimers();
+    detach();
+    cb.onSpeechActivity?.(false);
+    cb.onPartial("");
+    cb.onEnd?.();
+  }
+
+  function detach() {
+    if (!rec) return;
+    rec.onresult = rec.onerror = rec.onend = rec.onspeechstart = rec.onspeechend = null;
+    rec = null;
   }
 
   function build(): SpeechRecognitionLike {
@@ -126,42 +138,50 @@ function createWebSpeechRecognizer(lang: string, cb: RecognizerCallbacks): Recog
     r.maxAlternatives = 1;
 
     r.onresult = (event) => {
+      if (!active) return;
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         const text = result[0]?.transcript ?? "";
-        if (result.isFinal) {
-          if (accepting()) emit(text);
-        } else {
-          interim += text;
-        }
+        if (result.isFinal) emit(text);
+        else interim += text;
       }
-      pendingInterim = interim;
-      if (accepting()) cb.onPartial(interim.trim());
+      cb.onPartial(interim.trim());
     };
 
     r.onspeechstart = () => {
-      if (accepting()) cb.onSpeechActivity?.(true);
+      if (active) cb.onSpeechActivity?.(true);
     };
     r.onspeechend = () => cb.onSpeechActivity?.(false);
 
     r.onerror = (event) => {
       const code = (event as Event & { error?: string }).error || "unknown";
-      // These are routine in continuous mode and just mean "restart me".
-      if (code === "no-speech" || code === "aborted" || code === "audio-capture") return;
+      // Routine in continuous recognition: the engine ends and we restart it.
+      if (code === "no-speech" || code === "aborted") return;
       if (code === "not-allowed" || code === "service-not-allowed") {
-        armed = false;
-        cb.onError("Microphone permission denied for speech recognition.", true);
+        cb.onError("permission-denied", "Microphone permission denied for speech recognition.", true);
+        abortNow();
         return;
       }
-      cb.onError(`Speech recognition error: ${code}`, false);
+      if (code === "audio-capture") {
+        cb.onError("capture-unavailable", "No microphone could be opened.", true);
+        abortNow();
+        return;
+      }
+      const mapped: AsrErrorCode = code === "network" ? "network" : "provider";
+      cb.onError(mapped, `Speech recognition error: ${code}`, false);
     };
 
     r.onend = () => {
-      pendingInterim = "";
+      if (!active) return;
+      if (stopping) {
+        finish();
+        return;
+      }
+      // The engine ended on its own while we're supposed to listen
+      // (Chrome does this periodically): keep it alive.
       cb.onSpeechActivity?.(false);
-      // Chrome ends sessions on its own every so often; keep it alive.
-      if (armed) scheduleRestart(150);
+      scheduleRestart(150);
     };
 
     return r;
@@ -171,83 +191,110 @@ function createWebSpeechRecognizer(lang: string, cb: RecognizerCallbacks): Recog
     if (restartTimer) clearTimeout(restartTimer);
     restartTimer = setTimeout(() => {
       restartTimer = null;
-      if (!armed) return;
+      if (!active || stopping) return;
       try {
-        rec?.start();
+        rec = build();
+        rec.start();
       } catch {
-        // Already started, or start() raced with end(); try again shortly.
         scheduleRestart(400);
       }
     }, delay);
   }
 
+  function abortNow() {
+    const r = rec;
+    const wasActive = active;
+    active = false;
+    stopping = false;
+    clearTimers();
+    detach();
+    try {
+      r?.abort();
+    } catch {
+      /* already stopped */
+    }
+    if (wasActive) {
+      cb.onSpeechActivity?.(false);
+      cb.onPartial("");
+    }
+  }
+
   return {
     engine: "webspeech",
+    route: "browser-speech" as ProcessingRoute,
+    get active() {
+      return active;
+    },
 
-    async arm() {
-      if (armed) return;
-      armed = true;
-      rec = build();
+    async start() {
+      if (active && !stopping) return;
+      if (stopping) {
+        // Pressed again during the release tail: keep the running engine.
+        stopping = false;
+        clearTimers();
+        return;
+      }
+      active = true;
+      stopping = false;
+      phraseStartedAt = Date.now();
       try {
+        rec = build();
         rec.start();
       } catch {
-        scheduleRestart(300);
+        scheduleRestart(200);
       }
     },
 
-    hold() {
-      holding = true;
-      tailUntil = 0;
-      pendingInterim = "";
-      if (armed && !rec) {
-        rec = build();
+    stop() {
+      if (!active || stopping) return;
+      stopping = true;
+      if (mode === "continuous") {
+        // No tail in continuous mode: flush and end now.
         try {
-          rec.start();
+          rec?.stop();
         } catch {
-          scheduleRestart(200);
+          finish();
+          return;
         }
-      }
-    },
-
-    release() {
-      holding = false;
-      tailUntil = Date.now() + RELEASE_TAIL_MS;
-      const hadInterim = pendingInterim.trim().length > 0;
-
-      if (releaseTimer) clearTimeout(releaseTimer);
-      releaseTimer = setTimeout(() => {
-        releaseTimer = null;
-        cb.onSpeechActivity?.(false);
-        cb.onPartial("");
-        // If a phrase never finalized on its own, stop() forces the engine to
-        // flush it. onend then restarts us, and that restart happens while the
-        // translation is already in flight — so the user never waits on it.
-        if (hadInterim && pendingInterim.trim()) {
+      } else {
+        // Keep accepting trailing words for a moment, then make the engine
+        // flush the last phrase.
+        tailTimer = setTimeout(() => {
+          tailTimer = null;
           try {
-            rec?.stop();
+            if (rec) rec.stop();
+            else finish();
           } catch {
-            /* already stopped */
+            finish();
           }
+        }, RELEASE_TAIL_MS);
+      }
+      // Never wait forever for an engine that doesn't end.
+      finalizeTimer = setTimeout(() => {
+        finalizeTimer = null;
+        if (!active) return;
+        const r = rec;
+        detach();
+        try {
+          r?.abort();
+        } catch {
+          /* ignore */
         }
-      }, RELEASE_TAIL_MS);
+        finish();
+      }, (mode === "continuous" ? 0 : RELEASE_TAIL_MS) + FINALIZE_TIMEOUT_MS);
     },
 
-    destroy() {
-      armed = false;
-      holding = false;
-      if (restartTimer) clearTimeout(restartTimer);
-      if (releaseTimer) clearTimeout(releaseTimer);
-      try {
-        rec?.abort();
-      } catch {
-        /* ignore */
-      }
-      rec = null;
+    abort() {
+      abortNow();
+    },
+
+    dispose() {
+      abortNow();
     },
   };
 }
 
-// --- ElevenLabs Scribe engine (the compatibility path) ----------------------
+// --- Server STT engine (the compatibility path) ----------------------------
 
 function pickMimeType(): string {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
@@ -257,111 +304,153 @@ function pickMimeType(): string {
   return "";
 }
 
-function createScribeRecognizer(lang: string, cb: RecognizerCallbacks): Recognizer {
-  let stream: MediaStream | null = null;
-  let active: MediaRecorder | null = null;
-  let armed = false;
-  // True between hold() and release(). hold() is async (it may still be
-  // waiting on the mic), so a quick tap can release before recording starts;
-  // without this flag that recorder would then run until the next release.
-  let holding = false;
+function captureErrorCode(err: unknown): AsrErrorCode {
+  const name = (err as { name?: string })?.name;
+  if (name === "NotAllowedError" || name === "SecurityError") return "permission-denied";
+  return "capture-unavailable";
+}
 
-  async function ensureStream(): Promise<MediaStream | null> {
-    if (stream && stream.getAudioTracks().some((t) => t.readyState === "live")) return stream;
-    try {
-      stream = await getMic();
-      return stream;
-    } catch (err) {
-      if (armed) cb.onError(`Microphone unavailable: ${String(err)}`, true);
-      return null;
-    }
+function createServerSttAdapter(lang: string, cb: AsrCallbacks): AsrAdapter {
+  let active = false;
+  let stopRequested = false;
+  let recorder: MediaRecorder | null = null;
+  let capTimer: ReturnType<typeof setTimeout> | null = null;
+  let upload: AbortController | null = null;
+  // Bumped by abort(); work started under an older generation is discarded.
+  let generation = 0;
+
+  function finish() {
+    if (!active) return;
+    active = false;
+    stopRequested = false;
+    if (capTimer) clearTimeout(capTimer);
+    capTimer = null;
+    setMicEnabled(false);
+    cb.onSpeechActivity?.(false);
+    cb.onEnd?.();
   }
 
-  async function upload(collected: Blob[], type: string) {
-    const blob = new Blob(collected, { type });
+  async function send(chunks: Blob[], type: string, startedAt: number, gen: number) {
+    const blob = new Blob(chunks, { type });
     // Sub-100ms blobs are almost always an accidental tap.
     if (blob.size < 2000) {
       cb.onPartial("");
+      finish();
       return;
     }
-
+    upload = new AbortController();
     try {
       const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
       const form = new FormData();
       form.append("file", blob, `push.${ext}`);
       form.append("language_code", lang.split("-")[0]);
 
-      const res = await fetch(`${API_BASE}/api/stt`, { method: "POST", body: form });
-      if (!armed) return;
+      const res = await fetch(`${API_BASE}/api/stt`, { method: "POST", body: form, signal: upload.signal });
+      if (gen !== generation) return;
       if (!res.ok) {
-        cb.onError(`Transcription failed (${res.status}).`, false);
+        cb.onError(res.status === 429 ? "provider" : "provider", `Transcription failed (${res.status}).`, false);
         return;
       }
       const data = await res.json();
-      if (!armed) return;
+      if (gen !== generation) return;
       const text = (data.text || "").trim();
-      if (text) cb.onSegment(text);
-      else cb.onError("Nothing was transcribed — try holding a moment longer.", false);
+      if (text) cb.onFinal({ text, lang, startedAt, endedAt: Date.now(), engine: "server-stt" });
+      else cb.onError("no-result", "Nothing was transcribed — try holding a moment longer.", false);
     } catch (err) {
-      if (armed) cb.onError(`Transcription network error: ${String(err)}`, false);
+      if (gen === generation && (err as Error)?.name !== "AbortError") {
+        cb.onError("network", `Transcription network error: ${String(err)}`, false);
+      }
     } finally {
-      if (armed) cb.onPartial("");
+      upload = null;
+      if (gen === generation) {
+        cb.onPartial("");
+        finish();
+      }
     }
   }
 
-  /** One MediaRecorder per push, each with its own chunk list. */
-  function startRecording(s: MediaStream) {
-    const mimeType = pickMimeType();
-    const recorder = mimeType ? new MediaRecorder(s, { mimeType }) : new MediaRecorder(s);
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-    recorder.onstop = () => {
-      if (active === recorder) active = null;
-      // Leaving the call mid-push must not upload (and send) that audio.
-      if (!armed || chunks.length === 0) return;
-      void upload(chunks, recorder.mimeType || mimeType || "audio/webm");
-    };
-    recorder.start();
-    active = recorder;
-    cb.onSpeechActivity?.(true);
-  }
-
   return {
-    engine: "scribe",
-
-    async arm() {
-      armed = true;
-      // Warm the mic now so the push itself is instant.
-      await ensureStream();
+    engine: "server-stt",
+    route: "server-stt" as ProcessingRoute,
+    get active() {
+      return active;
     },
 
-    hold() {
-      if (!armed || holding) return;
-      holding = true;
-      void (async () => {
-        const s = await ensureStream();
-        if (!s || !armed || !holding || active) return;
-        startRecording(s);
-      })();
-    },
-
-    release() {
-      holding = false;
-      cb.onSpeechActivity?.(false);
-      if (active && active.state === "recording") active.stop();
-    },
-
-    destroy() {
-      armed = false;
-      holding = false;
+    async start() {
+      if (active) return;
+      active = true;
+      stopRequested = false;
+      const gen = generation;
+      let stream: MediaStream;
       try {
-        if (active && active.state !== "inactive") active.stop();
+        stream = await getMic();
+      } catch (err) {
+        if (gen !== generation) return;
+        active = false;
+        cb.onError(captureErrorCode(err), `Microphone unavailable: ${String(err)}`, true);
+        throw err;
+      }
+      // Released (quick tap) or aborted while the mic was being acquired.
+      if (gen !== generation || !active) return;
+      if (stopRequested) {
+        finish();
+        return;
+      }
+      setMicEnabled(true);
+      const mimeType = pickMimeType();
+      const r = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      const startedAt = Date.now();
+      r.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      r.onstop = () => {
+        if (recorder === r) recorder = null;
+        if (gen !== generation) return; // aborted: discard the audio
+        void send(chunks, r.mimeType || mimeType || "audio/webm", startedAt, gen);
+      };
+      recorder = r;
+      r.start();
+      cb.onSpeechActivity?.(true);
+      // Bound the buffer: a stuck button can't record forever.
+      capTimer = setTimeout(() => {
+        capTimer = null;
+        if (recorder === r && r.state === "recording") r.stop();
+      }, MAX_RECORDING_MS);
+    },
+
+    stop() {
+      if (!active) return;
+      cb.onSpeechActivity?.(false);
+      if (recorder && recorder.state === "recording") {
+        recorder.stop(); // onstop → send → finish
+      } else {
+        // Mic still being acquired: don't start recording when it arrives.
+        stopRequested = true;
+      }
+    },
+
+    abort() {
+      generation++;
+      upload?.abort();
+      const r = recorder;
+      recorder = null;
+      try {
+        if (r && r.state !== "inactive") r.stop();
       } catch {
         /* ignore */
       }
-      active = null;
+      const wasActive = active;
+      active = false;
+      stopRequested = false;
+      if (capTimer) clearTimeout(capTimer);
+      capTimer = null;
+      setMicEnabled(false);
+      if (wasActive) cb.onSpeechActivity?.(false);
+    },
+
+    dispose() {
+      this.abort();
     },
   };
 }
