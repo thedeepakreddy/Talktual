@@ -10,6 +10,14 @@
 import { API_BASE } from "./config";
 import { audioContext } from "./audio";
 
+import type { PlaybackItem, PlaybackListener, PlaybackPort } from "../engine/ports";
+import type { PlaybackStatus } from "../engine/events";
+
+/** Pending (not yet started) segments kept before the oldest is dropped. */
+export const PLAYBACK_QUEUE_MAX = 12;
+/** How far ahead of the audio clock streamed PCM may be scheduled. */
+export const PCM_MAX_AHEAD_S = 10;
+
 interface PlaybackState {
   aborted: boolean;
   /** Cancels the in-flight TTS request on barge-in so we stop downloading audio nobody will hear. */
@@ -19,98 +27,196 @@ interface PlaybackState {
   element: HTMLAudioElement | null;
 }
 
-let current: PlaybackState | null = null;
-let queueTail: Promise<void> = Promise.resolve();
-let queueDepth = 0;
-// Bumped by stopSpeaking(). Every queued segment remembers the generation it
-// was enqueued in and is skipped if a barge-in happened since — otherwise
-// segments already chained behind the one we cut off would still play.
-let generation = 0;
+type Engine = "server" | "browser";
+
+interface QueueItem extends PlaybackItem {
+  hooks?: { onStart?: () => void; onEnd?: () => void };
+  done: () => void;
+}
+
+/**
+ * Plays segments strictly one after another, in arrival order.
+ *
+ * Bounded: at most PLAYBACK_QUEUE_MAX segments wait; beyond that the oldest
+ * waiting one is dropped (status `dropped`) — a listener can't usefully catch
+ * up on a long backlog, and an unbounded queue grows without limit when the
+ * peer talks faster than speech can be played.
+ *
+ * Cancellable: cancelAll() stops the playing segment, aborts its network
+ * request and drops everything waiting (status `cancelled`). Nothing queued
+ * before the cancel can start afterwards.
+ */
+export class PlaybackController implements PlaybackPort {
+  private queue: QueueItem[] = [];
+  private playing: QueueItem | null = null;
+  private current: PlaybackState | null = null;
+  private listeners = new Set<PlaybackListener>();
+  private pumping = false;
+
+  constructor(private readonly maxQueue = PLAYBACK_QUEUE_MAX) {}
+
+  get active(): boolean {
+    return this.playing !== null || this.queue.length > 0;
+  }
+
+  get depth(): number {
+    return this.queue.length + (this.playing ? 1 : 0);
+  }
+
+  onStatus(fn: PlaybackListener): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private emit(id: string, status: PlaybackStatus, engine?: Engine) {
+    for (const l of this.listeners) {
+      try {
+        l(id, status, engine);
+      } catch (err) {
+        console.error("playback listener failed:", err);
+      }
+    }
+  }
+
+  enqueue(item: PlaybackItem, hooks?: QueueItem["hooks"]): Promise<void> {
+    const text = item.text.trim();
+    if (!text) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      this.queue.push({ ...item, text, hooks, done: resolve });
+      this.emit(item.segmentId, "queued");
+      while (this.queue.length > this.maxQueue) {
+        const dropped = this.queue.shift()!;
+        this.emit(dropped.segmentId, "dropped");
+        dropped.hooks?.onEnd?.();
+        dropped.done();
+      }
+      void this.pump();
+    });
+  }
+
+  cancelAll(): number {
+    const victims = [...(this.playing ? [this.playing] : []), ...this.queue];
+    this.queue = [];
+    const cur = this.current;
+    if (cur) {
+      cur.aborted = true;
+      cur.controller.abort();
+      cur.sources.forEach((s) => {
+        try {
+          s.stop();
+        } catch {
+          /* already finished */
+        }
+      });
+      try {
+        cur.gain?.disconnect();
+      } catch {
+        /* ignore */
+      }
+      if (cur.element) {
+        cur.element.pause();
+        cur.element.src = "";
+      }
+      this.current = null;
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        /* ignore */
+      }
+    }
+    const playingItem = this.playing;
+    this.playing = null;
+    for (const v of victims) {
+      this.emit(v.segmentId, "cancelled");
+      // The playing item's own completion path will call its hooks.
+      if (v !== playingItem) {
+        v.hooks?.onEnd?.();
+        v.done();
+      }
+    }
+    return victims.length;
+  }
+
+  private async pump(): Promise<void> {
+    if (this.pumping) return;
+    this.pumping = true;
+    try {
+      while (!this.playing && this.queue.length) {
+        const item = this.queue.shift()!;
+        this.playing = item;
+        const state: PlaybackState = {
+          aborted: false,
+          controller: new AbortController(),
+          sources: [],
+          gain: null,
+          element: null,
+        };
+        this.current = state;
+        item.hooks?.onStart?.();
+        this.emit(item.segmentId, "started");
+        let outcome: Engine | "none" | "cancelled" = "none";
+        try {
+          outcome = await playOne(item.text, item.lang, state);
+        } catch (err) {
+          console.error("TTS playback failed:", err);
+          outcome = state.aborted ? "cancelled" : "none";
+        }
+        if (this.current === state) this.current = null;
+        const wasCancelled = state.aborted || this.playing !== item;
+        if (this.playing === item) this.playing = null;
+        if (!wasCancelled) {
+          if (outcome === "none") this.emit(item.segmentId, "failed");
+          else this.emit(item.segmentId, "ended", outcome === "cancelled" ? undefined : outcome);
+        }
+        item.hooks?.onEnd?.();
+        item.done();
+      }
+    } finally {
+      this.pumping = false;
+    }
+  }
+}
+
+// --- Phase 1 API, kept for existing callers --------------------------------------
+
+let defaultController = new PlaybackController();
+let seq = 0;
+
+/** The shared controller the app uses. */
+export function playbackController(): PlaybackController {
+  return defaultController;
+}
+
+/** Test hook: start from a clean controller. */
+export function resetPlaybackForTests() {
+  defaultController = new PlaybackController();
+}
 
 export function isSpeaking(): boolean {
-  return queueDepth > 0;
+  return defaultController.active;
 }
 
 /**
  * Queues one segment. Segments play back to back in call order; the returned
- * promise settles when this segment finishes (or is cut off).
+ * promise settles when this segment finishes (or is cut off / dropped).
  */
 export function enqueueSpeech(
   text: string,
   lang: string,
   hooks?: { onStart?: () => void; onEnd?: () => void }
 ): Promise<void> {
-  const clean = text.trim();
-  if (!clean) return Promise.resolve();
-
-  queueDepth++;
-  const myGeneration = generation;
-  const run = queueTail.then(async () => {
-    if (myGeneration !== generation) {
-      // Dropped by a barge-in; its depth was already cleared by stopSpeaking().
-      hooks?.onEnd?.();
-      return;
-    }
-    try {
-      hooks?.onStart?.();
-      await playOne(clean, lang);
-    } catch (err) {
-      console.error("TTS playback failed:", err);
-    } finally {
-      if (myGeneration === generation) queueDepth = Math.max(0, queueDepth - 1);
-      hooks?.onEnd?.();
-    }
-  });
-  // Keep the chain alive even if one segment throws.
-  queueTail = run.catch(() => {});
-  return run;
+  return defaultController.enqueue({ segmentId: `tts-${seq++}`, text, lang }, hooks);
 }
 
 /** Barge-in: kill whatever is playing and drop the rest of the queue. */
 export function stopSpeaking() {
-  generation++;
-  if (current) {
-    current.aborted = true;
-    current.controller.abort();
-    current.sources.forEach((s) => {
-      try {
-        s.stop();
-      } catch {
-        /* already finished */
-      }
-    });
-    try {
-      current.gain?.disconnect();
-    } catch {
-      /* ignore */
-    }
-    if (current.element) {
-      current.element.pause();
-      current.element.src = "";
-    }
-    current = null;
-  }
-  if ("speechSynthesis" in window) {
-    try {
-      window.speechSynthesis.cancel();
-    } catch {
-      /* ignore */
-    }
-  }
-  queueDepth = 0;
-  queueTail = Promise.resolve();
+  defaultController.cancelAll();
 }
 
-async function playOne(text: string, lang: string): Promise<void> {
-  const state: PlaybackState = {
-    aborted: false,
-    controller: new AbortController(),
-    sources: [],
-    gain: null,
-    element: null,
-  };
-  current = state;
-
+/** Which engine actually produced audio, "none" if nothing could, "cancelled" if cut off. */
+async function playOne(text: string, lang: string, state: PlaybackState): Promise<Engine | "none" | "cancelled"> {
   try {
     const res = await fetch(`${API_BASE}/api/tts`, {
       method: "POST",
@@ -128,12 +234,13 @@ async function playOne(text: string, lang: string): Promise<void> {
     } else {
       await playEncoded(res, state);
     }
+    return state.aborted ? "cancelled" : "server";
   } catch (err) {
-    if (state.aborted) return;
+    if (state.aborted) return "cancelled";
     console.warn("Falling back to browser speech synthesis:", err);
-    await browserSpeak(text, lang, state);
-  } finally {
-    if (current === state) current = null;
+    const spoke = await browserSpeak(text, lang, state);
+    if (state.aborted) return "cancelled";
+    return spoke ? "browser" : "none";
   }
 }
 
@@ -193,11 +300,23 @@ async function playPcmStream(res: Response, sampleRate: number, state: PlaybackS
       source.buffer = buffer;
       source.connect(gain);
 
+      // Backpressure: don't schedule more than PCM_MAX_AHEAD_S into the future.
+      // The reader (and so the network stream) waits instead of buffering
+      // the whole clip in audio nodes.
+      while (!state.aborted && playhead - ac.currentTime > PCM_MAX_AHEAD_S) {
+        await new Promise((r) => setTimeout(r, Math.min(1000, (playhead - ac.currentTime - PCM_MAX_AHEAD_S) * 1000 + 50)));
+      }
+      if (state.aborted) break;
+
       const startAt = Math.max(ac.currentTime + LEAD_SECONDS, playhead);
       source.start(startAt);
       playhead = startAt + buffer.duration;
       lastSource = source;
       state.sources.push(source);
+      source.onended = () => {
+        const i = state.sources.indexOf(source);
+        if (i >= 0) state.sources.splice(i, 1);
+      };
     }
   } finally {
     reader.cancel().catch(() => {});
@@ -259,15 +378,15 @@ async function playEncoded(res: Response, state: PlaybackState): Promise<void> {
 }
 
 /** Last resort so a call never goes silent, even with no API key configured. */
-function browserSpeak(text: string, lang: string, state: PlaybackState): Promise<void> {
-  if (!("speechSynthesis" in window) || state.aborted) return Promise.resolve();
+function browserSpeak(text: string, lang: string, state: PlaybackState): Promise<boolean> {
+  if (!("speechSynthesis" in window) || state.aborted) return Promise.resolve(false);
 
-  return new Promise<void>((resolve) => {
+  return new Promise<boolean>((resolve) => {
     let settled = false;
-    const finish = () => {
+    const finish = (ok = true) => {
       if (settled) return;
       settled = true;
-      resolve();
+      resolve(ok);
     };
 
     const utterance = new SpeechSynthesisUtterance(text);
@@ -279,8 +398,8 @@ function browserSpeak(text: string, lang: string, state: PlaybackState): Promise
       window.speechSynthesis.getVoices().find((v) => v.lang.startsWith(lang.split("-")[0]));
     if (voice) utterance.voice = voice;
 
-    utterance.onend = finish;
-    utterance.onerror = finish;
+    utterance.onend = () => finish(true);
+    utterance.onerror = () => finish(false);
     window.speechSynthesis.speak(utterance);
 
     // speechSynthesis fires onend unreliably across browsers; bound the wait.
