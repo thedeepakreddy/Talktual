@@ -146,6 +146,14 @@ export class PlaybackController implements PlaybackPort {
     try {
       while (!this.playing && this.queue.length) {
         const item = this.queue.shift()!;
+        // Phase 4: speech that waited past its age bound is stale — drop it
+        // rather than play it late.
+        if (item.notAfter !== undefined && Date.now() > item.notAfter) {
+          this.emit(item.segmentId, "dropped");
+          item.hooks?.onEnd?.();
+          item.done();
+          continue;
+        }
         this.playing = item;
         const state: PlaybackState = {
           aborted: false,

@@ -18,6 +18,8 @@ export interface RecognizedSegment {
   /** ms epoch when the phrase was finalized. */
   endedAt: number;
   engine: AsrEngine;
+  /** Recognizer confidence 0..1 when the engine reports it (0/absent = unknown). Never logged. */
+  confidence?: number;
 }
 
 export type AsrErrorCode = 'permission-denied' | 'device-lost' | 'capture-unavailable' | 'network' | 'no-result' | 'provider' | 'unknown';
@@ -84,6 +86,8 @@ export interface PlaybackItem {
    * so revoking stops affecting every segment that hasn't started yet.
    */
   voice?: () => import('../voicemirror/types').RenderHints | undefined;
+  /** Phase 4: ms epoch after which the item is stale and must be dropped if not started. */
+  notAfter?: number;
 }
 
 export type PlaybackListener = (segmentId: string, status: PlaybackStatus, engine?: 'server' | 'browser') => void;

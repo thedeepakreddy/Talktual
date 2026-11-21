@@ -328,7 +328,9 @@ export const SCENARIOS: Scenario[] = [
 ];
 
 export async function runScenario(s: Scenario) {
-  const sim = createSim(s.opts);
+  // EVAL_LAYER=on runs the Phase 4 conversation layer; anything else = layer off (Phase 3 behaviour).
+  const layer = process.env.EVAL_LAYER === 'on';
+  const sim = createSim({ ...s.opts, deps: { ...s.opts?.deps, ...(layer ? { conversation: true } : {}) } });
   const marks: Marks = {};
   await connectSim(sim);
   await s.run(sim, marks);

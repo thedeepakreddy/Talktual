@@ -59,13 +59,14 @@ for (const s of SCENARIOS) {
       const firstProvisionalSentAt = provIdx >= 0 ? speaker.sentAt[speaker.sent.indexOf(segs[provIdx] as never)] : null;
       const firstSaid = sim.said.size ? Math.min(...sim.said.values()) : null;
       // Lag: recognizer finalized a phrase → listener starts hearing it (per spoken unit).
-      const lags = spoken
-        .map((r) => {
-          const t = norm(r.text);
-          const saidAt = sim.said.get(t) ?? [...sim.said.entries()].filter(([k]) => t.includes(k)).map(([, v]) => v).sort((a, b) => b - a)[0];
-          return saidAt !== undefined ? r.startedAt! - sim.t0 - saidAt : null;
-        })
-        .filter((x): x is number => x !== null);
+      // Per finalized phrase: a merged unit contributes one lag PER phrase it carries
+      // (so merging can't hide the wait of its earliest phrase).
+      const lags = spoken.flatMap((r) => {
+        const t = norm(r.text);
+        const exact = sim.said.get(t);
+        const times = exact !== undefined ? [exact] : [...sim.said.entries()].filter(([k]) => t.includes(k)).map(([, v]) => v);
+        return times.map((saidAt) => r.startedAt! - sim.t0 - saidAt);
+      });
 
       const diag = speaker.session.getDiagnostics();
       const listenerDiag = listener.session.getDiagnostics();
