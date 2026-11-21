@@ -26,13 +26,14 @@ Add a **conversation layer** (`src/conversation/`) between the recognizer and th
 | M4.9 | Re-run the 13-scenario simulator (layer on / layer off), unit + integration tests, browser E2E | evaluation matrix; Phase 2/3 regressions |
 | M4.10 | Privacy review, condition tracker, reports, handoff | diagnostics; context scope; rollback/flags |
 
-## 3. Bounds (initial; tuned only on evidence)
+## 3. Bounds (planned → shipped)
+Shipped values are in `DEFAULT_CONVERSATION_CONFIG` (`src/conversation/types.ts`); changes from the plan are noted.
 | Policy | Bound |
 | --- | --- |
 | Hold for an incomplete-looking fragment | adaptive, 500–2000 ms (default 900 ms) |
-| Hard maximum before an open unit is committed | 2500 ms after its last recognizer activity |
+| Hard maximum before an open unit is committed | planned 2500 ms after last activity → **shipped: 6000 ms after the unit opened** (a fixed cap that continued speech can't extend; the 500–2000 ms hold still applies after each final) |
 | Max merged unit | 400 characters |
-| Pending outbound finals before merge-under-pressure | 3 |
+| Pending outbound finals before merge-under-pressure | planned 3 → **shipped: merge as soon as one unit waits behind an in-flight translation (same turn)** |
 | Playback item max age (not started) | 12 s |
 | Overlap hold | until the local user stops talking, subject to the age bound |
 | Provisional translation | ≤ 1 in flight, ≥ 700 ms apart, off when degraded |
