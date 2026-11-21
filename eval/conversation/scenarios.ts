@@ -172,10 +172,14 @@ export const SCENARIOS: Scenario[] = [
       await press(sim, 'A');
       await at(sim, 1000);
       say(sim, 'A', 'this sentence is still being translated');
-      release(sim, 'A');
-      await at(sim, 1500); // B cuts in before the translation arrives
+      // A keeps the floor (still holding, thinking); B cuts in before the
+      // translation arrives. (Revised before any Phase 4 code: a reply after
+      // A has released is a speaker change, covered by rapid-speaker-change.)
+      await at(sim, 1500);
       m.interrupt = now(sim);
       await press(sim, 'B');
+      await at(sim, 1800);
+      release(sim, 'A');
       await at(sim, 2500);
       say(sim, 'B', 'perdona');
       release(sim, 'B');
