@@ -206,6 +206,32 @@ export interface Harness {
   connects: number;
 }
 
+/** Dependencies only (for components that create their own session). */
+export function makeDeps(opts: Parameters<typeof makeSession>[0] = {}) {
+  const h = makeSession(opts);
+  let deps!: SessionDeps;
+  // Rebuild a deps object bound to the same fakes.
+  const call = h.call;
+  deps = {
+    connect: (_id, _url, handlers) => {
+      call.handlers = handlers;
+      return call;
+    },
+    signalingUrl: 'ws://test',
+    createAsr: (lang, mode, cb) => new FakeAsr(opts.browser?.webSpeech === false ? 'server-stt' : 'webspeech', lang, mode, cb),
+    translate: h.translate as unknown as SessionDeps['translate'],
+    translateCaption: async (text, _f, to) => `[${to.split('-')[0]}] ${text}`,
+    playback: h.playback,
+    capture: h.capture,
+    getServerCapabilities: async () => ({ tts: false, stt: true, translator: 'mymemory', liveCaptions: false, ...opts.server }),
+    browser: opts.browser ?? CHROME_LIKE,
+    storage: h.storage,
+    onUserGesture: h.gesture as unknown as () => void,
+  };
+  h.session.dispose();
+  return { ...h, deps };
+}
+
 export function makeSession(
   opts: {
     config?: Partial<SessionConfig>;

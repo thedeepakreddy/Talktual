@@ -42,6 +42,8 @@ export interface ResolvedFeatures {
   /** Where captured audio goes (what consent covers). */
   route: ProcessingRoute | null;
   canTalk: boolean;
+  /** Hands-free listening needs a streaming recognizer to find phrase boundaries. */
+  continuous: boolean;
   tts: 'server' | 'browser' | 'none';
   liveCaptions: boolean;
   p2p: boolean;
@@ -74,6 +76,7 @@ export function resolveFeatures(browser: BrowserCapabilities, server: ServerCapa
     stt,
     route: stt === 'webspeech' ? 'browser-speech' : stt === 'server-stt' ? 'server-stt' : null,
     canTalk: stt !== null,
+    continuous: stt === 'webspeech',
     tts,
     liveCaptions: Boolean(server?.liveCaptions),
     p2p: browser.dataChannel,

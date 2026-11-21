@@ -1,199 +1,164 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, fireEvent } from '@testing-library/react';
-import { SUPPORTED_LANGUAGES, findLanguage } from '../types';
-import type { CallHandlers, CallMessage } from '../lib/webrtc';
-import type { RecognizerCallbacks } from '../lib/speechToText';
-
-// --- module mocks: everything that touches the network or devices ----------
-const h = vi.hoisted(() => ({
-  handlers: null as null | CallHandlers,
-  sent: [] as unknown[],
-  closed: 0,
-  recognizer: null as null | RecognizerCallbacks,
-  engine: 'webspeech' as 'webspeech' | 'scribe',
-  caps: { tts: false, stt: false, translator: 'mymemory', liveCaptions: false },
-  translate: null as null | ((t: string, f: string, to: string) => Promise<string>),
-  spoken: [] as { text: string; lang: string }[],
-  stopped: 0,
-  released: 0,
-}));
-
-vi.mock('../lib/webrtc', () => ({
-  connectCall: (_id: string, _url: string, handlers: CallHandlers) => {
-    h.handlers = handlers;
-    return { send: (m: unknown) => h.sent.push(m), close: () => h.closed++ };
-  },
-}));
-vi.mock('../lib/speechToText', () => ({
-  createRecognizer: (_lang: string, cb: RecognizerCallbacks) => {
-    h.recognizer = cb;
-    return { engine: h.engine, arm: async () => {}, hold: () => {}, release: () => {}, destroy: () => {} };
-  },
-}));
-vi.mock('../lib/translate', async () => {
-  const real = await vi.importActual<typeof import('../lib/translate')>('../lib/translate');
-  return {
-    TranslationError: real.TranslationError,
-    translateText: (t: string, f: string, to: string) => h.translate!(t, f, to),
-    getCapabilities: async () => h.caps,
-    prewarm: () => {},
-  };
-});
-vi.mock('../lib/textToSpeech', () => ({
-  enqueueSpeech: async (text: string, lang: string) => {
-    h.spoken.push({ text, lang });
-  },
-  stopSpeaking: () => h.stopped++,
-  isSpeaking: () => false,
-  preloadVoices: () => {},
-}));
-vi.mock('../lib/audio', () => ({ unlockAudio: async () => {}, releaseMic: () => h.released++ }));
-
-const { CallRoom } = await import('./CallRoom');
-const { TranslationError } = await import('../lib/translate');
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
+import { findLanguage } from '../types';
+import { makeDeps, settle, FakeAsr } from '../test/engineFakes';
+import { CallRoom } from './CallRoom';
 
 const en = findLanguage('en')!;
-const es = findLanguage('es')!;
 
-beforeEach(() => {
-  h.sent = [];
-  h.closed = 0;
-  h.spoken = [];
-  h.stopped = 0;
-  h.released = 0;
-  h.engine = 'webspeech';
-  h.caps = { tts: false, stt: false, translator: 'mymemory', liveCaptions: false };
-  h.translate = async (t) => `[es] ${t}`;
-});
-
-function renderRoom(onEndCall = vi.fn()) {
+function renderRoom(opts: Parameters<typeof makeDeps>[0] = {}) {
+  const f = makeDeps(opts);
+  const onEndCall = vi.fn();
   const utils = render(
-    <CallRoom roomCode="ABC123" language={en} userName="Ana" onLanguageChange={() => {}} onEndCall={onEndCall} />
+    <CallRoom roomCode="ABC123" language={en} userName="Ana" onLanguageChange={() => {}} onEndCall={onEndCall} depsFactory={() => f.deps} />
   );
-  return { ...utils, onEndCall };
+  return { ...utils, ...f, onEndCall };
 }
 
-async function connect() {
+async function connect(f: ReturnType<typeof renderRoom>) {
   await act(async () => {
-    h.handlers!.onStatus('connected');
-    h.handlers!.onMessage({ t: 'hello', lang: es.bcp47, name: 'Luis' });
+    f.call.status('waiting-for-peer');
+    f.call.status('connected');
+    f.call.receive({ t: 'hello', lang: 'es-ES', name: 'Luis' });
+    await settle();
   });
 }
 
-const segments = () => h.sent.filter((m): m is Extract<CallMessage, { t: 'segment' }> => (m as CallMessage).t === 'segment');
+const ptt = () => screen.getByRole('button', { name: 'Push to talk' }) as HTMLButtonElement;
 
-describe('CallRoom', () => {
-  it('announces itself, translates a finalized phrase into the peer language and sends it', async () => {
-    renderRoom();
-    expect(h.sent[0]).toEqual({ t: 'hello', lang: 'en-US', name: 'Ana' });
-    await connect();
-    await act(async () => h.recognizer!.onSegment('hello'));
-    expect(segments()).toHaveLength(1);
-    expect(segments()[0]).toMatchObject({ original: 'hello', translated: '[es] hello', sourceLang: 'en-US', targetLang: 'es-ES' });
-    expect(segments()[0].untranslated).toBeUndefined();
+describe('CallRoom view over the engine', () => {
+  it('first use: shows the processing disclosure; nothing is captured until Allow', async () => {
+    const f = renderRoom();
+    await connect(f);
+    const dialog = await screen.findByRole('dialog', { name: /before you talk/i });
+    expect(dialog.textContent).toMatch(/speech-recognition service/i);
+    expect(dialog.textContent).toMatch(/MyMemory/);
+    expect(FakeAsr.all).toHaveLength(0);
+    // Pressing while undecided re-opens the disclosure instead of capturing.
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    await act(async () => {
+      fireEvent.pointerDown(ptt());
+      await settle();
+    });
+    expect(FakeAsr.all).toHaveLength(0);
+    fireEvent.click(await screen.findByRole('button', { name: /allow microphone/i }));
+    expect(f.storage.data.get('talktual.consent.v1.browser-speech')).toBe('granted');
+    await act(async () => {
+      fireEvent.pointerDown(ptt());
+      await settle();
+    });
+    expect(FakeAsr.all).toHaveLength(1);
+    expect(f.asr()!.active).toBe(true);
+    expect(screen.getByText('On air')).toBeTruthy();
+    await act(async () => {
+      fireEvent.pointerUp(ptt());
+      await settle();
+    });
+    expect(f.asr()!.active).toBe(false);
   });
 
-  it('DEF-C02: a failed translation is sent marked untranslated and the speaker is told', async () => {
-    h.translate = async () => {
-      throw new TranslationError('down', 'http');
-    };
-    renderRoom();
-    await connect();
-    await act(async () => h.recognizer!.onSegment('hello'));
-    expect(segments()[0]).toMatchObject({ original: 'hello', translated: 'hello', untranslated: true });
-    expect(screen.getByText(/sent untranslated/i)).toBeTruthy();
+  it('returning user (consent stored): no prompt', async () => {
+    await connect(renderRoom({ consent: true }));
+    expect(screen.queryByRole('dialog', { name: /before you talk/i })).toBeNull();
   });
 
-  it('plays an incoming segment already translated for us', async () => {
-    renderRoom();
-    await connect();
-    await act(async () =>
-      h.handlers!.onMessage({ t: 'segment', id: 's1', original: 'hola', translated: 'hello', sourceLang: 'es-ES', targetLang: 'en-US', sentAt: 1 })
-    );
-    expect(h.spoken).toEqual([{ text: 'hello', lang: 'en-US' }]);
-    expect(screen.getByText('hello')).toBeTruthy();
+  it('hands-free: explicit opt-in shows a persistent indicator; Stop ends capture', async () => {
+    const f = renderRoom({ consent: true });
+    await connect(f);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /hands-free: off/i }));
+      await settle();
+    });
+    expect(screen.getByText(/listening continuously/i)).toBeTruthy();
+    expect(f.asr()!.active).toBe(true);
+    expect(ptt().disabled).toBe(true);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+      await settle();
+    });
+    expect(screen.queryByText(/listening continuously/i)).toBeNull();
+    expect(FakeAsr.all.every((a) => !a.active)).toBe(true);
   });
 
-  it('re-translates a segment aimed at the wrong language; on failure plays the original in its own voice', async () => {
-    h.translate = async () => {
-      throw new TranslationError('down', 'http');
-    };
-    renderRoom();
-    await connect();
-    await act(async () =>
-      h.handlers!.onMessage({ t: 'segment', id: 's2', original: 'hola', translated: 'salut', sourceLang: 'es-ES', targetLang: 'fr-FR', sentAt: 1 })
-    );
-    expect(h.spoken).toEqual([{ text: 'hola', lang: 'es-ES' }]);
-    expect(screen.getByText(/playing their original words/i)).toBeTruthy();
+  it('mic off stops capture immediately and disables talking', async () => {
+    const f = renderRoom({ consent: true });
+    await connect(f);
+    await act(async () => {
+      fireEvent.pointerDown(ptt());
+      await settle();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Turn microphone off' }));
+      await settle();
+    });
+    expect(f.asr()?.active ?? false).toBe(false);
+    expect(screen.getByText('Microphone off')).toBeTruthy();
+    expect(ptt().disabled).toBe(true);
+    expect(f.capture.releases).toBeGreaterThan(0);
   });
 
-  it('a sender-marked untranslated segment is re-translated locally when possible', async () => {
-    h.translate = async (t) => `[en] ${t}`;
-    renderRoom();
-    await connect();
-    await act(async () =>
-      h.handlers!.onMessage({ t: 'segment', id: 's3', original: 'hola', translated: 'hola', sourceLang: 'es-ES', targetLang: 'en-US', sentAt: 1, untranslated: true })
-    );
-    expect(h.spoken).toEqual([{ text: '[en] hola', lang: 'en-US' }]);
-  });
-
-  it('DEF-C11: tells the user up front when no speech recognition is available, and disables talk', async () => {
-    h.engine = 'scribe';
-    h.caps = { ...h.caps, stt: false };
-    renderRoom();
-    await connect();
-    expect(await screen.findByText(/speech recognition isn’t available/i)).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Push to talk' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('the scribe path stays usable when the server has STT', async () => {
-    h.engine = 'scribe';
-    h.caps = { ...h.caps, stt: true };
-    renderRoom();
-    await connect();
-    await act(async () => {});
-    expect(screen.queryByText(/speech recognition isn’t available/i)).toBeNull();
-    expect((screen.getByRole('button', { name: 'Push to talk' }) as HTMLButtonElement).disabled).toBe(false);
-  });
-
-  it('leaving tears down playback, mic and transport', async () => {
-    const { unmount, onEndCall } = renderRoom();
-    await connect();
+  it('leaving tears down the transport and returns home', async () => {
+    const f = renderRoom({ consent: true });
+    await connect(f);
     fireEvent.click(screen.getByRole('button', { name: 'Leave channel' }));
-    expect(onEndCall).toHaveBeenCalled();
-    unmount();
-    expect(h.closed).toBe(1);
-    expect(h.stopped).toBeGreaterThan(0);
-    expect(h.released).toBe(1);
+    expect(f.onEndCall).toHaveBeenCalled();
+    expect(f.call.closed).toBe(1);
+    f.unmount();
+    expect(f.call.closed).toBe(1);
   });
 
-  it('peer leaving ends the call after a short notice', async () => {
+  it('peer leaving ends the call after a short notice (ported)', async () => {
     vi.useFakeTimers();
     try {
-      const { onEndCall } = renderRoom();
-      await act(async () => h.handlers!.onStatus('peer-left'));
-      expect(screen.getAllByText(/left the channel/i).length).toBeGreaterThan(0);
+      const f = renderRoom({ consent: true });
+      await act(async () => {
+        f.call.status('connected');
+        f.call.receive({ t: 'hello', lang: 'es-ES', name: 'Luis' });
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => f.call.status('peer-left'));
+      expect(screen.getAllByText(/Luis left the channel/i).length).toBeGreaterThan(0);
       await act(async () => vi.advanceTimersByTime(2000));
-      expect(onEndCall).toHaveBeenCalled();
+      expect(f.onEndCall).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('peer names and captions are rendered as text, never as HTML', async () => {
-    renderRoom();
+  it('reconnecting is shown, then cleared', async () => {
+    const f = renderRoom({ consent: true });
+    await connect(f);
+    await act(async () => f.call.status('reconnecting'));
+    expect(screen.getAllByText(/reconnecting/i).length).toBeGreaterThan(0);
+    await act(async () => f.call.status('connected'));
+    expect(f.session).toBeDefined();
+    await waitFor(() => expect(screen.queryByText(/reconnecting/i)).toBeNull());
+  });
+
+  it('peer names and captions are rendered as text, never as HTML (ported)', async () => {
+    const f = renderRoom({ consent: true });
     await act(async () => {
-      h.handlers!.onStatus('connected');
-      h.handlers!.onMessage({ t: 'hello', lang: 'es-ES', name: '<img src=x onerror=alert(1)>' });
-      h.handlers!.onMessage({ t: 'partial', text: '<b>bold</b>', lang: 'es-ES' });
+      f.call.status('connected');
+      f.call.receive({ t: 'hello', lang: 'es-ES', name: '<img src=x onerror=alert(1)>' });
+      f.call.receive({ t: 'partial', text: '<b>bold</b>', lang: 'es-ES' });
+      await settle();
     });
     expect(document.querySelector('img')).toBeNull();
     expect(document.querySelector('b')).toBeNull();
     expect(screen.getByText('<b>bold</b>', { exact: false })).toBeTruthy();
   });
 
-  it('supports all listed languages in the picker data', () => {
-    expect(SUPPORTED_LANGUAGES.length).toBe(31);
-    expect(new Set(SUPPORTED_LANGUAGES.map((l) => l.code)).size).toBe(31);
+  it('incoming speech shows as the last heard line and in the transcript', async () => {
+    const f = renderRoom({ consent: true });
+    await connect(f);
+    await act(async () => {
+      f.call.receive({ t: 'segment', id: 's1', original: 'hola', translated: 'hello', sourceLang: 'es-ES', targetLang: 'en-US', sentAt: 1 });
+      await settle();
+    });
+    expect(screen.getByText('hello')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Show transcript' }));
+    const dialog = screen.getByRole('dialog', { name: 'Transcript' });
+    expect(dialog.textContent).toContain('Luis');
+    expect(dialog.textContent).toContain('hola');
   });
 });

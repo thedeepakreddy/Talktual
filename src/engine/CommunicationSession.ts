@@ -316,7 +316,7 @@ export class CommunicationSession {
   setListeningMode(mode: ListeningMode): void {
     if (this.isTerminal || mode === this.privacy.mode) return;
     if (mode === 'continuous') {
-      if (!this.snap.features.canTalk) return;
+      if (!this.snap.features.continuous || !this.micEnabled) return;
       if (!this.privacy.mayCapture(this.snap.features.route)) {
         this.promptConsent();
         return;
