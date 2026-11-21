@@ -1,0 +1,11 @@
+import { defineConfig } from 'vitest/config';
+
+// Conversation evaluation (Phase 4): deterministic simulated scenarios.
+export default defineConfig({
+  test: {
+    environment: 'jsdom',
+    include: ['eval/conversation/**/*.eval.ts'],
+    setupFiles: ['src/test/setup.ts'],
+    testTimeout: 60000,
+  },
+});
