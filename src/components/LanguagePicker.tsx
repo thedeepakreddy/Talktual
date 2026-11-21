@@ -62,6 +62,9 @@ export function LanguagePicker({
           />
 
           <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
@@ -96,6 +99,7 @@ export function LanguagePicker({
                 <Search className="h-4 w-4 shrink-0 text-[var(--text-3)]" />
                 <input
                   autoFocus
+                  aria-label="Search languages"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search languages"
@@ -116,6 +120,7 @@ export function LanguagePicker({
                 return (
                   <button
                     key={language.code}
+                    aria-pressed={isSelected}
                     onClick={() => {
                       onSelect(language);
                       onClose();
