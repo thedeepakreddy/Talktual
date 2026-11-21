@@ -103,6 +103,7 @@ function createWebSpeechRecognizer(lang: string, cb: RecognizerCallbacks): Recog
   let lastEmitted = "";
   let lastEmittedAt = 0;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
+  let releaseTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Results only count while the button is down, plus a short trailing grace. */
   const accepting = () => holding || Date.now() < tailUntil;
@@ -213,7 +214,9 @@ function createWebSpeechRecognizer(lang: string, cb: RecognizerCallbacks): Recog
       tailUntil = Date.now() + RELEASE_TAIL_MS;
       const hadInterim = pendingInterim.trim().length > 0;
 
-      setTimeout(() => {
+      if (releaseTimer) clearTimeout(releaseTimer);
+      releaseTimer = setTimeout(() => {
+        releaseTimer = null;
         cb.onSpeechActivity?.(false);
         cb.onPartial("");
         // If a phrase never finalized on its own, stop() forces the engine to
@@ -233,6 +236,7 @@ function createWebSpeechRecognizer(lang: string, cb: RecognizerCallbacks): Recog
       armed = false;
       holding = false;
       if (restartTimer) clearTimeout(restartTimer);
+      if (releaseTimer) clearTimeout(releaseTimer);
       try {
         rec?.abort();
       } catch {
@@ -254,62 +258,74 @@ function pickMimeType(): string {
 }
 
 function createScribeRecognizer(lang: string, cb: RecognizerCallbacks): Recognizer {
-  let recorder: MediaRecorder | null = null;
-  let chunks: Blob[] = [];
+  let stream: MediaStream | null = null;
+  let active: MediaRecorder | null = null;
   let armed = false;
-  let mimeType = "";
+  // True between hold() and release(). hold() is async (it may still be
+  // waiting on the mic), so a quick tap can release before recording starts;
+  // without this flag that recorder would then run until the next release.
+  let holding = false;
 
-  async function ensureRecorder(): Promise<MediaRecorder | null> {
-    if (recorder && recorder.state !== "inactive") return recorder;
+  async function ensureStream(): Promise<MediaStream | null> {
+    if (stream && stream.getAudioTracks().some((t) => t.readyState === "live")) return stream;
     try {
-      const stream = await getMic();
-      mimeType = pickMimeType();
-      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-
-      recorder.onstop = async () => {
-        const collected = chunks;
-        chunks = [];
-        if (collected.length === 0) return;
-
-        const type = recorder?.mimeType || mimeType || "audio/webm";
-        const blob = new Blob(collected, { type });
-        // Sub-100ms blobs are almost always an accidental tap.
-        if (blob.size < 2000) {
-          cb.onPartial("");
-          return;
-        }
-
-        try {
-          const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
-          const form = new FormData();
-          form.append("file", blob, `push.${ext}`);
-          form.append("language_code", lang.split("-")[0]);
-
-          const res = await fetch(`${API_BASE}/api/stt`, { method: "POST", body: form });
-          if (!res.ok) {
-            cb.onError(`Transcription failed (${res.status}).`, false);
-            return;
-          }
-          const data = await res.json();
-          const text = (data.text || "").trim();
-          if (text) cb.onSegment(text);
-          else cb.onError("Nothing was transcribed — try holding a moment longer.", false);
-        } catch (err) {
-          cb.onError(`Transcription network error: ${String(err)}`, false);
-        } finally {
-          cb.onPartial("");
-        }
-      };
-
-      return recorder;
+      stream = await getMic();
+      return stream;
     } catch (err) {
-      cb.onError(`Microphone unavailable: ${String(err)}`, true);
+      if (armed) cb.onError(`Microphone unavailable: ${String(err)}`, true);
       return null;
     }
+  }
+
+  async function upload(collected: Blob[], type: string) {
+    const blob = new Blob(collected, { type });
+    // Sub-100ms blobs are almost always an accidental tap.
+    if (blob.size < 2000) {
+      cb.onPartial("");
+      return;
+    }
+
+    try {
+      const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
+      const form = new FormData();
+      form.append("file", blob, `push.${ext}`);
+      form.append("language_code", lang.split("-")[0]);
+
+      const res = await fetch(`${API_BASE}/api/stt`, { method: "POST", body: form });
+      if (!armed) return;
+      if (!res.ok) {
+        cb.onError(`Transcription failed (${res.status}).`, false);
+        return;
+      }
+      const data = await res.json();
+      if (!armed) return;
+      const text = (data.text || "").trim();
+      if (text) cb.onSegment(text);
+      else cb.onError("Nothing was transcribed — try holding a moment longer.", false);
+    } catch (err) {
+      if (armed) cb.onError(`Transcription network error: ${String(err)}`, false);
+    } finally {
+      if (armed) cb.onPartial("");
+    }
+  }
+
+  /** One MediaRecorder per push, each with its own chunk list. */
+  function startRecording(s: MediaStream) {
+    const mimeType = pickMimeType();
+    const recorder = mimeType ? new MediaRecorder(s, { mimeType }) : new MediaRecorder(s);
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    recorder.onstop = () => {
+      if (active === recorder) active = null;
+      // Leaving the call mid-push must not upload (and send) that audio.
+      if (!armed || chunks.length === 0) return;
+      void upload(chunks, recorder.mimeType || mimeType || "audio/webm");
+    };
+    recorder.start();
+    active = recorder;
+    cb.onSpeechActivity?.(true);
   }
 
   return {
@@ -317,37 +333,35 @@ function createScribeRecognizer(lang: string, cb: RecognizerCallbacks): Recogniz
 
     async arm() {
       armed = true;
-      // Warm the mic and the recorder now so the push itself is instant.
-      await ensureRecorder();
+      // Warm the mic now so the push itself is instant.
+      await ensureStream();
     },
 
     hold() {
-      if (!armed) return;
+      if (!armed || holding) return;
+      holding = true;
       void (async () => {
-        const r = await ensureRecorder();
-        if (!r || r.state === "recording") return;
-        chunks = [];
-        r.start();
-        cb.onSpeechActivity?.(true);
+        const s = await ensureStream();
+        if (!s || !armed || !holding || active) return;
+        startRecording(s);
       })();
     },
 
     release() {
+      holding = false;
       cb.onSpeechActivity?.(false);
-      if (recorder && recorder.state === "recording") {
-        recorder.stop();
-      }
+      if (active && active.state === "recording") active.stop();
     },
 
     destroy() {
       armed = false;
+      holding = false;
       try {
-        if (recorder && recorder.state !== "inactive") recorder.stop();
+        if (active && active.state !== "inactive") active.stop();
       } catch {
         /* ignore */
       }
-      recorder = null;
-      chunks = [];
+      active = null;
     },
   };
 }

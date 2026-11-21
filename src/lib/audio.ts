@@ -6,6 +6,9 @@
 let ctx: AudioContext | null = null;
 let micStream: MediaStream | null = null;
 let micRequest: Promise<MediaStream> | null = null;
+// Bumped by releaseMic(). A getUserMedia that resolves after the call was left
+// (e.g. the permission prompt was answered late) must not resurrect the mic.
+let micEpoch = 0;
 
 export function audioContext(): AudioContext {
   if (!ctx) {
@@ -56,6 +59,7 @@ export async function getMic(): Promise<MediaStream> {
     return micStream;
   }
   if (!micRequest) {
+    const epoch = micEpoch;
     micRequest = navigator.mediaDevices
       .getUserMedia({
         audio: {
@@ -65,12 +69,17 @@ export async function getMic(): Promise<MediaStream> {
         },
       })
       .then((s) => {
+        if (epoch !== micEpoch) {
+          s.getTracks().forEach((t) => t.stop());
+          throw new DOMException("Microphone released before it was acquired", "AbortError");
+        }
         micStream = s;
         return s;
       })
       .finally(() => {
-        micRequest = null;
+        if (micRequest === request) micRequest = null;
       });
+    const request = micRequest;
   }
   return micRequest;
 }
@@ -82,8 +91,10 @@ export function setMicEnabled(enabled: boolean) {
 }
 
 export function releaseMic() {
+  micEpoch++;
   micStream?.getTracks().forEach((t) => t.stop());
   micStream = null;
+  micRequest = null;
 }
 
 /**

@@ -21,9 +21,43 @@ export type CallMessage =
       sourceLang: string;
       targetLang: string;
       sentAt: number;
+      /** Set when the sender's translation failed and `translated` is just the original. */
+      untranslated?: boolean;
     };
 
 export type Transport = "p2p" | "relay";
+
+const MAX_TEXT = 4000;
+const isStr = (v: unknown, max: number): v is string => typeof v === "string" && v.length <= max;
+
+/**
+ * Runtime check for messages from the other peer. Everything arriving over
+ * the data channel or the relay is untrusted input: a malformed frame used to
+ * throw inside the async socket handler (unhandled rejection) and an
+ * unexpected shape could break rendering.
+ */
+export function isCallMessage(value: unknown): value is CallMessage {
+  if (!value || typeof value !== "object") return false;
+  const m = value as Record<string, unknown>;
+  switch (m.t) {
+    case "hello":
+      return isStr(m.lang, 35) && isStr(m.name, 80);
+    case "partial":
+      return isStr(m.text, MAX_TEXT) && isStr(m.lang, 35);
+    case "segment":
+      return (
+        isStr(m.id, 64) &&
+        isStr(m.original, MAX_TEXT) &&
+        isStr(m.translated, MAX_TEXT) &&
+        isStr(m.sourceLang, 35) &&
+        isStr(m.targetLang, 35) &&
+        typeof m.sentAt === "number" &&
+        (m.untranslated === undefined || typeof m.untranslated === "boolean")
+      );
+    default:
+      return false;
+  }
+}
 
 export interface CallHandlers {
   onMessage: (msg: CallMessage) => void;
@@ -79,6 +113,10 @@ export function connectCall(
     queued.forEach(send);
   }
 
+  function deliver(value: unknown) {
+    if (isCallMessage(value)) handlers.onMessage(value);
+  }
+
   function send(msg: CallMessage) {
     if (closed) return;
     if (channel?.readyState === "open") {
@@ -100,14 +138,21 @@ export function connectCall(
       flushOutbox();
     };
     dc.onclose = () => {
-      if (!closed) handlers.onTransport("relay");
+      if (closed) return;
+      handlers.onTransport("relay");
+      // The relay is only a fallback if the signaling socket is still up.
+      // Otherwise nothing can carry messages any more: say so instead of
+      // silently queueing every later turn into the outbox.
+      if (ws.readyState !== WebSocket.OPEN) handlers.onStatus("disconnected");
     };
     dc.onmessage = (event) => {
+      let parsed: unknown;
       try {
-        handlers.onMessage(JSON.parse(event.data) as CallMessage);
+        parsed = JSON.parse(event.data);
       } catch {
-        /* ignore malformed frames */
+        return; /* ignore malformed frames */
       }
+      deliver(parsed);
     };
   }
 
@@ -134,13 +179,20 @@ export function connectCall(
     handlers.onStatus("waiting-for-peer");
   };
 
-  ws.onmessage = async (event) => {
+  ws.onmessage = (event) => {
     let msg: Record<string, unknown>;
     try {
       msg = JSON.parse(event.data);
     } catch {
       return;
     }
+    if (!msg || typeof msg !== "object") return;
+    // Negotiation failures only cost us the P2P upgrade — the relay keeps the
+    // call working — so they are logged rather than left as unhandled rejections.
+    handleSignal(msg).catch((err) => console.warn("WebRTC negotiation failed; staying on relay:", err));
+  };
+
+  async function handleSignal(msg: Record<string, unknown>) {
 
     switch (msg.type) {
       case "role":
@@ -181,6 +233,7 @@ export function connectCall(
 
       case "ice": {
         const candidate = msg.candidate as RTCIceCandidateInit;
+        if (!candidate || typeof candidate !== "object") break;
         if (remoteDescriptionSet) pc.addIceCandidate(candidate).catch(() => {});
         else pendingCandidates.push(candidate);
         break;
@@ -188,7 +241,7 @@ export function connectCall(
 
       case "app":
         // Relay fallback for anything sent before the data channel opened.
-        handlers.onMessage(msg.payload as CallMessage);
+        deliver(msg.payload);
         break;
 
       case "peer-left":
@@ -203,7 +256,7 @@ export function connectCall(
         handlers.onStatus("error");
         break;
     }
-  };
+  }
 
   function drainCandidates() {
     pendingCandidates.forEach((c) => pc.addIceCandidate(c).catch(() => {}));

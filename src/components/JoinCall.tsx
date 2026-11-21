@@ -5,6 +5,8 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Language } from '../types';
 import { LanguagePicker } from './LanguagePicker';
 import { cn } from '../utils';
+import { SIGNALING_URL } from '../lib/config';
+import { CODE_LENGTH, codeFromScan, normalizeRoomCode } from '../lib/roomCode';
 
 interface JoinCallProps {
   language: Language;
@@ -15,7 +17,12 @@ interface JoinCallProps {
 
 type JoinMode = 'scan' | 'manual';
 
-const CODE_LENGTH = 6;
+/**
+ * How long to wait for the host before giving up. The host is already sitting
+ * in the lobby, so a valid code pairs almost instantly; silence means the code
+ * is wrong or the host left.
+ */
+export const JOIN_TIMEOUT_MS = 12_000;
 
 export function JoinCall({
   language: initialLanguage,
@@ -23,7 +30,7 @@ export function JoinCall({
   onJoined,
   initialCode = '',
 }: JoinCallProps) {
-  const [code, setCode] = useState(initialCode.toUpperCase());
+  const [code, setCode] = useState(() => normalizeRoomCode(initialCode));
   const [mode, setMode] = useState<JoinMode>(initialCode.length === CODE_LENGTH ? 'manual' : 'scan');
   const [language, setLanguage] = useState(initialLanguage);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -33,6 +40,28 @@ export function JoinCall({
 
   const isConnectingRef = useRef(false);
   const hiddenInputRef = useRef<HTMLInputElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+
+  // Leaving this screen mid-join must close the lobby socket. Otherwise it
+  // keeps a seat in that lobby and a later 'ready' would yank the user into a
+  // call from whatever screen they're on.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) {
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (initialCode.length === CODE_LENGTH) setMode('manual');
@@ -46,14 +75,34 @@ export function JoinCall({
     setError(null);
 
     const codeUpper = joinCode.toUpperCase();
-    const wsUrl = import.meta.env.VITE_SIGNALING_URL || 'ws://localhost:8080';
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(SIGNALING_URL);
+    wsRef.current = ws;
+    let settled = false;
+
+    const finish = () => {
+      settled = true;
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+      if (wsRef.current === ws) wsRef.current = null;
+      isConnectingRef.current = false;
+      ws.onmessage = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.close();
+    };
 
     const fail = (message: string) => {
-      isConnectingRef.current = false;
+      if (settled) return;
+      finish();
+      if (!mountedRef.current) return;
       setConnecting(false);
       setError(message);
     };
+
+    timeoutRef.current = setTimeout(
+      () => fail('No one is waiting on that channel. Check the code and try again.'),
+      JOIN_TIMEOUT_MS
+    );
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: 'join', sessionId: codeUpper + '_signal' }));
@@ -62,32 +111,32 @@ export function JoinCall({
     ws.onerror = () => fail('Could not reach the server. Check your connection and try again.');
 
     ws.onmessage = (event) => {
+      let msg: { type?: unknown; code?: unknown };
       try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'ready') {
-          ws.close();
-          onJoined(codeUpper, language);
-        } else if (msg.type === 'error') {
-          ws.close();
-          fail('That channel is already full.');
-        }
+        msg = JSON.parse(event.data);
       } catch {
-        /* ignore malformed frames */
+        return; /* ignore malformed frames */
+      }
+      if (msg?.type === 'ready') {
+        if (settled) return;
+        finish();
+        if (mountedRef.current) onJoined(codeUpper, language);
+      } else if (msg?.type === 'error') {
+        fail(
+          msg.code === 'session_full'
+            ? 'That channel is already full.'
+            : 'That code isn’t valid. Check it and try again.'
+        );
       }
     };
 
-    ws.onclose = () => {
-      isConnectingRef.current = false;
-      setConnecting(false);
-    };
+    ws.onclose = () => fail('Lost connection to the server. Try again.');
   };
 
   const handleScan = (detectedCodes: { rawValue: string }[]) => {
     if (!detectedCodes?.length) return;
-    const result = detectedCodes[0].rawValue;
-    const urlMatch = result.match(/\?join=([a-zA-Z0-9]{6})/i);
-    if (urlMatch?.[1]) handleJoin(urlMatch[1].toUpperCase());
-    else if (result.length === CODE_LENGTH) handleJoin(result.toUpperCase());
+    const scanned = codeFromScan(detectedCodes[0].rawValue);
+    if (scanned) handleJoin(scanned);
   };
 
   const setModeSafely = (next: JoinMode) => {
@@ -215,7 +264,7 @@ export function JoinCall({
               ref={hiddenInputRef}
               value={code}
               onChange={(e) => {
-                const next = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
+                const next = normalizeRoomCode(e.target.value);
                 setCode(next);
                 setError(null);
                 if (next.length === CODE_LENGTH) handleJoin(next);
@@ -227,7 +276,7 @@ export function JoinCall({
               spellCheck={false}
               maxLength={CODE_LENGTH}
               className="pointer-events-none absolute h-px w-px opacity-0"
-              aria-hidden="true"
+              aria-label="Channel code"
             />
 
             <p className="mt-5 text-center text-[13px] text-[var(--text-3)]">
@@ -239,6 +288,7 @@ export function JoinCall({
         <AnimatePresence>
           {error && (
             <motion.p
+              role="alert"
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
