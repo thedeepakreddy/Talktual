@@ -100,6 +100,8 @@ export interface PlaybackItem {
    * (so a mode change applies to queued items). Absent = 'cloud-first' (Phase 5 behaviour).
    */
   ttsRoute?: () => TtsRoute;
+  /** Phase 8 (ambient): output level 0..1 so translated speech never masks the room. Absent = full. */
+  volume?: number;
 }
 
 /** cloud-first: server voice, then any browser voice · device-first: on-device voice, then cloud · device-only: on-device voice or silence. */
