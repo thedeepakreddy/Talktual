@@ -66,6 +66,11 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
     return () => clearTimeout(t);
   }, [phase, s?.phaseReason, onEndCall]);
 
+  // A consent prompt always takes over: never stack it on top of settings.
+  useEffect(() => {
+    if (s?.voice.prompt || s?.consent.prompt) setSettingsOpen(false);
+  }, [s?.voice.prompt, s?.consent.prompt]);
+
   const leave = useCallback(() => {
     session?.leave();
     onEndCall();

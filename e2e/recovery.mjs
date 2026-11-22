@@ -10,7 +10,7 @@
 // Usage: node e2e/recovery.mjs
 
 import assert from 'node:assert/strict';
-import { loadChromium, startStack, pairPeers, talk } from './harness.mjs';
+import { loadChromium, startStack, pairPeers, talk, readTransport } from './harness.mjs';
 
 const GRACE_MS = 4000;
 const results = [];
@@ -54,7 +54,7 @@ try {
     await consent(pair.host.page);
     await consent(pair.guest.page);
     await pair.host.page.waitForTimeout(3000);
-    const t = await pair.host.page.locator('text=/^(Direct|Relayed)$/').first().textContent();
+    const t = await readTransport(pair.host.page);
     assert.equal(t, 'Relayed');
     await talk(pair.host.page, 'before');
     await pair.guest.page.waitForFunction(() => window.__spoken.some((s) => s.text === '[en|es] before'));
@@ -99,19 +99,19 @@ try {
     await p2.host.context.setOffline(true);
     await p2.host.page.evaluate(() => window.__dropSockets());
     await p2.guest.page.getByText(/lost connection — waiting for them/i).waitFor({ timeout: 5000 });
-    await p2.guest.page.getByText(/left the channel/i).first().waitFor({ timeout: GRACE_MS + 5000 });
-    await p2.guest.page.getByRole('button', { name: /start a channel/i }).waitFor({ timeout: 5000 });
+    await p2.guest.page.getByText(/left the call/i).first().waitFor({ timeout: GRACE_MS + 5000 });
+    await p2.guest.page.getByRole('button', { name: /^start a call$/i }).waitFor({ timeout: 5000 });
   });
 
   await step('B: host back online → resume refused → "call ended while you were offline"', async () => {
     await p2.host.context.setOffline(false);
     await p2.host.page.getByText(/ended while you were offline|disconnected/i).first().waitFor({ timeout: 30000 });
-    const msg = await p2.host.page.locator('p[role="status"]').first().textContent();
+    const msg = await p2.host.page.getByRole('alert').first().textContent();
     console.log(`      host notice: "${msg}"`);
   });
 
   await step('B: server holds no sessions afterwards', async () => {
-    await p2.host.page.getByRole('button', { name: 'Leave channel' }).click();
+    await p2.host.page.getByRole('button', { name: 'End call' }).click();
     await new Promise((r) => setTimeout(r, 300));
     assert.equal(stack.api.sessions.size, 0);
   });

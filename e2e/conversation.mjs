@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { loadChromium, startStack, pairPeers, root } from './harness.mjs';
+import { loadChromium, startStack, pairPeers, root, feedText, setHandsFree, voiceMatchControls } from './harness.mjs';
 
 const results = [];
 async function step(name, fn) {
@@ -33,12 +33,7 @@ async function press(page) {
 }
 const say = (page, text, isFinal = true) => page.evaluate(([t, f]) => window.__say(t, f), [text, isFinal]);
 const release = (page) => page.mouse.up();
-async function transcript(page) {
-  await page.getByRole('button', { name: 'Show transcript' }).click();
-  const text = await page.getByRole('dialog', { name: 'Transcript' }).innerText();
-  await page.getByRole('button', { name: 'Close transcript' }).click();
-  return text;
-}
+const transcript = feedText;
 async function waitSpoken(page, pred, ms = 8000) {
   await page.waitForFunction((src) => window.__spoken.some((s) => new Function('t', `return ${src}`)(s.text)), pred, { timeout: ms });
 }
@@ -124,19 +119,19 @@ try {
   });
 
   await step('hands-free: an unfinished phrase is held, then committed when the speaker stops (bounded)', async () => {
-    await host.page.getByRole('button', { name: /hands-free: off/i }).click();
+    await setHandsFree(host.page, true);
     await host.page.waitForFunction(() => window.__srRunning(), null, { timeout: 5000 });
     const before = (await spokenTexts(guest.page)).length;
     await say(host.page, 'meet me at the');
     await guest.page.waitForTimeout(400);
     assert.equal((await spokenTexts(guest.page)).length, before, 'fragment committed too early');
     await waitSpoken(guest.page, "t.includes('meet me at the')", 6000);
-    await host.page.getByRole('button', { name: /hands-free: on/i }).click();
+    await setHandsFree(host.page, false);
   });
 
   await step('no page errors; VoiceMirror stayed off (default build)', async () => {
     for (const p of [host, guest]) assert.deepEqual(p.errors, []);
-    assert.equal(await host.page.getByRole('button', { name: /voice match/i }).count(), 0);
+    assert.equal(await voiceMatchControls(host.page), 0);
   });
 } catch {
   exitCode = 1;
