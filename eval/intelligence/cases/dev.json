@@ -1,0 +1,942 @@
+[
+ {
+  "id": "dev-001",
+  "category": "reference",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Let's meet at Plaza Mayor tomorrow"
+   },
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "¿Cómo llego allí desde el hotel?"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "references": [
+    {
+     "word": "allí",
+     "antecedent": "Plaza Mayor"
+    }
+   ],
+   "signals": [
+    "question"
+   ]
+  }
+ },
+ {
+  "id": "dev-002",
+  "category": "reference",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Mi compañera Lucía llega a las ocho"
+   },
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Should she bring the documents?"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "references": [
+    {
+     "word": "she",
+     "antecedent": "Lucía"
+    }
+   ],
+   "signals": [
+    "question"
+   ]
+  }
+ },
+ {
+  "id": "dev-003",
+  "category": "reference",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Vienen mi amiga Marta y mi amiga Elena"
+   },
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Does she speak English?"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "references": [
+    {
+     "word": "she",
+     "antecedent": null
+    }
+   ],
+   "signals": [
+    "question"
+   ]
+  }
+ },
+ {
+  "id": "dev-004",
+  "category": "reference",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "The concert is at the Royal Theatre"
+   },
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Vale, nos vemos allí"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "references": [
+    {
+     "word": "allí",
+     "antecedent": "Royal Theatre"
+    }
+   ],
+   "signals": [
+    "confirmation"
+   ]
+  }
+ },
+ {
+  "id": "dev-005",
+  "category": "reference",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "I went to the market yesterday"
+   },
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "¿Y qué compraste allí?"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "references": [
+    {
+     "word": "allí",
+     "antecedent": null
+    }
+   ],
+   "signals": [
+    "question"
+   ]
+  }
+ },
+ {
+  "id": "dev-006",
+  "category": "reference",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "We stayed at Hotel Sol and then at Hotel Luna"
+   },
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "¿Cuál está más cerca? ¿Volvemos allí?"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "references": [
+    {
+     "word": "allí",
+     "antecedent": null
+    }
+   ],
+   "signals": [
+    "question"
+   ]
+  }
+ },
+ {
+  "id": "dev-010",
+  "category": "ambiguity",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "I need to withdraw some cash"
+   },
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Is there a bank nearby?"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "senses": [
+    {
+     "word": "bank",
+     "sense": "financial institution"
+    }
+   ],
+   "signals": [
+    "question"
+   ]
+  }
+ },
+ {
+  "id": "dev-011",
+  "category": "ambiguity",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "We could go fishing this afternoon"
+   },
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Let's sit on the bank of the river"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "senses": [
+    {
+     "word": "bank",
+     "sense": "river side"
+    }
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-012",
+  "category": "ambiguity",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Meet me at the bank"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "senses": [
+    {
+     "word": "bank",
+     "sense": "ambiguous"
+    }
+   ],
+   "signals": [
+    "request"
+   ]
+  }
+ },
+ {
+  "id": "dev-013",
+  "category": "ambiguity",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Estuvimos paseando por el parque"
+   },
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Nos sentamos en un banco"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "senses": [
+    {
+     "word": "banco",
+     "sense": "bench seat"
+    }
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-014",
+  "category": "ambiguity",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Necesito sacar dinero del banco"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "senses": [
+    {
+     "word": "banco",
+     "sense": "financial institution"
+    }
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-015",
+  "category": "ambiguity",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "¿Me traes la carta, por favor?"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "senses": [
+    {
+     "word": "carta",
+     "sense": "ambiguous"
+    }
+   ],
+   "signals": [
+    "request"
+   ]
+  }
+ },
+ {
+  "id": "dev-016",
+  "category": "ambiguity",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Estamos en el restaurante"
+   },
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "El camarero nos trae la carta"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "senses": [
+    {
+     "word": "carta",
+     "sense": "restaurant menu"
+    }
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-017",
+  "category": "ambiguity",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "I can't read without my glasses"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "senses": [
+    {
+     "word": "glasses",
+     "sense": "eyeglasses"
+    }
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-018",
+  "category": "ambiguity",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Did you see the match last night? Our team won"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "senses": [
+    {
+     "word": "match",
+     "sense": "sports game"
+    }
+   ],
+   "signals": [
+    "question"
+   ]
+  }
+ },
+ {
+  "id": "dev-019",
+  "category": "ambiguity",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Tengo cita con el dentista el lunes"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "senses": [
+    {
+     "word": "cita",
+     "sense": "appointment"
+    }
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-020",
+  "category": "entity",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "My colleague Rose will pick you up"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "entities": [
+    "Rose"
+   ],
+   "signals": [
+    "offer"
+   ]
+  }
+ },
+ {
+  "id": "dev-021",
+  "category": "entity",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "I already told Bill about the dinner"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "entities": [
+    "Bill"
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-022",
+  "category": "entity",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Please ask for Grace at the reception"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "entities": [
+    "Grace"
+   ],
+   "signals": [
+    "request"
+   ]
+  }
+ },
+ {
+  "id": "dev-023",
+  "category": "entity",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "The office is on Calle Mayor, next to the pharmacy"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "entities": [
+    "Calle Mayor"
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-024",
+  "category": "entity",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Hope and Mark are coming too"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "entities": [
+    "Mark"
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-030",
+  "category": "signal",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Could you send me the address?"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "signals": [
+    "request"
+   ]
+  }
+ },
+ {
+  "id": "dev-031",
+  "category": "signal",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Shall I book a table for four?"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "signals": [
+    "offer"
+   ]
+  }
+ },
+ {
+  "id": "dev-032",
+  "category": "signal",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "¿Quieres que te lleve al aeropuerto?"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "signals": [
+    "offer"
+   ]
+  }
+ },
+ {
+  "id": "dev-033",
+  "category": "signal",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Can you come at six?"
+   },
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "No, no puedo, tengo trabajo"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "signals": [
+    "refusal"
+   ]
+  }
+ },
+ {
+  "id": "dev-034",
+  "category": "signal",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Is dinner at eight OK?"
+   },
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Vale, perfecto"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "signals": [
+    "confirmation"
+   ]
+  }
+ },
+ {
+  "id": "dev-035",
+  "category": "signal",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "The train leaves from platform nine"
+   },
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "¿Cómo? No te entiendo"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "signals": [
+    "clarification-request",
+    "misunderstanding"
+   ]
+  }
+ },
+ {
+  "id": "dev-036",
+  "category": "signal",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Rápido, llama a una ambulancia"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "signals": [
+    "request",
+    "urgency"
+   ]
+  }
+ },
+ {
+  "id": "dev-037",
+  "category": "signal",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "The hotel is lovely"
+   },
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "By the way, how much was the taxi?"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "signals": [
+    "question",
+    "topic-change"
+   ]
+  }
+ },
+ {
+  "id": "dev-038",
+  "category": "signal",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "I'm really tired today"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "signals": [],
+   "noNotes": true
+  }
+ },
+ {
+  "id": "dev-040",
+  "category": "correction",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "The meeting is on Monday"
+   },
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Sorry, not Monday, Tuesday"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "signals": [
+    "correction"
+   ]
+  }
+ },
+ {
+  "id": "dev-041",
+  "category": "correction",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Llego a las cinco"
+   },
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Perdón, quise decir a las seis"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "signals": [
+    "correction"
+   ]
+  }
+ },
+ {
+  "id": "dev-050",
+  "category": "idiom",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Good luck tonight, break a leg!"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "idioms": [
+    "break a leg"
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-051",
+  "category": "idiom",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Ese examen fue pan comido"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "idioms": [
+    "pan comido"
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-052",
+  "category": "idiom",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "I'm feeling a bit under the weather"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "idioms": [
+    "under the weather"
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-060",
+  "category": "sensitive",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "My number is 612 345 678, call me later"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "mustNotStore": [
+    "612 345 678"
+   ],
+   "signals": [
+    "request"
+   ]
+  }
+ },
+ {
+  "id": "dev-061",
+  "category": "sensitive",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Mi correo es lucia.gomez@example.com"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "mustNotStore": [
+    "lucia.gomez@example.com"
+   ],
+   "signals": []
+  }
+ },
+ {
+  "id": "dev-070",
+  "category": "neutral",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "The weather is nice today"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "signals": [],
+   "noNotes": true
+  }
+ },
+ {
+  "id": "dev-071",
+  "category": "neutral",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Hoy hace buen tiempo"
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "signals": [],
+   "noNotes": true
+  }
+ },
+ {
+  "id": "dev-072",
+  "category": "neutral",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "We arrived at the station"
+   },
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "The train was on time"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "signals": [],
+   "noNotes": true
+  }
+ },
+ {
+  "id": "dev-080",
+  "category": "adversarial",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "We went fishing by the river"
+   },
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Then I needed to deposit money"
+   },
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Meet me at the bank"
+   }
+  ],
+  "target": 2,
+  "expect": {
+   "senses": [
+    {
+     "word": "bank",
+     "sense": "ambiguous"
+    }
+   ],
+   "signals": [
+    "request"
+   ]
+  }
+ },
+ {
+  "id": "dev-081",
+  "category": "adversarial",
+  "turns": [
+   {
+    "speaker": "B",
+    "lang": "es",
+    "text": "Ana viene con Anna"
+   },
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Is she bringing the car?"
+   }
+  ],
+  "target": 1,
+  "expect": {
+   "references": [
+    {
+     "word": "she",
+     "antecedent": null
+    }
+   ],
+   "signals": [
+    "question"
+   ]
+  }
+ },
+ {
+  "id": "dev-082",
+  "category": "adversarial",
+  "turns": [
+   {
+    "speaker": "A",
+    "lang": "en",
+    "text": "Oh great, another delay. Just perfect."
+   }
+  ],
+  "target": 0,
+  "expect": {
+   "signals": []
+  }
+ }
+]

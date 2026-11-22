@@ -21,6 +21,13 @@ const COMMON_INITIAL = new Set([
   ...'tell ask call send bring take wait come give show help meet pick text email write remind let thank see find book check say dile pregúntale llama manda trae dame ayuda espera ven mira dime pásale avísale saluda'.split(' '),
 ]);
 
+/** Frequent sentence openers that are not names (kept small and reviewable). */
+const COMMON_STARTERS = new Set(
+  'maybe perhaps today tonight tomorrow yesterday then first next finally also actually honestly anyway unfortunately luckily hopefully basically really sorry thanks hello please everything nothing someone somebody everyone nobody there here where when what which who why how can could would should will shall does did is are was were have has had let lets let\'s just only even still yet again quizás quizá tal hoy mañana ayer luego después antes primero entonces también todavía siempre nunca gracias perdón ojalá creo dice dijo vamos tengo tenemos hay está estoy estamos son era fue puede podemos quiero necesito llegamos llego voy fuimos'.split(
+    ' '
+  )
+);
+
 const CONNECT = new Set(['de', 'del', 'la', 'las', 'los', 'of', 'the', 'y', 'and', 'van', 'von', 'da', 'di']);
 const NOT_NAMES = new Set(
   'I I’m I\'m OK Okay Yes No Hello Hi Hey Thanks Thank Please Sorry Well So And But Then Oh Yeah Sure Hola Gracias Vale Sí Bueno Pues Perdón Perdona Oye Mira Claro Buenos Buenas Adiós Listen Look Wait Great Good Right'.split(
@@ -78,7 +85,14 @@ export function extractEntities(raw: string, lang: AciLang, known: (t: string) =
     const tokens = span.text.split(/\s+/);
     const multi = tokens.length > 1;
     // A lone capitalized word at the start of a sentence is usually just grammar.
-    if (span.initial && !multi && !known(span.text)) continue;
+    // Exception: an uncommon word followed by lowercase text ("Ana viene…") is kept
+    // as a LOW-confidence name — never protected, only used to stop pronoun guesses.
+    if (span.initial && !multi && !known(span.text)) {
+      const w = span.text.toLowerCase();
+      const isDate = [...(DAYS[lang] ?? []), ...(MONTHS[lang] ?? [])].includes(w);
+      if (!COMMON_INITIAL.has(w) && !COMMON_STARTERS.has(w) && !isDate && w.length >= 3) push({ text: span.text, kind: 'name', confidence: 0.4, protect: false });
+      continue;
+    }
     const before = text.slice(0, span.start).toLowerCase();
     const prevWord = before.trim().split(/\s+/).at(-1)?.replace(/[.,]/g, '') ?? '';
     const lowTokens = tokens.map((t) => t.toLowerCase().replace(/[.,]/g, ''));

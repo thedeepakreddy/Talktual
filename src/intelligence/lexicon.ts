@@ -213,6 +213,7 @@ export const SIGNAL_CUES: Partial<Record<AciLang, CueTable>> = {
     offer: [
       c(/\b(shall i|should i|do you want me to|want me to|would you like me to|let me|i can|i could|i'll|i will)\s+(help|take|bring|get|show|call|drive|pick|carry|book|pay|send|walk|give|lend|buy|check|make|grab|come|meet|cook|order)\b/, 0.8),
       c(/\b(would you like|do you want|how about|what about|why don't (we|i))\b/, 0.6),
+      c(/\b(will|can|could)\s+(pick you up|take you|show you|drive you|help you|bring you|meet you|walk you)\b/, 0.65),
     ],
     confirmation: [
       c(/^(yes|yeah|yep|yup|sure|ok|okay|alright|all right|sounds good|that works|works for me|exactly|correct|perfect|deal|of course|agreed|definitely|absolutely|great|fine|got it)\b/, 0.8),
@@ -262,7 +263,7 @@ export const SIGNAL_CUES: Partial<Record<AciLang, CueTable>> = {
     ],
     correction: [
       c(/\b(quise decir|quería decir|me equivoqué|me he equivocado|perdón,? (no|digo|era|quise)|mejor dicho|digo,|o sea,? no|corrijo)\b/, 0.85),
-      c(/^(no|perdón|espera|perdona),?\s+(no\b|es|era|digo|a las|el|la|en)/, 0.75),
+      c(/^(no|perdón|espera|perdona),?\s+(no\s+(es|era|a las|el|la|en)\b|es\b|era\b|digo\b|a las\b|el\b|la\b|en\b)/, 0.75),
       c(/\bno\s+\w+,?\s+(sino|es)\b/, 0.55),
     ],
     'clarification-request': [
@@ -302,7 +303,7 @@ export const PLACE_PREP: Partial<Record<AciLang, string[]>> = {
   es: ['en', 'a', 'al', 'de', 'del', 'desde', 'hacia', 'hasta', 'cerca de', 'junto a', 'enfrente de'],
 };
 export const PLACE_WORDS = new Set(
-  'street st road avenue ave square plaza station airport hotel museum park bridge market cathedral church beach mall center centre restaurant cafe café bar hospital university airport terminal gate calle avenida plaza paseo estación aeropuerto museo parque puente mercado catedral iglesia playa hospital universidad hotel restaurante barrio carretera'.split(
+  'street st road avenue ave square plaza station airport hotel museum park bridge market cathedral church beach mall center centre restaurant cafe café bar hospital university airport terminal gate theatre theater cinema gallery library stadium club pub school office tower palace castle zoo arena hall calle teatro cine galería biblioteca estadio palacio castillo torre colegio oficina avenida plaza paseo estación aeropuerto museo parque puente mercado catedral iglesia playa hospital universidad hotel restaurante barrio carretera'.split(
     ' '
   )
 );

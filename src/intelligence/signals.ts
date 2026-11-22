@@ -33,7 +33,9 @@ export function detectSignals(text: string, lang: AciLang, ctx: SignalContext): 
   // "Could you call a taxi?" / "Shall I carry it?" ask for action, not information:
   // keep `question` only when an interrogative word asks for information.
   const wh = lang === 'es' ? /^¿?\s*(qué|dónde|cuándo|quién|por qué|cómo|cuál|cuánto|cuánta|cuántos|cuántas)\b/ : /^(what|where|when|who|whom|whose|why|how|which)\b/;
-  if ((out.get('request') ?? 0) >= 0.75 || (out.get('offer') ?? 0) >= 0.8) {
+  // A refusal declines something: it needs a preceding turn by the other person.
+  if (!ctx.previousByOther) out.delete('refusal');
+  if ((out.get('request') ?? 0) >= 0.75 || (out.get('offer') ?? 0) >= 0.6) {
     if (!wh.test(t)) out.delete('question');
   }
   const nu = NOT_UNDERSTOOD[lang];

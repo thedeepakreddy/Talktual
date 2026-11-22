@@ -38,6 +38,15 @@ export interface AciStats {
   restoreFailures: number;
 }
 
+function findingsOf(amb: AmbiguityFinding[], refs: ReturnType<typeof resolveReferences>, idioms: { phrase: string }[], found: Extracted[]) {
+  return {
+    senses: amb.map((f) => ({ word: f.surface, sense: f.sense?.id ?? null, gloss: f.sense?.gloss ?? null })),
+    references: refs.map((r) => ({ word: r.word, antecedent: r.antecedent?.text ?? null, candidates: r.candidates })),
+    idioms: idioms.map((i) => i.phrase),
+    entities: found.map((e) => ({ text: e.text, kind: e.kind })),
+  };
+}
+
 const firstGloss = (g: string) => g.split(' ').slice(0, 2).join(' ');
 const quote = (s: string) => `“${s}”`;
 
@@ -174,6 +183,7 @@ export class IntelligenceController {
       notes: notes.slice(0, this.limits.maxNotesPerSegment),
       suggestions,
       ...(correction ? { correction } : {}),
+      findings: findingsOf(amb, refs, detectIdioms(input.text, lang), found),
     };
     this.ingest(input.segmentId, 'local', input.text, input.lang, found);
     this.lastLocalSegment = input.segmentId;
@@ -252,6 +262,7 @@ export class IntelligenceController {
       ...(speak ? { speak } : {}),
       ...(correction ? { correction } : {}),
       suggestions,
+      findings: findingsOf(amb, refs, idioms, found),
     };
     this.lastPeerWasClarification = signals.some((s) => s.category === 'clarification-request');
     this.ingest(input.segmentId, 'peer', input.original, input.sourceLang, found);
