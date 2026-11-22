@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Phrasebook, PhrasebookRuntime } from './phrasebook';
 import { RuntimeRegistry, validLocalOutput, DEFAULT_REGISTRY_LIMITS } from './registry';
 import { BrowserTranslatorRuntime, LocalVoiceRuntime, OnDeviceAsrRuntime } from './platform';
-import type { LocalTranslateResult, TranslateRuntime } from './types';
+import type { LocalTranslateResult, RuntimeInfo, TranslateRuntime } from './types';
 import { ProcessingPolicy, PolicyBlockedError } from '../privacy/policy';
 import { NetworkMonitor } from '../privacy/network';
 
@@ -66,8 +66,8 @@ class FakeRt implements TranslateRuntime {
     private readonly impl: (t: string) => Promise<LocalTranslateResult>,
     private readonly ready = 'ready' as const
   ) {}
-  info() {
-    return { v: 1, id: this.id, task: 'translate', languages: ['en>es'], model: { name: 'x', version: '1', license: 'x', sizeKB: 1, install: 'x' }, platform: 'x', readiness: this.ready, constraints: [], quality: 'x', resources: { memoryKB: null, loadMs: null }, verification: 'unverified' } as const;
+  info(): RuntimeInfo {
+    return { v: 1, id: this.id, task: 'translate', languages: ['en>es'], model: { name: 'x', version: '1', license: 'x', sizeKB: 1, install: 'x' }, platform: 'x', readiness: this.ready, constraints: [], quality: 'x', resources: { memoryKB: null, loadMs: null }, verification: 'unverified' };
   }
   async discover() {
     return this.ready;
