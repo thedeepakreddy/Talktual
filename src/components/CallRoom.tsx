@@ -8,7 +8,7 @@ import type { SessionDeps } from '../engine/CommunicationSession';
 import { LanguagePicker } from './LanguagePicker';
 import { ConsentSheet } from './ConsentSheet';
 import { VOICEMIRROR_DISCLOSURE } from '../voicemirror/disclosure';
-import { Banner, Button, IconButton } from './ui';
+import { Banner, Button, IconButton, Sheet } from './ui';
 import { ConversationFeed } from './call/ConversationFeed';
 import { TalkDock } from './call/TalkDock';
 import { SettingsSheet } from './call/SettingsSheet';
@@ -40,6 +40,7 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState('');
   const [elapsed, setElapsed] = useState(0);
@@ -154,7 +155,14 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
           <IconButton label="Call settings" onClick={() => setSettingsOpen(true)}>
             <SlidersHorizontal className="h-5 w-5" />
           </IconButton>
-          <Button variant="danger" size="sm" onClick={leave} aria-label="End call" icon={<PhoneOff className="h-4 w-4" />}>
+          <Button
+            variant="danger"
+            size="sm"
+            // A live call asks first (a mis-tap would drop the other person); once the call is over, End just leaves.
+            onClick={connected || phase === 'reconnecting' || phase === 'waiting-for-peer' ? () => setConfirmEnd(true) : leave}
+            aria-label="End call"
+            icon={<PhoneOff className="h-4 w-4" />}
+          >
             End
           </Button>
         </header>
@@ -279,6 +287,24 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
             session?.showDisclosure();
           }}
         />
+
+        <Sheet
+          open={confirmEnd}
+          onClose={() => setConfirmEnd(false)}
+          title="End this call?"
+          footer={
+            <div className="grid grid-cols-2 gap-3">
+              <Button onClick={() => setConfirmEnd(false)} data-autofocus>
+                Keep talking
+              </Button>
+              <Button variant="danger" onClick={leave}>
+                End call
+              </Button>
+            </div>
+          }
+        >
+          <p className="pb-1 text-body text-fg-muted">{peerName ? `${peerName} will be disconnected.` : 'The other person will be disconnected.'} The conversation is not saved.</p>
+        </Sheet>
 
         <LanguagePicker open={pickerOpen} selected={language} title="You speak" onSelect={onLanguageChange} onClose={() => setPickerOpen(false)} />
 

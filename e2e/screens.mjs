@@ -161,6 +161,9 @@ try {
     await safe('ended', async () => {
       await guest.page.waitForTimeout(2500);
       await host.page.getByRole('button', { name: 'End call' }).click();
+      await host.page.getByRole('dialog', { name: 'End this call?' }).waitFor();
+      await shot(host.page, vp, '14c-end-confirm');
+      await host.page.getByRole('dialog', { name: 'End this call?' }).getByRole('button', { name: 'End call' }).click();
       await guest.page.waitForTimeout(400);
       await shot(guest.page, vp, '15-peer-left');
     });

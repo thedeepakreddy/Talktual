@@ -21,7 +21,7 @@ Full audit with evidence: [`PHASE7_DESIGN_AUDIT.md`](PHASE7_DESIGN_AUDIT.md). "B
 | F3 P1 | Five control pills | **Fixed.** Mic and Type sit beside the talk button; modes are in settings. |
 | F4 P1 | Diagnostics in the primary UI | **Fixed.** Removed. The connection type is under Settings › This call. |
 | F5 P1 | Stacked status chip rows | **Fixed.** One status line (`aria-live`) and one banner (`call/status.ts`). |
-| F6 P1 | Unlabelled red leave icon in the back position | **Fixed.** A labelled "End" button sits top-right ("End call" for assistive tech). No confirmation dialog — see §9. |
+| F6 P1 | Unlabelled red leave icon in the back position | **Fixed.** A labelled "End" button sits top-right ("End call" for assistive tech). A live call asks “End this call?” (Keep talking / End call); once the call is over, End leaves immediately — see §9. |
 | F7 P1 | Three settings surfaces | **Fixed.** One sheet with *Talking · Processing · Assistance · Voice · This call* sections and two sub-pages. |
 | F8 P2 | Skeuomorphic talk button, gradients, glow, grille texture | **Fixed.** Flat surfaces. Depth comes only from surface steps and hairlines. |
 | F9 P2 | Consent as a wall of text | **Improved.** Structured list with the same text, verbatim from the engine. |
@@ -98,7 +98,7 @@ Not done: a screen-reader session (VoiceOver/TalkBack/NVDA) and an automated axe
 ## 7. Visual evidence
 `docs/phase7/screens/after/` holds real renders from Playwright Chromium against the real signalling server, with providers stubbed and speech scripted. Viewports are phone 390×844 (touch, mobile), tablet 834×1112 and desktop 1440×900. The dark theme is captured at all three; the light theme (`*-light.png`) at phone and desktop.
 
-There are 21 captures per viewport and theme: home, name required, invite, code entry, invite join, consent, idle, holding with live caption, received, conversation (both sides), settings (top and scrolled), where things run, memory, language, hands-free, typing, reconnecting / peer away, and peer left. Regenerate with `node e2e/screens.mjs <outDir> phone,tablet,desktop 1 dark|light`.
+There are 22 captures per viewport and theme (including the End-call confirmation): home, name required, invite, code entry, invite join, consent, idle, holding with live caption, received, conversation (both sides), settings (top and scrolled), where things run, memory, language, hands-free, typing, reconnecting / peer away, and peer left. Regenerate with `node e2e/screens.mjs <outDir> phone,tablet,desktop 1 dark|light`.
 
 I inspected each screen and iterated on it. Changes made from inspection:
 
@@ -137,10 +137,10 @@ The "reconnecting" captures show the *peer-away* banner on the other side. On th
 
 **Simulated vs real:** all browser runs use desktop Chromium with fake media devices, a scripted Web Speech shim and stubbed providers. Phone results come from viewport, touch and mobile emulation. **No real-device, Safari/iOS, Firefox or screen-reader validation was performed.**
 
-**Design decisions to confirm:**
+**Design decisions (resolved):**
 
-* "End" has no confirmation. It is labelled, separated from Back and placed right, but a mis-tap still ends the call.
-* Hands-free moved from a pill into settings. It is used less often, and its persistent indicator and "Stop" control are unchanged.
+* **End call asks first while the call is live** (connected, waiting or reconnecting): a small sheet, “End this call?”, with “Keep talking” focused by default. When the call has already ended or failed, End leaves immediately. Covered by `CallRoom.test.tsx` and `smoke.mjs`.
+* **Hands-free stays in settings.** It is a deliberate mode switch, not a per-turn action. While it is on, the always-visible banner and the centre “Stop” control make it obvious and one tap to turn off, so a dock toggle would add clutter without adding safety.
 
 ## 10. Privacy, consent and processing semantics
 Unchanged:
@@ -186,7 +186,7 @@ The redesign is view-only, so any Phase 7 commit can be reverted without touchin
 1. Real-device pass: iOS Safari, Android Chrome, mid-range Android at 200 % text, with VoiceOver and TalkBack.
 2. Firefox and Safari desktop runs of the browser suites.
 3. Moderated usability check of the invite → join → first exchange journey, with two people on two phones.
-4. Decide on End-call confirmation and the placement of hands-free (§9).
+4. Watch usability sessions for whether the End confirmation feels like friction, and whether people find hands-free in settings.
 5. Optionally, a Figma library from `DESIGN.md`, if the team wants design-side ownership. That needs an approved Figma file.
 
 **Engineering completion:** done for the scope above, with all automated checks green.

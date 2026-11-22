@@ -280,3 +280,12 @@ export async function voiceMatchControls(page) {
   await closeSettings(page);
   return n;
 }
+
+/** Ends the call from the header, confirming when the call is live. */
+export async function endCall(page) {
+  await page.getByRole('button', { name: 'End call' }).click();
+  const confirm = page.getByRole('dialog', { name: 'End this call?' });
+  const asked = await confirm.waitFor({ timeout: 1500 }).then(() => true, () => false);
+  if (asked) await confirm.getByRole('button', { name: 'End call' }).click();
+  return asked;
+}
