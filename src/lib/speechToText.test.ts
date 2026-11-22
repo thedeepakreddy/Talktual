@@ -267,6 +267,81 @@ describe('Web Speech adapter (streaming)', () => {
     expect(c.onEnd).toHaveBeenCalledTimes(1);
   });
 
+  // ---- Reliability fix: a late or missing final must not lose the user's words ----
+  it('ROOT CAUSE: engine ends after stop() WITHOUT a final (Chrome Android) → last interim is promoted, once', async () => {
+    vi.useFakeTimers();
+    const { createAsr } = await import('./speechToText');
+    const { RELEASE_TAIL_MS } = await import('./config');
+    const c = cb();
+    const r = createAsr('en-US', 'push-to-talk', c);
+    await r.start();
+    last().emit('where is the', false);
+    last().emit('where is the station', false);
+    r.stop();
+    await vi.advanceTimersByTimeAsync(RELEASE_TAIL_MS + 5); // stop() → onend, no final ever
+    expect(texts(c.onFinal)).toEqual(['where is the station']);
+    expect(c.onFinal.mock.calls[0][0]).toMatchObject({ promoted: true, engine: 'webspeech' });
+    expect(c.onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('ROOT CAUSE: final arrives later than the finalize bound → interim promoted at the bound; the late final is ignored (no duplicate)', async () => {
+    vi.useFakeTimers();
+    const { createAsr } = await import('./speechToText');
+    const { RELEASE_TAIL_MS, FINALIZE_TIMEOUT_MS } = await import('./config');
+    const c = cb();
+    const r = createAsr('en-US', 'push-to-talk', c);
+    await r.start();
+    const rec = last();
+    rec.stop = () => {}; // slow cloud engine: flushes much later
+    rec.emit('call a taxi please', false);
+    r.stop();
+    await vi.advanceTimersByTimeAsync(RELEASE_TAIL_MS + FINALIZE_TIMEOUT_MS + 5);
+    expect(texts(c.onFinal)).toEqual(['call a taxi please']);
+    rec.emit('call a taxi please', true); // arrives after we gave up: handlers are detached
+    expect(texts(c.onFinal)).toEqual(['call a taxi please']);
+    expect(c.onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('a final that arrives in time wins; nothing is promoted on top of it', async () => {
+    vi.useFakeTimers();
+    const { createAsr } = await import('./speechToText');
+    const { RELEASE_TAIL_MS } = await import('./config');
+    const c = cb();
+    const r = createAsr('en-US', 'push-to-talk', c);
+    await r.start();
+    last().emit('good morning', false);
+    last().emit('good morning everyone', true);
+    r.stop();
+    await vi.advanceTimersByTimeAsync(RELEASE_TAIL_MS + 5);
+    expect(texts(c.onFinal)).toEqual(['good morning everyone']);
+    expect(c.onFinal.mock.calls[0][0]).not.toHaveProperty('promoted');
+  });
+
+  it('privacy: abort (mic off / leave / mode change) DISCARDS pending interim text', async () => {
+    vi.useFakeTimers();
+    const { createAsr } = await import('./speechToText');
+    const c = cb();
+    const r = createAsr('en-US', 'push-to-talk', c);
+    await r.start();
+    last().emit('my private words', false);
+    r.abort();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(c.onFinal).not.toHaveBeenCalled();
+  });
+
+  it('continuous mode: the engine ending on its own keeps the words, then restarts', async () => {
+    vi.useFakeTimers();
+    const { createAsr } = await import('./speechToText');
+    const c = cb();
+    const r = createAsr('en-US', 'continuous', c);
+    await r.start();
+    last().emit('see you at noon', false);
+    last().onend?.(); // Chrome's periodic session end
+    expect(texts(c.onFinal)).toEqual(['see you at noon']);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(running()).toBe(true);
+  });
+
   it('pressing again during the tail keeps the same recognizer running', async () => {
     vi.useFakeTimers();
     const { createAsr } = await import('./speechToText');

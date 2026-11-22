@@ -20,6 +20,8 @@ export interface RecognizedSegment {
   engine: AsrEngine;
   /** Recognizer confidence 0..1 when the engine reports it (0/absent = unknown). Never logged. */
   confidence?: number;
+  /** The engine never finalized this phrase; its last interim text was used (reliability fix). */
+  promoted?: boolean;
 }
 
 export type AsrErrorCode = 'permission-denied' | 'device-lost' | 'capture-unavailable' | 'network' | 'no-result' | 'provider' | 'unknown';
