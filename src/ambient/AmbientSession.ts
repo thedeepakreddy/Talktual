@@ -120,6 +120,11 @@ export interface AmbientLimits {
   maxRestartsPerMinute: number;
   /** After translated speech ends, wait this long before capture resumes (room echo decay). */
   resumeAfterSpeechMs: number;
+  /**
+   * Without headphones, speech waits until the room has been quiet this long
+   * (no interim results), so speaking never cuts off someone mid-sentence.
+   */
+  speakAfterQuietMs: number;
   echoWindowMs: number;
 }
 
@@ -131,6 +136,7 @@ export const DEFAULT_AMBIENT_LIMITS: AmbientLimits = {
   watchdogMs: 25000,
   maxRestartsPerMinute: 3,
   resumeAfterSpeechMs: 350,
+  speakAfterQuietMs: 900,
   echoWindowMs: 12000,
 };
 
@@ -188,6 +194,8 @@ export class AmbientSession {
   private meta = new Map<string, { heardAt: number; committedAt: number; translatedAt?: number }>();
   private spoken: { t: number; text: string }[] = [];
   private lastActivity = 0;
+  private lastPartialAt = 0;
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private restarts: number[] = [];
   private watchdog: ReturnType<typeof setTimeout> | null = null;
   private resumeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -203,8 +211,11 @@ export class AmbientSession {
     limits: Partial<AmbientLimits> = {}
   ) {
     this.now = deps.now ?? (() => Date.now());
-    this.setT = deps.setTimeout ?? setTimeout;
-    this.clearT = deps.clearTimeout ?? clearTimeout;
+    // Bound: calling the global timer functions as methods of this object throws "Illegal invocation".
+    const st = deps.setTimeout ?? globalThis.setTimeout;
+    const ct = deps.clearTimeout ?? globalThis.clearTimeout;
+    this.setT = ((fn: () => void, ms?: number) => st(fn, ms)) as typeof setTimeout;
+    this.clearT = ((h?: ReturnType<typeof setTimeout>) => ct(h)) as typeof clearTimeout;
     this.limits = { ...DEFAULT_AMBIENT_LIMITS, ...limits };
     this.diag = new Diagnostics(300, 200, this.now);
     this.seg = new StablePrefixSegmenter(config.from, (u) => this.onUnit(u), this.now, undefined, () => `u${(++this.idSeq).toString(36)}`);
@@ -438,6 +449,7 @@ export class AmbientSession {
     this.disposed = true;
     if (this.watchdog) this.clearT(this.watchdog);
     if (this.resumeTimer) this.clearT(this.resumeTimer);
+    if (this.flushTimer) this.clearT(this.flushTimer);
     this.unsubs.forEach((u) => u());
     this.unsubs = [];
     this.netmon?.dispose();
@@ -522,6 +534,7 @@ export class AmbientSession {
         onPartial: (text) => {
           if (!current()) return;
           this.lastActivity = this.now();
+          this.lastPartialAt = this.lastActivity;
           this.seg.partial(text);
           this.commit({ partial: text });
         },
@@ -530,6 +543,7 @@ export class AmbientSession {
           this.lastActivity = this.now();
           this.seg.final(s.text, s.confidence);
           this.commit({ partial: '' });
+          this.flushSpeech();
         },
         onSpeechActivity: (active) => {
           if (!current()) return;
@@ -802,8 +816,13 @@ export class AmbientSession {
         continue;
       }
       if (line.state === 'translating') return; // wait: an earlier phrase isn't ready
+      const speakable = line.state === 'translated' && this.snap.speak && line.speech === 'waiting';
+      if (speakable && this.roomStillTalking()) {
+        this.scheduleFlush(); // half-duplex: don't cut the speaker off; text is already shown
+        return;
+      }
       this.speakCursor++;
-      if (line.state !== 'translated' || !this.snap.speak || line.speech !== 'waiting') continue;
+      if (!speakable) continue;
       const m = this.meta.get(id);
       if (m && this.now() - m.heardAt > this.limits.maxSpeechLagMs) {
         this.updateLine(id, { speech: 'skipped', note: 'Shown, not spoken — arrived too late' });
@@ -812,6 +831,20 @@ export class AmbientSession {
       }
       this.enqueueSpeech(line, false);
     }
+  }
+
+  /** Without headphones: someone is mid-utterance (recent interim and an open hypothesis). */
+  private roomStillTalking(): boolean {
+    if (this.snap.headphones || !this.asr) return false;
+    return this.snap.partial !== '' && this.now() - this.lastPartialAt < this.limits.speakAfterQuietMs;
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushTimer) return;
+    this.flushTimer = this.setT(() => {
+      this.flushTimer = null;
+      this.flushSpeech();
+    }, Math.max(100, this.limits.speakAfterQuietMs - (this.now() - this.lastPartialAt)));
   }
 
   private enqueueSpeech(line: AmbientLine, replay: boolean): void {

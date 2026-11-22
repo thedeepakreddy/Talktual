@@ -4,12 +4,13 @@ import { Home } from './components/Home';
 import { StartCall } from './components/StartCall';
 import { JoinCall } from './components/JoinCall';
 import { CallRoom } from './components/CallRoom';
+import { AmbientScreen } from './components/ambient/AmbientScreen';
 import { Language, detectLanguage } from './types';
 import { unlockAudio } from './lib/audio';
 import { prewarm } from './lib/translate';
 import { normalizeRoomCode } from './lib/roomCode';
 
-type Screen = 'home' | 'start' | 'join' | 'call';
+type Screen = 'home' | 'start' | 'join' | 'call' | 'ambient';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
@@ -91,8 +92,20 @@ export default function App() {
       {screen === 'call' && (
         <CallRoom roomCode={roomCode} language={language} userName={userName} onLanguageChange={setLanguage} onEndCall={endCall} />
       )}
+      {screen === 'ambient' && <AmbientScreen language={language} onLanguageChange={setLanguage} onExit={back} />}
       {screen === 'home' && (
-        <Home language={language} onLanguageChange={setLanguage} userName={userName} onUserNameChange={setUserName} onStart={start} onJoin={join} />
+        <Home
+          language={language}
+          onLanguageChange={setLanguage}
+          userName={userName}
+          onUserNameChange={setUserName}
+          onStart={start}
+          onJoin={join}
+          onAmbient={() => {
+            primeAudio();
+            setScreen('ambient');
+          }}
+        />
       )}
     </MotionConfig>
   );

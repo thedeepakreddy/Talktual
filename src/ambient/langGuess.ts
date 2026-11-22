@@ -43,35 +43,39 @@ export function guessLanguage(text: string): LangGuess | null {
 }
 
 /**
- * Accumulates recent recognized text and reports a likely mismatch with the
- * expected language. Needs ≥ 12 words over the window and a clear margin.
+ * Reports when the room has SWITCHED language: the trailing run of recognised
+ * phrases that each clearly look like another language must total ≥ 12 words
+ * (one ambiguous or expected-language phrase resets the run). It never acts.
  */
 export class LanguageMismatchDetector {
-  private recent: string[] = [];
+  private run: { lang: string; words: number }[] = [];
   constructor(private expected: string) {}
 
   setExpected(lang: string): void {
     this.expected = lang;
-    this.recent = [];
+    this.run = [];
   }
 
   /** Returns the base language code that the room seems to be speaking instead, or null. */
   add(text: string): string | null {
-    this.recent.push(text);
-    if (this.recent.length > 6) this.recent.shift();
-    const joined = this.recent.join(' ');
     const exp = this.expected.split('-')[0];
     if (!GUESSABLE.includes(exp)) return null;
-    const g = guessLanguage(joined);
-    if (!g || g.words < 12 || g.lang === exp) return null;
-    const expScore = scoreFor(joined, exp);
-    // Clear margin: the other language explains ≥ 25 % of words and ≥ 2.5× the expected one.
-    if (g.score >= 0.25 && g.score >= 2.5 * Math.max(expScore, 0.01)) return g.lang;
-    return null;
+    const ws = text.toLocaleLowerCase().split(/[^\p{L}']+/u).filter(Boolean);
+    const g = guessLanguage(text);
+    // Clear evidence for this phrase: another language explains ≥ 25 % of words and ≥ 2.5× the expected one.
+    const other = g && g.lang !== exp && g.score >= 0.25 && g.score >= 2.5 * Math.max(scoreFor(text, exp), 0.01) ? g.lang : null;
+    if (!other) {
+      this.run = [];
+      return null;
+    }
+    if (this.run.length && this.run[this.run.length - 1].lang !== other) this.run = [];
+    this.run.push({ lang: other, words: ws.length });
+    if (this.run.length > 6) this.run.shift();
+    return this.run.reduce((n, r) => n + r.words, 0) >= 12 ? other : null;
   }
 
   reset(): void {
-    this.recent = [];
+    this.run = [];
   }
 }
 
