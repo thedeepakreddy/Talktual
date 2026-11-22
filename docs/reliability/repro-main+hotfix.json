@@ -1,0 +1,97 @@
+{
+ "at": "2026-11-22T03:21:36.155Z",
+ "tree": "/tmp/claude-0/-home-user-Talktual/6181e3bf-ed8a-559a-bb57-6dbbd271a2d7/scratchpad/main-wt",
+ "label": "main+hotfix",
+ "rows": [
+  {
+   "tree": "main+hotfix",
+   "scenario": "final-before-release",
+   "direction": "A→B (en→es)",
+   "translateCalls": 1,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  },
+  {
+   "tree": "main+hotfix",
+   "scenario": "final-before-release",
+   "direction": "B→A (es→en)",
+   "translateCalls": 1,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  },
+  {
+   "tree": "main+hotfix",
+   "scenario": "final-300ms-after-stop",
+   "direction": "A→B (en→es)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  },
+  {
+   "tree": "main+hotfix",
+   "scenario": "final-300ms-after-stop",
+   "direction": "B→A (es→en)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  },
+  {
+   "tree": "main+hotfix",
+   "scenario": "final-900ms-after-stop",
+   "direction": "A→B (en→es)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  },
+  {
+   "tree": "main+hotfix",
+   "scenario": "final-900ms-after-stop",
+   "direction": "B→A (es→en)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  },
+  {
+   "tree": "main+hotfix",
+   "scenario": "final-1600ms-after-stop",
+   "direction": "A→B (en→es)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  },
+  {
+   "tree": "main+hotfix",
+   "scenario": "final-1600ms-after-stop",
+   "direction": "B→A (es→en)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  },
+  {
+   "tree": "main+hotfix",
+   "scenario": "no-final-onend-only",
+   "direction": "A→B (en→es)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  },
+  {
+   "tree": "main+hotfix",
+   "scenario": "no-final-onend-only",
+   "direction": "B→A (es→en)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  }
+ ]
+}

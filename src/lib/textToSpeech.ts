@@ -10,7 +10,7 @@
 import { API_BASE } from "./config";
 import { audioContext } from "./audio";
 
-import type { PlaybackItem, PlaybackListener, PlaybackPort } from "../engine/ports";
+import type { PlaybackItem, PlaybackListener, PlaybackPort, TtsRoute } from "../engine/ports";
 import type { RenderHints } from "../voicemirror/types";
 import type { PlaybackStatus } from "../engine/events";
 
@@ -146,6 +146,14 @@ export class PlaybackController implements PlaybackPort {
     try {
       while (!this.playing && this.queue.length) {
         const item = this.queue.shift()!;
+        // Phase 4: speech that waited past its age bound is stale — drop it
+        // rather than play it late.
+        if (item.notAfter !== undefined && Date.now() > item.notAfter) {
+          this.emit(item.segmentId, "dropped");
+          item.hooks?.onEnd?.();
+          item.done();
+          continue;
+        }
         this.playing = item;
         const state: PlaybackState = {
           aborted: false,
@@ -159,7 +167,7 @@ export class PlaybackController implements PlaybackPort {
         this.emit(item.segmentId, "started");
         let outcome: Engine | "none" | "cancelled" = "none";
         try {
-          outcome = await playOne(item.text, item.lang, state, safeHints(item.voice));
+          outcome = await playOne(item.text, item.lang, state, safeHints(item.voice), safeRoute(item.ttsRoute));
         } catch (err) {
           console.error("TTS playback failed:", err);
           outcome = state.aborted ? "cancelled" : "none";
@@ -225,12 +233,44 @@ function safeHints(resolve?: () => RenderHints | undefined): RenderHints | undef
   }
 }
 
+/** How long to wait for a suspended AudioContext to resume before using the browser voice. */
+export const AUDIO_RESUME_WAIT_MS = 250;
+
+/** True if the shared AudioContext is (or within `waitMs` becomes) running. Never throws. */
+async function audioContextRunning(waitMs: number): Promise<boolean> {
+  let ac: AudioContext;
+  try {
+    ac = audioContext();
+  } catch {
+    return false;
+  }
+  if (ac.state === "running") return true;
+  // resume() without a user gesture can stay pending forever: bound the wait.
+  await Promise.race([ac.resume().catch(() => {}), new Promise((r) => setTimeout(r, waitMs))]);
+  return (ac.state as AudioContextState) === "running";
+}
+
+function safeRoute(resolve?: () => TtsRoute): TtsRoute {
+  try {
+    return resolve?.() ?? "cloud-first";
+  } catch {
+    return "device-only"; // fail closed: never send text to the server on a policy error
+  }
+}
+
 async function playOne(
   text: string,
   lang: string,
   state: PlaybackState,
-  hints?: RenderHints
+  hints?: RenderHints,
+  route: TtsRoute = "cloud-first"
 ): Promise<Engine | "none" | "cancelled"> {
+  // Phase 6: on-device voices first (or only). Never a network voice here.
+  if (route !== "cloud-first") {
+    const spoke = await browserSpeak(text, lang, state, hints, true);
+    if (state.aborted) return "cancelled";
+    if (spoke || route === "device-only") return spoke ? "browser" : "none";
+  }
   try {
     const res = await fetch(`${API_BASE}/api/tts`, {
       method: "POST",
@@ -244,6 +284,14 @@ async function playOne(
 
     const format = res.headers.get("X-Audio-Format") || "";
     if (format === "pcm") {
+      // Reliability fix: streamed PCM plays through the AudioContext. If the
+      // browser keeps it suspended (no user gesture yet, tab backgrounded, iOS
+      // interruption), scheduled audio is SILENT and its clock never advances.
+      // Don't play into it: fall back to the browser voice (catch below).
+      if (!(await audioContextRunning(AUDIO_RESUME_WAIT_MS))) {
+        res.body?.cancel().catch(() => {});
+        throw new Error("audio context not running");
+      }
       const rate = Number(res.headers.get("X-Sample-Rate")) || 24000;
       await playPcmStream(res, rate, state);
     } else {
@@ -315,10 +363,14 @@ async function playPcmStream(res: Response, sampleRate: number, state: PlaybackS
       source.buffer = buffer;
       source.connect(gain);
 
+      // A context that stopped running mid-stream would never advance its
+      // clock: stop scheduling (caller falls back to the browser voice).
+      if ((ac.state as AudioContextState) !== "running") throw new Error("audio context not running");
       // Backpressure: don't schedule more than PCM_MAX_AHEAD_S into the future.
       // The reader (and so the network stream) waits instead of buffering
       // the whole clip in audio nodes.
       while (!state.aborted && playhead - ac.currentTime > PCM_MAX_AHEAD_S) {
+        if ((ac.state as AudioContextState) !== "running") throw new Error("audio context not running");
         await new Promise((r) => setTimeout(r, Math.min(1000, (playhead - ac.currentTime - PCM_MAX_AHEAD_S) * 1000 + 50)));
       }
       if (state.aborted) break;
@@ -393,8 +445,13 @@ async function playEncoded(res: Response, state: PlaybackState): Promise<void> {
 }
 
 /** Last resort so a call never goes silent, even with no API key configured. */
-function browserSpeak(text: string, lang: string, state: PlaybackState, hints?: RenderHints): Promise<boolean> {
+function browserSpeak(text: string, lang: string, state: PlaybackState, hints?: RenderHints, localOnly = false): Promise<boolean> {
   if (!("speechSynthesis" in window) || state.aborted) return Promise.resolve(false);
+  // On-device only: an explicit localService voice is required (the default voice may be a network voice).
+  if (localOnly) {
+    const voices = window.speechSynthesis.getVoices().filter((v) => v.localService);
+    if (!voices.some((v) => v.lang === lang || v.lang.startsWith(lang.split("-")[0]))) return Promise.resolve(false);
+  }
 
   return new Promise<boolean>((resolve) => {
     let settled = false;
@@ -411,11 +468,14 @@ function browserSpeak(text: string, lang: string, state: PlaybackState, hints?: 
       utterance.rate = hints.browserRate;
     }
 
-    const voice = window.speechSynthesis
-      .getVoices()
-      .find((v) => v.lang === lang) ??
-      window.speechSynthesis.getVoices().find((v) => v.lang.startsWith(lang.split("-")[0]));
-    if (voice) utterance.voice = voice;
+    const pool = window.speechSynthesis.getVoices().filter((v) => !localOnly || v.localService);
+    const voice = pool.find((v) => v.lang === lang) ?? pool.find((v) => v.lang.startsWith(lang.split("-")[0]));
+    try {
+      if (voice) utterance.voice = voice;
+    } catch {
+      // Not a native SpeechSynthesisVoice (e.g. a polyfill): fall back to lang selection.
+      if (localOnly) return finish(false);
+    }
 
     utterance.onend = () => finish(true);
     utterance.onerror = () => finish(false);

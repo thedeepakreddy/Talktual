@@ -282,6 +282,12 @@ export function makeSession(
       browser: opts.browser ?? CHROME_LIKE,
       storage,
       onUserGesture: gesture,
+      // TALKTUAL_CONV_LAYER=1 re-runs the Phase 2/3 engine suites with the Phase 4 layer on.
+      ...(process.env.TALKTUAL_CONV_LAYER === '1' ? { conversation: true } : {}),
+      // TALKTUAL_ACI=1 re-runs the suites with Phase 5 communication intelligence on.
+      ...(process.env.TALKTUAL_ACI === '1' ? { intelligence: true } : {}),
+      // TALKTUAL_PROC=1 re-runs the suites with Phase 6 processing modes on (default mode: cloud).
+      ...(process.env.TALKTUAL_PROC === '1' ? { processing: { network: { onLine: () => true, subscribe: () => () => {} } } } : {}),
       ...opts.deps,
     }
   );

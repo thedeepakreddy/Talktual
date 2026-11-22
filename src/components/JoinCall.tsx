@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { Scanner } from '@yudiel/react-qr-scanner';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, ScanLine, Keyboard } from 'lucide-react';
 import { Language } from '../types';
 import { LanguagePicker } from './LanguagePicker';
+import { LanguageField, NameField } from './LanguageField';
+import { Button, IconButton, Banner } from './ui';
 import { cn } from '../utils';
 import { SIGNALING_URL } from '../lib/config';
 import { CODE_LENGTH, codeFromScan, normalizeRoomCode } from '../lib/roomCode';
 
 interface JoinCallProps {
   language: Language;
+  onLanguageChange?: (language: Language) => void;
+  userName?: string;
+  onUserNameChange?: (name: string) => void;
   onBack: () => void;
-  onJoined: (roomCode: string, lang: Language) => void;
+  onJoined: (roomCode: string) => void;
   initialCode?: string;
+  /** Opened from an invite link: the code is known; ask only for name and language. */
+  invited?: boolean;
 }
-
-type JoinMode = 'scan' | 'manual';
 
 /**
  * How long to wait for the host before giving up. The host is already sitting
@@ -25,21 +29,29 @@ type JoinMode = 'scan' | 'manual';
 export const JOIN_TIMEOUT_MS = 12_000;
 
 export function JoinCall({
-  language: initialLanguage,
+  language,
+  onLanguageChange,
+  userName = '',
+  onUserNameChange,
   onBack,
   onJoined,
   initialCode = '',
+  invited = false,
 }: JoinCallProps) {
   const [code, setCode] = useState(() => normalizeRoomCode(initialCode));
-  const [mode, setMode] = useState<JoinMode>(initialCode.length === CODE_LENGTH ? 'manual' : 'scan');
-  const [language, setLanguage] = useState(initialLanguage);
+  const [scanning, setScanning] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [cameraFailed, setCameraFailed] = useState(false);
+  const [localName, setLocalName] = useState(userName);
+  const name = onUserNameChange ? userName : localName;
+  const setName = (v: string) => (onUserNameChange ? onUserNameChange(v) : setLocalName(v));
 
   const isConnectingRef = useRef(false);
-  const hiddenInputRef = useRef<HTMLInputElement>(null);
+  const codeInputRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
@@ -63,9 +75,16 @@ export function JoinCall({
     };
   }, []);
 
-  useEffect(() => {
-    if (initialCode.length === CODE_LENGTH) setMode('manual');
-  }, [initialCode]);
+  /** Name is needed only when arriving from a link (home already asked for it). */
+  const needsName = invited;
+  const tryJoin = (joinCode: string = code) => {
+    if (needsName && !name.trim()) {
+      setNameError('Add your name so the other person knows who’s talking.');
+      nameRef.current?.focus();
+      return;
+    }
+    handleJoin(joinCode);
+  };
 
   const handleJoin = (joinCode: string = code) => {
     if (isConnectingRef.current || joinCode.length !== CODE_LENGTH) return;
@@ -100,7 +119,7 @@ export function JoinCall({
     };
 
     timeoutRef.current = setTimeout(
-      () => fail('No one is waiting on that channel. Check the code and try again.'),
+      () => fail('No one is waiting with that code. Check it and try again.'),
       JOIN_TIMEOUT_MS
     );
 
@@ -120,11 +139,11 @@ export function JoinCall({
       if (msg?.type === 'ready') {
         if (settled) return;
         finish();
-        if (mountedRef.current) onJoined(codeUpper, language);
+        if (mountedRef.current) onJoined(codeUpper);
       } else if (msg?.type === 'error') {
         fail(
           msg.code === 'session_full'
-            ? 'That channel is already full.'
+            ? 'That call already has two people.'
             : 'That code isn’t valid. Check it and try again.'
         );
       }
@@ -136,205 +155,125 @@ export function JoinCall({
   const handleScan = (detectedCodes: { rawValue: string }[]) => {
     if (!detectedCodes?.length) return;
     const scanned = codeFromScan(detectedCodes[0].rawValue);
-    if (scanned) handleJoin(scanned);
+    if (scanned) {
+      setCode(scanned);
+      setScanning(false);
+      tryJoin(scanned);
+    }
   };
 
-  const setModeSafely = (next: JoinMode) => {
-    setError(null);
-    setMode(next);
-    if (next === 'manual') setTimeout(() => hiddenInputRef.current?.focus(), 150);
-  };
+  const showCodeEntry = !invited;
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.35 }}
-      className="mx-auto flex min-h-screen w-full max-w-md flex-col px-6"
-    >
-      <div className="safe-t flex items-center justify-between py-4">
-        <button
-          onClick={onBack}
-          aria-label="Back"
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-[var(--text-1)] transition-colors hover:bg-white/[0.1]"
-        >
-          <ArrowLeft className="h-[18px] w-[18px]" />
-        </button>
-        <button
-          onClick={() => setPickerOpen(true)}
-          className="flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.05] px-3 py-1.5 transition-colors hover:bg-white/[0.1]"
-        >
-          <span className="text-[15px] leading-none">{language.flag}</span>
-          <span className="text-[13px] font-medium text-[var(--text-2)]">{language.native}</span>
-        </button>
-      </div>
+    <main className="mx-auto flex min-h-dvh w-full max-w-[420px] flex-col px-4 sm:px-6">
+      <header className="safe-t flex h-14 items-center gap-1 -ml-2">
+        <IconButton label="Back" onClick={onBack}>
+          <ArrowLeft className="h-5 w-5" />
+        </IconButton>
+        <h1 className="text-heading font-semibold">Join a call</h1>
+      </header>
 
-      <div className="pt-2 pb-6">
-        <h1 className="text-[26px] font-bold tracking-[-0.02em] text-[var(--text-1)]">
-          Join a channel
-        </h1>
-        <p className="mt-1.5 text-[15px] text-[var(--text-2)]">
-          You’ll hear everything in {language.native}.
-        </p>
-      </div>
-
-      {/* Segmented control */}
-      <div className="mb-6 flex rounded-xl bg-white/[0.06] p-1">
-        {(['scan', 'manual'] as JoinMode[]).map((value) => (
-          <button
-            key={value}
-            onClick={() => setModeSafely(value)}
-            className={cn(
-              'relative flex-1 rounded-[9px] py-2 text-[14px] font-medium transition-colors',
-              mode === value ? 'text-[var(--text-1)]' : 'text-[var(--text-2)]'
-            )}
-          >
-            {mode === value && (
-              <motion.span
-                layoutId="join-segment"
-                transition={{ type: 'spring', damping: 30, stiffness: 400 }}
-                className="absolute inset-0 rounded-[9px] bg-white/[0.12]"
-              />
-            )}
-            <span className="relative">{value === 'scan' ? 'Scan code' : 'Enter code'}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-1 flex-col items-center justify-center">
-        {mode === 'scan' ? (
-          <div className="w-full">
-            <div className="relative mx-auto aspect-square w-full max-w-[300px] overflow-hidden rounded-[28px] border border-white/10 bg-black">
-              {!cameraFailed ? (
-                <Scanner
-                  onScan={handleScan}
-                  onError={() => setCameraFailed(true)}
-                  classNames={{ container: 'w-full h-full object-cover' }}
-                  components={{ finder: false }}
-                />
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-                  <p className="text-[15px] text-[var(--text-2)]">
-                    Camera unavailable.
-                  </p>
-                  <button
-                    onClick={() => setModeSafely('manual')}
-                    className="rounded-full bg-white/[0.12] px-4 py-2 text-[14px] font-medium text-[var(--text-1)]"
-                  >
-                    Enter the code instead
-                  </button>
-                </div>
-              )}
-
-              {!cameraFailed && <ScannerFrame />}
+      <form
+        className="flex flex-1 flex-col"
+        onSubmit={(e) => {
+          e.preventDefault();
+          tryJoin();
+        }}
+      >
+        <div className="flex-1 space-y-5 py-6">
+          {invited ? (
+            <p className="text-body text-fg-muted">
+              You’ve been invited to call <span className="font-mono font-semibold tracking-[0.12em] text-fg">{code}</span>.
+            </p>
+          ) : scanning ? (
+            <div>
+              <div className="relative mx-auto aspect-square w-full max-w-[320px] overflow-hidden rounded-lg bg-black">
+                {!cameraFailed ? (
+                  <Scanner onScan={handleScan} onError={() => setCameraFailed(true)} classNames={{ container: 'w-full h-full object-cover' }} components={{ finder: false }} />
+                ) : (
+                  <p className="flex h-full items-center justify-center px-8 text-center text-body text-white/80">Camera unavailable.</p>
+                )}
+              </div>
+              <Button variant="ghost" size="sm" className="mx-auto mt-3 flex" icon={<Keyboard className="h-4 w-4" />} onClick={() => setScanning(false)}>
+                Enter code
+              </Button>
             </div>
-            <p className="mt-5 text-center text-[13px] text-[var(--text-3)]">
-              Point at the QR code on their screen
-            </p>
-          </div>
-        ) : (
-          <div className="w-full">
-            <button
-              onClick={() => hiddenInputRef.current?.focus()}
-              className="flex w-full justify-center gap-1.5"
-              aria-label="Enter channel code"
-            >
-              {Array.from({ length: CODE_LENGTH }).map((_, i) => {
-                const char = code[i];
-                const active = i === code.length;
-                return (
-                  <span
-                    key={i}
-                    className={cn(
-                      'tnum flex h-14 w-11 items-center justify-center rounded-xl border font-mono text-[22px] font-semibold transition-colors',
-                      char
-                        ? 'border-white/16 bg-white/[0.1] text-[var(--text-1)]'
-                        : active
-                          ? 'border-[var(--blue)]/70 bg-white/[0.06] text-[var(--text-1)]'
-                          : 'border-white/8 bg-white/[0.04] text-[var(--text-3)]'
-                    )}
-                  >
-                    {char ?? ''}
-                  </span>
-                );
-              })}
-            </button>
-
-            <input
-              ref={hiddenInputRef}
-              value={code}
-              onChange={(e) => {
-                const next = normalizeRoomCode(e.target.value);
-                setCode(next);
-                setError(null);
-                if (next.length === CODE_LENGTH) handleJoin(next);
-              }}
-              inputMode="text"
-              autoComplete="one-time-code"
-              autoCapitalize="characters"
-              autoCorrect="off"
-              spellCheck={false}
-              maxLength={CODE_LENGTH}
-              className="pointer-events-none absolute h-px w-px opacity-0"
-              aria-label="Channel code"
-            />
-
-            <p className="mt-5 text-center text-[13px] text-[var(--text-3)]">
-              The 6 characters shown on their screen
-            </p>
-          </div>
-        )}
-
-        <AnimatePresence>
-          {error && (
-            <motion.p
-              role="alert"
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="mt-5 rounded-xl border border-[var(--red)]/25 bg-[var(--red)]/10 px-4 py-2.5 text-center text-[13px] text-[#ff9a92]"
-            >
-              {error}
-            </motion.p>
+          ) : (
+            showCodeEntry && (
+              <div>
+                <label htmlFor="call-code" className="mb-1.5 block text-label font-medium text-fg-muted">
+                  Call code
+                </label>
+                <div className="relative">
+                  <div className="flex gap-2" aria-hidden="true">
+                    {Array.from({ length: CODE_LENGTH }).map((_, i) => {
+                      const char = code[i];
+                      const active = i === code.length;
+                      return (
+                        <span
+                          key={i}
+                          className={cn(
+                            'flex h-14 flex-1 items-center justify-center rounded-md border bg-surface font-mono text-[1.375rem] font-semibold tnum transition-colors',
+                            active ? 'border-focus' : 'border-line'
+                          )}
+                        >
+                          {char ?? ''}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <input
+                    id="call-code"
+                    ref={codeInputRef}
+                    value={code}
+                    autoFocus
+                    onChange={(e) => {
+                      const next = normalizeRoomCode(e.target.value);
+                      setCode(next);
+                      setError(null);
+                      if (next.length === CODE_LENGTH) tryJoin(next);
+                    }}
+                    inputMode="text"
+                    autoComplete="one-time-code"
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    maxLength={CODE_LENGTH}
+                    aria-label="Call code"
+                    className="absolute inset-0 h-full w-full cursor-text opacity-0"
+                  />
+                </div>
+                <Button variant="ghost" size="sm" className="mt-2 -ml-2" icon={<ScanLine className="h-4 w-4" />} onClick={() => setScanning(true)}>
+                  Scan a QR code instead
+                </Button>
+              </div>
+            )
           )}
-        </AnimatePresence>
-      </div>
 
-      <div className="safe-b pt-6">
-        <button
-          onClick={() => handleJoin()}
-          disabled={code.length !== CODE_LENGTH || connecting}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--blue)] py-4 text-[16px] font-semibold text-white transition-all hover:brightness-110 active:scale-[0.985] disabled:pointer-events-none disabled:opacity-30"
-        >
-          {connecting && <Loader2 className="h-[18px] w-[18px] animate-spin" />}
-          {connecting ? 'Connecting…' : 'Join'}
-        </button>
-      </div>
+          {needsName && (
+            <NameField
+              inputRef={nameRef}
+              value={name}
+              error={nameError}
+              onChange={(v) => {
+                setName(v);
+                if (v.trim()) setNameError(null);
+              }}
+            />
+          )}
+          <LanguageField label="You speak and hear" language={language} onOpen={() => setPickerOpen(true)} />
 
-      <LanguagePicker
-        open={pickerOpen}
-        selected={language}
-        subtitle="What you'll speak and hear"
-        onSelect={setLanguage}
-        onClose={() => setPickerOpen(false)}
-      />
-    </motion.div>
-  );
-}
+          {error && <Banner tone="error">{error}</Banner>}
+        </div>
 
-/** Corner brackets over the camera feed — reads as a viewfinder, not a border. */
-function ScannerFrame() {
-  const corners = [
-    'left-6 top-6 border-l-2 border-t-2 rounded-tl-lg',
-    'right-6 top-6 border-r-2 border-t-2 rounded-tr-lg',
-    'left-6 bottom-6 border-l-2 border-b-2 rounded-bl-lg',
-    'right-6 bottom-6 border-r-2 border-b-2 rounded-br-lg',
-  ];
-  return (
-    <div className="pointer-events-none absolute inset-0">
-      {corners.map((position) => (
-        <span key={position} className={cn('absolute h-8 w-8 border-white/70', position)} />
-      ))}
-    </div>
+        <div className="safe-b">
+          <Button type="submit" variant="primary" block disabled={code.length !== CODE_LENGTH || connecting} icon={connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}>
+            {connecting ? 'Connecting…' : 'Join'}
+          </Button>
+        </div>
+      </form>
+
+      <LanguagePicker open={pickerOpen} selected={language} onSelect={(l) => onLanguageChange?.(l)} onClose={() => setPickerOpen(false)} />
+    </main>
   );
 }

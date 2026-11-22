@@ -1,0 +1,315 @@
+diff --git a/src/lib/config.ts b/src/lib/config.ts
+index af68993..a78076a 100644
+--- a/src/lib/config.ts
++++ b/src/lib/config.ts
+@@ -11,4 +11,4 @@ export const API_BASE = SIGNALING_URL.replace(/^ws/, "http");
+ export const RELEASE_TAIL_MS = 450;
+ 
+ /** Max wait for the recognizer to finalize the last phrase before we force it. */
+-export const FINALIZE_TIMEOUT_MS = 700;
++export const FINALIZE_TIMEOUT_MS = 1200;
+diff --git a/src/lib/playback.test.ts b/src/lib/playback.test.ts
+index 15741bd..80c5c0e 100644
+--- a/src/lib/playback.test.ts
++++ b/src/lib/playback.test.ts
+@@ -215,6 +215,89 @@ describe('PCM streaming bounds (M2.2)', () => {
+   });
+ });
+ 
++describe('browser playback restrictions (reliability fix)', () => {
++  function suspendedCtx(opts: { resumes: boolean }) {
++    const ref: { ctx: { state: string; currentTime: number; started: number } | null } = { ctx: null };
++    class FakeCtx {
++      state = 'suspended';
++      currentTime = 0; // a suspended context's clock does not advance
++      destination = {};
++      started = 0;
++      constructor() {
++        ref.ctx = this;
++      }
++      createGain() {
++        return { connect() {}, disconnect() {} };
++      }
++      createBuffer(_c: number, length: number, rate: number) {
++        const data = new Float32Array(length);
++        return { duration: length / rate, getChannelData: () => data };
++      }
++      createBufferSource() {
++        const ctx = this;
++        return { buffer: null, onended: null, connect() {}, start() { ctx.started++; }, stop() {} };
++      }
++      resume() {
++        if (opts.resumes) {
++          this.state = 'running';
++          return Promise.resolve();
++        }
++        return new Promise<void>(() => {}); // no user gesture: stays pending forever
++      }
++    }
++    vi.stubGlobal('AudioContext', FakeCtx);
++    return ref;
++  }
++  const pcm = (seconds: number) =>
++    fetchMock.mockImplementation(async () => {
++      const body = new ReadableStream({
++        start(c) {
++          for (let i = 0; i < seconds; i++) c.enqueue(new Uint8Array(2000));
++          c.close();
++        },
++      });
++      return new Response(body, { status: 200, headers: { 'X-Audio-Format': 'pcm', 'X-Sample-Rate': '1000' } });
++    });
++
++  it('suspended AudioContext (no gesture): streamed server audio is NOT played silently — the browser voice speaks instead', async () => {
++    const ref = suspendedCtx({ resumes: false });
++    pcm(3);
++    const { PlaybackController } = await load();
++    const c = new PlaybackController();
++    const log = track(c);
++    const done = c.enqueue({ segmentId: 's', text: 'hola', lang: 'es-ES' });
++    await vi.waitFor(() => expect(synth.spoken).toHaveLength(1), { timeout: 2000 });
++    expect(ref.ctx!.started).toBe(0); // nothing scheduled into the dead context
++    synth.finishLast();
++    await done;
++    expect(log).toEqual(['s:queued', 's:started', 's:ended:browser']);
++  });
++
++  it('a long clip into a suspended context no longer blocks the queue forever', async () => {
++    suspendedCtx({ resumes: false });
++    pcm(30); // 30 s of audio: previously stuck in the backpressure loop on a frozen clock
++    const { PlaybackController } = await load();
++    const c = new PlaybackController();
++    c.enqueue({ segmentId: 'long', text: 'largo', lang: 'es-ES' });
++    c.enqueue({ segmentId: 'next', text: 'siguiente', lang: 'es-ES' });
++    await vi.waitFor(() => expect(synth.spoken.map((x) => x.text)).toContain('largo'), { timeout: 2000 });
++    synth.finishLast();
++    await vi.waitFor(() => expect(synth.spoken.map((x) => x.text)).toContain('siguiente'), { timeout: 2000 });
++  });
++
++  it('a context that can resume is resumed and used for server audio', async () => {
++    const ref = suspendedCtx({ resumes: true });
++    pcm(1);
++    const { PlaybackController } = await load();
++    const c = new PlaybackController();
++    const log = track(c);
++    await c.enqueue({ segmentId: 'ok', text: 'hola', lang: 'es-ES' });
++    expect(ref.ctx!.started).toBeGreaterThan(0);
++    expect(synth.spoken).toHaveLength(0);
++    expect(log.at(-1)).toBe('ok:ended:server');
++  });
++});
++
+ describe('capture adapter (M2.2)', () => {
+   it('reports device loss when the track ends unexpectedly, not on our own release', async () => {
+     const listeners: Record<string, () => void> = {};
+diff --git a/src/lib/speechToText.test.ts b/src/lib/speechToText.test.ts
+index 9eb9daa..19b7799 100644
+--- a/src/lib/speechToText.test.ts
++++ b/src/lib/speechToText.test.ts
+@@ -267,6 +267,80 @@ describe('Web Speech adapter (streaming)', () => {
+     expect(c.onEnd).toHaveBeenCalledTimes(1);
+   });
+ 
++  // ---- Reliability fix: a late or missing final must not lose the user's words ----
++  it('ROOT CAUSE: engine ends after stop() WITHOUT a final (Chrome Android) → last interim is promoted, once', async () => {
++    vi.useFakeTimers();
++    const { createAsr } = await import('./speechToText');
++    const { RELEASE_TAIL_MS } = await import('./config');
++    const c = cb();
++    const r = createAsr('en-US', 'push-to-talk', c);
++    await r.start();
++    last().emit('where is the', false);
++    last().emit('where is the station', false);
++    r.stop();
++    await vi.advanceTimersByTimeAsync(RELEASE_TAIL_MS + 5); // stop() → onend, no final ever
++    expect(texts(c.onFinal)).toEqual(['where is the station']);
++    expect(c.onFinal.mock.calls[0][0]).toMatchObject({ engine: 'webspeech' });
++    expect(c.onEnd).toHaveBeenCalledTimes(1);
++  });
++
++  it('ROOT CAUSE: final arrives later than the finalize bound → interim promoted at the bound; the late final is ignored (no duplicate)', async () => {
++    vi.useFakeTimers();
++    const { createAsr } = await import('./speechToText');
++    const { RELEASE_TAIL_MS, FINALIZE_TIMEOUT_MS } = await import('./config');
++    const c = cb();
++    const r = createAsr('en-US', 'push-to-talk', c);
++    await r.start();
++    const rec = last();
++    rec.stop = () => {}; // slow cloud engine: flushes much later
++    rec.emit('call a taxi please', false);
++    r.stop();
++    await vi.advanceTimersByTimeAsync(RELEASE_TAIL_MS + FINALIZE_TIMEOUT_MS + 5);
++    expect(texts(c.onFinal)).toEqual(['call a taxi please']);
++    rec.emit('call a taxi please', true); // arrives after we gave up: handlers are detached
++    expect(texts(c.onFinal)).toEqual(['call a taxi please']);
++    expect(c.onEnd).toHaveBeenCalledTimes(1);
++  });
++
++  it('a final that arrives in time wins; nothing is promoted on top of it', async () => {
++    vi.useFakeTimers();
++    const { createAsr } = await import('./speechToText');
++    const { RELEASE_TAIL_MS } = await import('./config');
++    const c = cb();
++    const r = createAsr('en-US', 'push-to-talk', c);
++    await r.start();
++    last().emit('good morning', false);
++    last().emit('good morning everyone', true);
++    r.stop();
++    await vi.advanceTimersByTimeAsync(RELEASE_TAIL_MS + 5);
++    expect(texts(c.onFinal)).toEqual(['good morning everyone']);
++  });
++
++  it('privacy: abort (mic off / leave / mode change) DISCARDS pending interim text', async () => {
++    vi.useFakeTimers();
++    const { createAsr } = await import('./speechToText');
++    const c = cb();
++    const r = createAsr('en-US', 'push-to-talk', c);
++    await r.start();
++    last().emit('my private words', false);
++    r.abort();
++    await vi.advanceTimersByTimeAsync(5000);
++    expect(c.onFinal).not.toHaveBeenCalled();
++  });
++
++  it('continuous mode: the engine ending on its own keeps the words, then restarts', async () => {
++    vi.useFakeTimers();
++    const { createAsr } = await import('./speechToText');
++    const c = cb();
++    const r = createAsr('en-US', 'continuous', c);
++    await r.start();
++    last().emit('see you at noon', false);
++    last().onend?.(); // Chrome's periodic session end
++    expect(texts(c.onFinal)).toEqual(['see you at noon']);
++    await vi.advanceTimersByTimeAsync(200);
++    expect(running()).toBe(true);
++  });
++
+   it('pressing again during the tail keeps the same recognizer running', async () => {
+     vi.useFakeTimers();
+     const { createAsr } = await import('./speechToText');
+diff --git a/src/lib/speechToText.ts b/src/lib/speechToText.ts
+index 040b589..a58ae3d 100644
+--- a/src/lib/speechToText.ts
++++ b/src/lib/speechToText.ts
+@@ -101,6 +101,22 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
+     restartTimer = tailTimer = finalizeTimer = null;
+   };
+ 
++  /**
++   * Latest NOT-yet-final text of the current phrase. Cloud recognizers often
++   * deliver the final result late after stop() — or never (Chrome on Android
++   * frequently ends without one). Reliability fix: when the engine ends or the
++   * finalize timer fires on a graceful stop, this text is promoted to a final
++   * instead of being discarded. An explicit abort (mic off, leave, mode change)
++   * still discards it.
++   */
++  let pendingInterim = "";
++
++  function flushPendingInterim() {
++    const t = pendingInterim.trim();
++    pendingInterim = "";
++    if (t) emit(t);
++  }
++
+   function emit(text: string) {
+     const clean = text.trim();
+     if (!clean) return;
+@@ -143,9 +159,12 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
+       for (let i = event.resultIndex; i < event.results.length; i++) {
+         const result = event.results[i];
+         const text = result[0]?.transcript ?? "";
+-        if (result.isFinal) emit(text);
+-        else interim += text;
++        if (result.isFinal) {
++          emit(text);
++          pendingInterim = "";
++        } else interim += text;
+       }
++      pendingInterim = interim.trim();
+       cb.onPartial(interim.trim());
+     };
+ 
+@@ -174,6 +193,8 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
+ 
+     r.onend = () => {
+       if (!active) return;
++      // Words the engine never finalized are still the user's words.
++      flushPendingInterim();
+       if (stopping) {
+         finish();
+         return;
+@@ -204,6 +225,7 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
+   function abortNow() {
+     const r = rec;
+     const wasActive = active;
++    pendingInterim = ""; // abort = discard (privacy: nothing captured after a stop is sent)
+     active = false;
+     stopping = false;
+     clearTimers();
+@@ -273,6 +295,8 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
+       finalizeTimer = setTimeout(() => {
+         finalizeTimer = null;
+         if (!active) return;
++        // The engine didn't flush in time: use what it had recognized so far.
++        flushPendingInterim();
+         const r = rec;
+         detach();
+         try {
+diff --git a/src/lib/textToSpeech.ts b/src/lib/textToSpeech.ts
+index 9e33b6a..10bb569 100644
+--- a/src/lib/textToSpeech.ts
++++ b/src/lib/textToSpeech.ts
+@@ -225,6 +225,23 @@ function safeHints(resolve?: () => RenderHints | undefined): RenderHints | undef
+   }
+ }
+ 
++/** How long to wait for a suspended AudioContext to resume before using the browser voice. */
++export const AUDIO_RESUME_WAIT_MS = 250;
++
++/** True if the shared AudioContext is (or within `waitMs` becomes) running. Never throws. */
++async function audioContextRunning(waitMs: number): Promise<boolean> {
++  let ac: AudioContext;
++  try {
++    ac = audioContext();
++  } catch {
++    return false;
++  }
++  if (ac.state === "running") return true;
++  // resume() without a user gesture can stay pending forever: bound the wait.
++  await Promise.race([ac.resume().catch(() => {}), new Promise((r) => setTimeout(r, waitMs))]);
++  return (ac.state as AudioContextState) === "running";
++}
++
+ async function playOne(
+   text: string,
+   lang: string,
+@@ -244,6 +261,14 @@ async function playOne(
+ 
+     const format = res.headers.get("X-Audio-Format") || "";
+     if (format === "pcm") {
++      // Reliability fix: streamed PCM plays through the AudioContext. If the
++      // browser keeps it suspended (no user gesture yet, tab backgrounded, iOS
++      // interruption), scheduled audio is SILENT and its clock never advances.
++      // Don't play into it: fall back to the browser voice (catch below).
++      if (!(await audioContextRunning(AUDIO_RESUME_WAIT_MS))) {
++        res.body?.cancel().catch(() => {});
++        throw new Error("audio context not running");
++      }
+       const rate = Number(res.headers.get("X-Sample-Rate")) || 24000;
+       await playPcmStream(res, rate, state);
+     } else {
+@@ -315,10 +340,14 @@ async function playPcmStream(res: Response, sampleRate: number, state: PlaybackS
+       source.buffer = buffer;
+       source.connect(gain);
+ 
++      // A context that stopped running mid-stream would never advance its
++      // clock: stop scheduling (caller falls back to the browser voice).
++      if ((ac.state as AudioContextState) !== "running") throw new Error("audio context not running");
+       // Backpressure: don't schedule more than PCM_MAX_AHEAD_S into the future.
+       // The reader (and so the network stream) waits instead of buffering
+       // the whole clip in audio nodes.
+       while (!state.aborted && playhead - ac.currentTime > PCM_MAX_AHEAD_S) {
++        if ((ac.state as AudioContextState) !== "running") throw new Error("audio context not running");
+         await new Promise((r) => setTimeout(r, Math.min(1000, (playhead - ac.currentTime - PCM_MAX_AHEAD_S) * 1000 + 50)));
+       }
+       if (state.aborted) break;

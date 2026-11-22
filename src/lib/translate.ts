@@ -38,6 +38,12 @@ const cache = new Map<string, string>();
 const inFlight = new Map<string, Promise<string>>();
 const MAX_CACHE = 500;
 
+/** Phase 6: drop cached translations (session end, mode change, privacy reset). */
+export function clearTranslationCache(): void {
+  cache.clear();
+  inFlight.clear();
+}
+
 function key(text: string, from: string, to: string) {
   return `${from}>${to}:${text}`;
 }

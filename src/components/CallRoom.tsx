@@ -1,15 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { PhoneOff, SlidersHorizontal, X } from 'lucide-react';
 import { Language, findLanguage } from '../types';
-import { Mic, MicOff, PhoneOff, MessageSquareText, X, ArrowLeftRight, Radio, ShieldCheck } from 'lucide-react';
 import { cn } from '../utils';
 
 import { useCommunicationSession } from '../engine/useCommunicationSession';
-import type { SessionDeps, SessionSnapshot } from '../engine/CommunicationSession';
-import type { SegmentRecord } from '../engine/events';
+import type { SessionDeps } from '../engine/CommunicationSession';
 import { LanguagePicker } from './LanguagePicker';
 import { ConsentSheet } from './ConsentSheet';
 import { VOICEMIRROR_DISCLOSURE } from '../voicemirror/disclosure';
+import { Banner, Button, IconButton, Sheet } from './ui';
+import { ConversationFeed } from './call/ConversationFeed';
+import { TalkDock } from './call/TalkDock';
+import { SettingsSheet } from './call/SettingsSheet';
+import { deriveStatus, headerState } from './call/status';
 
 interface CallRoomProps {
   roomCode: string;
@@ -33,25 +36,20 @@ function haptic(pattern: number | number[]) {
 const END_NOTICE_MS = 1800;
 
 export function CallRoom({ roomCode, language, userName, onLanguageChange, onEndCall, depsFactory }: CallRoomProps) {
-  const { session, snapshot } = useCommunicationSession(
-    { roomCode, lang: language.bcp47, userName },
-    depsFactory
-  );
+  const { session, snapshot: s } = useCommunicationSession({ roomCode, lang: language.bcp47, userName }, depsFactory);
 
-  const [showTranscript, setShowTranscript] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const [typing, setTyping] = useState(false);
+  const [draft, setDraft] = useState('');
   const [elapsed, setElapsed] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLInputElement>(null);
 
-  const s = snapshot;
   const phase = s?.phase ?? 'connecting';
   const connected = phase === 'connected';
   const continuous = s?.mode === 'continuous';
   const micOff = s?.activity === 'stopped';
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [s?.segments, showTranscript]);
 
   useEffect(() => {
     if (!connected || !s?.connectedAt) return;
@@ -69,13 +67,17 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
     return () => clearTimeout(t);
   }, [phase, s?.phaseReason, onEndCall]);
 
+  // A consent prompt always takes over: never stack it on top of settings.
+  useEffect(() => {
+    if (s?.voice.prompt || s?.consent.prompt) setSettingsOpen(false);
+  }, [s?.voice.prompt, s?.consent.prompt]);
+
   const leave = useCallback(() => {
     session?.leave();
     onEndCall();
   }, [session, onEndCall]);
 
   // ---- Push to talk --------------------------------------------------------
-
   const canPress = connected && !micOff && Boolean(s?.features.canTalk) && s?.permission !== 'denied';
 
   const startTalking = useCallback(() => {
@@ -92,14 +94,15 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
 
   useEffect(() => {
     const isTypingTarget = (el: EventTarget | null) =>
-      el instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+      el instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName) && el.getAttribute('aria-label') !== 'Push to talk';
+    const sheetOpen = () => document.querySelector('[role="dialog"]') !== null;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || isTypingTarget(e.target)) return;
+      if (e.code !== 'Space' || e.repeat || isTypingTarget(e.target) || sheetOpen()) return;
       e.preventDefault();
       startTalking();
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || isTypingTarget(e.target)) return;
+      if (e.code !== 'Space' || isTypingTarget(e.target) || sheetOpen()) return;
       e.preventDefault();
       stopTalking();
     };
@@ -112,458 +115,216 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
   }, [startTalking, stopTalking]);
 
   // ---- Presentation --------------------------------------------------------
-
-  const holding = Boolean(s?.holding);
-  const playing = Boolean(s?.playing);
-  const hearingVoice = Boolean(s?.hearingVoice);
   const peerName = s?.peer.name ?? null;
+  const peerLabel = peerName ?? 'They';
   const peerLanguage = findLanguage(s?.peer.lang) ?? null;
-  const segments = s?.segments ?? [];
-
-  const statusLabel = (): string | null => {
-    if (phase === 'idle' || phase === 'connecting') return 'Connecting';
-    if (phase === 'waiting-for-peer') return s?.phaseReason === 'peer-away' ? `Waiting for ${peerName ?? 'them'} to reconnect` : 'Waiting for them to join';
-    if (phase === 'reconnecting') return `Reconnecting${s && s.reconnectAttempt > 1 ? ` (try ${s.reconnectAttempt})` : ''}…`;
-    if (phase === 'ended' && s?.phaseReason === 'peer-left') return `${peerName ?? 'They'} left the channel`;
-    if (phase === 'ended' && s?.phaseReason === 'expired') return 'Channel expired';
-    if (phase === 'ended') return 'Call ended';
-    if (phase === 'failed') return s?.phaseReason === 'connection-lost' ? 'Disconnected' : 'Connection problem';
-    return null;
-  };
-
-  const ledColor = connected
-    ? 'var(--green)'
-    : phase === 'connecting' || phase === 'waiting-for-peer' || phase === 'reconnecting' || phase === 'idle'
-      ? 'var(--amber)'
-      : 'var(--red)';
-
-  const primaryHint = micOff
-    ? 'Microphone off'
-    : continuous && connected
-      ? s?.activity === 'paused'
-        ? 'Hands-free — paused while they speak'
-        : hearingVoice
-          ? 'Listening…'
-          : 'Hands-free — listening'
-      : holding
-        ? hearingVoice
-          ? 'Listening…'
-          : 'Speak now'
-        : playing
-          ? 'Receiving — press to cut in'
-          : connected
-            ? 'Hold to talk'
-            : (statusLabel() ?? '');
-
-  const screenText = holding || continuous ? s?.partial.local || s?.partial.peer || '' : (s?.partial.peer ?? '');
-  const lastHeard = lastReceived(segments);
+  const status = deriveStatus(s);
+  const speechUnavailable = s?.processing.available && s.processing.capabilities.find((c) => c.task === 'speech-input')?.state === 'unavailable';
+  const showComposer = Boolean(s?.processing.available) && connected && (typing || speechUnavailable);
   const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
+  const mode = s?.processing.available ? s.processing.mode : 'cloud';
+  const suggestion = s?.intelligence.suggestions.at(-1);
+
+  const dot = connected ? 'bg-success' : phase === 'failed' || phase === 'ended' ? 'bg-danger' : 'bg-accent pulse-dot';
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-5">
-      {/* ---- Top bar ---- */}
-      <div className="safe-t flex items-center justify-between gap-3 py-3">
-        <button
-          onClick={leave}
-          aria-label="Leave channel"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--red)]/25 bg-[var(--red)]/12 text-[var(--red)] transition-colors hover:bg-[var(--red)]/20"
-        >
-          <PhoneOff className="h-[17px] w-[17px]" />
-        </button>
-
-        <div className="flex min-w-0 flex-col items-center">
-          <div className="flex items-center gap-2">
-            <span className={cn('led', !connected && 'led-pulse')} style={{ background: ledColor }} aria-hidden="true" />
-            <span className="font-mono text-[13px] font-semibold tracking-[0.14em] text-[var(--text-1)]">{roomCode}</span>
-          </div>
-          <span className="tnum mt-0.5 text-[11px] text-[var(--text-3)]">{connected ? mmss : (statusLabel() ?? '')}</span>
-        </div>
-
-        <div className="flex shrink-0 gap-2">
-          <button
-            onClick={() => session?.setMicEnabled(micOff)}
-            aria-label={micOff ? 'Turn microphone on' : 'Turn microphone off'}
-            aria-pressed={micOff}
-            className={cn(
-              'flex h-10 w-10 items-center justify-center rounded-full border transition-colors',
-              micOff
-                ? 'border-[var(--red)]/25 bg-[var(--red)]/12 text-[var(--red)]'
-                : 'border-white/10 bg-white/[0.06] text-[var(--text-2)] hover:bg-white/[0.1]'
-            )}
-          >
-            {micOff ? <MicOff className="h-[17px] w-[17px]" /> : <Mic className="h-[17px] w-[17px]" />}
-          </button>
-          <button
-            onClick={() => setShowTranscript(true)}
-            aria-label="Show transcript"
-            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-[var(--text-2)] transition-colors hover:bg-white/[0.1]"
-          >
-            <MessageSquareText className="h-[17px] w-[17px]" />
-            {segments.length > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[var(--blue)] px-1 text-[10px] font-semibold text-white">
-                {segments.length > 99 ? '99' : segments.length}
+    // On desktop, sheets are a 400 px side panel: the call column moves aside so
+    // the conversation stays readable while settings are open.
+    <div className={cn('transition-[padding] duration-200', (settingsOpen || pickerOpen) && 'lg:pr-[400px]')}>
+      <div className="mx-auto flex h-dvh w-full max-w-[760px] flex-col">
+        {/* ---- Header: who, connection, settings, end ---- */}
+        <header className="safe-t flex min-h-16 items-center gap-2 border-b border-line px-4 sm:px-6">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-heading font-semibold">{peerName ?? (connected ? 'Connected' : 'Waiting for them')}</p>
+            <p className="flex items-center gap-1.5 text-label text-fg-muted" data-testid="call-meta">
+              <span className={cn('h-2 w-2 shrink-0 rounded-full', dot)} aria-hidden="true" />
+              <span className="truncate">
+                {connected
+                  ? [
+                      `${language.native} ⇄ ${peerLanguage?.native ?? '…'}`,
+                      mode === 'local-only' ? 'On-device only' : mode === 'hybrid' ? 'Hybrid' : null,
+                      s?.voice.peerActive ? 'Voice matched' : null,
+                      mmss,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  : headerState(s, peerLabel)}
               </span>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* ---- Hands-free indicator: always visible while it's on ---- */}
-      {continuous && (
-        <div
-          role="status"
-          className="mb-1 flex items-center justify-between gap-3 rounded-xl border border-[var(--green)]/30 bg-[var(--green)]/10 px-3.5 py-2"
-        >
-          <span className="flex items-center gap-2 text-[13px] font-medium text-[#9be8b0]">
-            <Radio className="h-4 w-4" aria-hidden="true" />
-            {s?.capturing ? 'Hands-free: listening continuously' : 'Hands-free on (paused)'}
-          </span>
-          <button
-            onClick={() => session?.setListeningMode('push-to-talk')}
-            className="rounded-full bg-white/[0.12] px-3 py-1 text-[12px] font-semibold text-[var(--text-1)]"
-          >
-            Stop
-          </button>
-        </div>
-      )}
-
-      {/* ---- Language rail ---- */}
-      <div className="flex items-center gap-2 py-2">
-        <button
-          onClick={() => setPickerOpen(true)}
-          aria-label={`You speak ${language.name}. Change language`}
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.06] px-3.5 py-2.5 text-left transition-colors hover:bg-white/[0.1] active:bg-white/[0.14]"
-        >
-          <span className="text-[20px] leading-none">{language.flag}</span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)]">You speak</span>
-            <span className="block truncate text-[14px] font-medium text-[var(--text-1)]">{language.native}</span>
-          </span>
-        </button>
-
-        <ArrowLeftRight className="h-4 w-4 shrink-0 text-[var(--text-3)]" aria-hidden="true" />
-
-        <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.03] px-3.5 py-2.5">
-          <span className="text-[20px] leading-none">{peerLanguage?.flag ?? '🌐'}</span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)]">
-              {peerName ?? 'They'} hear{peerName ? 's' : ''}
-            </span>
-            <span className="block truncate text-[14px] font-medium text-[var(--text-1)]">{peerLanguage?.native ?? '—'}</span>
-          </span>
-        </div>
-      </div>
-
-      <AnimatePresence>
-        {s?.notice && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <p
-              role="status"
-              className="mt-1 rounded-xl border border-[var(--amber)]/25 bg-[var(--amber)]/10 px-3.5 py-2.5 text-[13px] leading-snug text-[#ffcf80]"
-            >
-              {s.notice.message}
             </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ---- Speaker panel: grille + live caption readout ---- */}
-      <div
-        className={cn(
-          'relative mt-3 flex min-h-[150px] flex-1 flex-col overflow-hidden rounded-[24px] border border-white/8 transition-colors duration-300',
-          playing ? 'bg-[var(--blue)]/[0.07]' : 'bg-black/25'
-        )}
-      >
-        <div className={cn('grille absolute inset-0', playing ? 'opacity-100' : 'opacity-45')} aria-hidden="true" />
-
-        <div className="sheet-scroll relative flex flex-1 items-center justify-center overflow-y-auto px-6 py-6">
-          <AnimatePresence>
-            {screenText ? (
-              <motion.p
-                key="caption"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className={cn('text-center text-[17px] leading-relaxed', holding ? 'text-[#ffd9a0]' : 'text-[var(--text-1)]')}
-              >
-                {screenText}
-                <span className="opacity-50">…</span>
-              </motion.p>
-            ) : (
-              <motion.p
-                key="idle"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className={cn(
-                  'text-center',
-                  // The last thing they said is content, not a hint — it stays
-                  // legible so you can re-read it while composing a reply.
-                  lastHeard ? 'text-[17px] leading-relaxed text-[var(--text-2)]' : 'text-[14px] leading-snug text-[var(--text-3)]'
-                )}
-              >
-                {lastHeard ?? 'Whatever you say appears here, translated.'}
-              </motion.p>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* ---- Push to talk ---- */}
-      <div className="safe-b flex flex-col items-center pt-6">
-        <div className="relative flex h-[212px] w-[212px] items-center justify-center">
-          <AnimatePresence>
-            {(holding || (continuous && s?.capturing)) && (
-              <>
-                <motion.span
-                  key="r1"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="ptt-ripple absolute inset-0 rounded-full border border-[var(--amber)]/45"
-                />
-                <motion.span
-                  key="r2"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  style={{ animationDelay: '0.65s' }}
-                  className="ptt-ripple absolute inset-0 rounded-full border border-[var(--amber)]/35"
-                />
-              </>
-            )}
-            {playing && !holding && (
-              <motion.span
-                key="recv"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="ptt-ripple absolute inset-0 rounded-full border border-[var(--blue)]/45"
-              />
-            )}
-          </AnimatePresence>
-
-          <button
-            onPointerDown={(e) => {
-              startTalking();
-              try {
-                e.currentTarget.setPointerCapture(e.pointerId);
-              } catch {
-                /* capture unavailable; the hold still works */
-              }
-            }}
-            onPointerUp={(e) => {
-              try {
-                if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-              } catch {
-                /* nothing to release */
-              }
-              stopTalking();
-            }}
-            onPointerCancel={stopTalking}
-            onContextMenu={(e) => e.preventDefault()}
-            disabled={!canPress || continuous}
-            aria-label="Push to talk"
-            aria-pressed={holding}
-            className={cn(
-              'ptt-bezel no-touch h-[188px] w-[188px]',
-              (holding || (continuous && s?.capturing)) && 'ptt-live ptt-pressed',
-              playing && !holding && 'ptt-recv',
-              (!canPress || continuous) && 'ptt-disabled'
-            )}
+          </div>
+          <IconButton label="Call settings" onClick={() => setSettingsOpen(true)}>
+            <SlidersHorizontal className="h-5 w-5" />
+          </IconButton>
+          <Button
+            variant="danger"
+            size="sm"
+            // A live call asks first (a mis-tap would drop the other person); once the call is over, End just leaves.
+            onClick={connected || phase === 'reconnecting' || phase === 'waiting-for-peer' ? () => setConfirmEnd(true) : leave}
+            aria-label="End call"
+            icon={<PhoneOff className="h-4 w-4" />}
           >
-            <span className="ptt-face flex h-full w-full flex-col items-center justify-center gap-1.5">
-              <Mic
-                className={cn('h-9 w-9 transition-colors', holding ? 'text-black/80' : playing ? 'text-white' : 'text-[var(--text-2)]')}
-              />
-              <span
-                className={cn(
-                  'text-[11px] font-bold uppercase tracking-[0.14em] transition-colors',
-                  holding ? 'text-black/60' : 'text-[var(--text-3)]'
-                )}
+            End
+          </Button>
+        </header>
+
+        {/* ---- Persistent hands-free indicator (privacy: always visible while on) + one banner ---- */}
+        {(continuous || status.banner) && (
+          <div className="space-y-2 px-4 pt-3 sm:px-6">
+            {continuous && (
+              <Banner
+                tone="info"
+                action={
+                  <button
+                    className="-my-3 -mr-2 min-h-11 px-2 text-label font-semibold text-accent-text"
+                    onClick={() => session?.setListeningMode('push-to-talk')}
+                  >
+                    Stop
+                  </button>
+                }
               >
-                {holding ? 'On air' : continuous ? 'Hands-free' : 'Hold'}
-              </span>
-            </span>
-          </button>
-        </div>
+                {s?.capturing ? 'Hands-free: listening continuously' : 'Hands-free on (paused)'}
+              </Banner>
+            )}
+            {status.banner && (
+              <Banner
+                tone={status.banner.tone}
+                action={
+                  status.banner.action === 'leave' ? (
+                    <button className="-my-3 -mr-2 min-h-11 px-2 text-label font-semibold text-danger" onClick={leave}>
+                      Leave
+                    </button>
+                  ) : status.banner.action === 'type' && !typing ? (
+                    <button className="-my-3 -mr-2 min-h-11 px-2 text-label font-semibold text-accent-text" onClick={() => setTyping(true)}>
+                      Type
+                    </button>
+                  ) : undefined
+                }
+              >
+                {status.banner.text}
+              </Banner>
+            )}
+          </div>
+        )}
 
-        <p
-          aria-live="polite"
-          className={cn(
-            'mt-5 text-center text-[15px] font-medium transition-colors',
-            holding ? 'text-[var(--amber)]' : playing ? 'text-[var(--blue)]' : 'text-[var(--text-2)]'
-          )}
-        >
-          {primaryHint}
-        </p>
+        {/* ---- The conversation ---- */}
+        <ConversationFeed snapshot={s} peerName={peerLabel} peerLanguage={peerLanguage?.native ?? null} />
 
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-[11px] text-[var(--text-3)]">
-          <span>{s?.transport === 'p2p' ? 'Direct' : 'Relayed'}</span>
-          <span aria-hidden="true">·</span>
-          <span>{s?.features.stt === 'server-stt' ? 'Batch transcribe' : 'Live transcribe'}</span>
-          {s?.lastLatencyMs != null && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className="tnum">{s.lastLatencyMs}ms</span>
-            </>
-          )}
-          {s?.voice.peerActive && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span>Their voice style matched</span>
-            </>
-          )}
-          {s?.features.serverKnown && s.features.tts !== 'server' && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span>System voice</span>
-            </>
-          )}
-        </div>
-
-        {/* ---- Listening mode + disclosure ---- */}
-        <div className="mt-3 flex items-center gap-3 text-[12px]">
-          {s?.features.continuous && (
+        {/* ---- Phase 5 suggestion: one at a time, dismissible, never acts on its own ---- */}
+        {suggestion && (
+          <div role="note" aria-label="Suggestion" className="mx-4 mb-2 flex items-start gap-2 rounded-md bg-surface px-3.5 py-2.5 sm:mx-6">
+            <p className="flex-1 text-label text-fg-muted">{suggestion.text}</p>
             <button
-              onClick={() => session?.setListeningMode(continuous ? 'push-to-talk' : 'continuous')}
-              disabled={!connected || micOff}
-              aria-pressed={continuous}
-              className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 font-medium text-[var(--text-2)] transition-colors hover:bg-white/[0.1] disabled:opacity-40"
+              onClick={() => session?.dismissSuggestion(suggestion.id)}
+              aria-label="Dismiss suggestion"
+              className="-my-3 -mr-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-sm text-fg-subtle hover:text-fg"
             >
-              {continuous ? 'Hands-free: on' : 'Hands-free: off'}
+              <X className="h-4 w-4" />
             </button>
-          )}
-          {s?.voice.available && (
-            <button
-              onClick={() => session?.toggleVoiceMirror()}
-              disabled={!connected}
-              aria-pressed={s.voice.sharing}
-              className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 font-medium text-[var(--text-2)] transition-colors hover:bg-white/[0.1] disabled:opacity-40"
-            >
-              {s.voice.sharing ? 'Voice match: on' : 'Voice match: off'}
-            </button>
-          )}
-          <button
-            onClick={() => session?.showDisclosure()}
-            className="flex items-center gap-1 text-[var(--text-3)] underline-offset-2 hover:text-[var(--text-2)] hover:underline"
+          </div>
+        )}
+
+        {/* ---- Typed input (always offered when speech recognition is unavailable) ---- */}
+        {showComposer && (
+          <form
+            className="flex gap-2 px-4 pb-1 sm:px-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              session?.sendText(draft);
+              setDraft('');
+              composerRef.current?.focus();
+            }}
           >
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            How your voice is processed
-          </button>
-        </div>
-      </div>
-
-      {/* ---- Transcript ---- */}
-      <AnimatePresence>
-        {showTranscript && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowTranscript(false)}
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
+            <input
+              ref={composerRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              maxLength={500}
+              aria-label="Type a message"
+              placeholder="Type a message"
+              className="h-11 min-w-0 flex-1 rounded-md border border-line bg-surface px-3.5 text-body text-fg outline-none placeholder:text-fg-subtle focus:border-focus"
             />
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              aria-label="Transcript"
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 32, stiffness: 340 }}
-              className="fixed inset-x-0 bottom-0 z-50 mx-auto flex h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-t-[28px] border border-white/10 bg-[#141418]/95 backdrop-blur-2xl"
-            >
-              <div className="flex justify-center pt-3 pb-1">
-                <div className="h-1 w-9 rounded-full bg-white/20" />
-              </div>
-              <div className="flex items-center justify-between px-5 pt-2 pb-4">
-                <h2 className="text-[19px] font-semibold tracking-[-0.01em]">Transcript</h2>
-                <button
-                  onClick={() => setShowTranscript(false)}
-                  aria-label="Close transcript"
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/8 text-[var(--text-2)] transition-colors hover:bg-white/14"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div ref={scrollRef} className="sheet-scroll flex-1 space-y-4 overflow-y-auto px-5 pb-6">
-                {segments.length === 0 ? (
-                  <p className="pt-16 text-center text-[15px] text-[var(--text-3)]">Nothing said yet.</p>
-                ) : (
-                  segments.map((seg) => <TranscriptBubble key={seg.id} seg={seg} />)
-                )}
-              </div>
-            </motion.div>
-          </>
+            <Button type="submit" variant="primary" size="sm" className="h-11" disabled={!draft.trim()}>
+              Send
+            </Button>
+          </form>
         )}
-      </AnimatePresence>
 
-      <LanguagePicker
-        open={pickerOpen}
-        selected={language}
-        title="You speak"
-        subtitle="Switching takes effect immediately"
-        onSelect={onLanguageChange}
-        onClose={() => setPickerOpen(false)}
-      />
+        <TalkDock
+          hint={status.hint}
+          tone={status.tone}
+          canPress={canPress && !continuous}
+          holding={Boolean(s?.holding)}
+          continuous={continuous}
+          capturing={Boolean(s?.capturing)}
+          hearingVoice={Boolean(s?.hearingVoice)}
+          playing={Boolean(s?.playing)}
+          micOff={micOff}
+          typing={typing}
+          showTypeToggle={Boolean(s?.processing.available) && connected && !speechUnavailable}
+          onPressStart={startTalking}
+          onPressEnd={stopTalking}
+          onStopHandsFree={() => session?.setListeningMode('push-to-talk')}
+          onToggleMic={() => session?.setMicEnabled(micOff)}
+          onToggleTyping={() => {
+            setTyping((v) => !v);
+            setTimeout(() => composerRef.current?.focus(), 30);
+          }}
+        />
 
-      <ConsentSheet
-        open={Boolean(s?.voice.prompt)}
-        disclosure={VOICEMIRROR_DISCLOSURE}
-        granted={false}
-        allowLabel="Share voice style"
-        onAllow={() => session?.acceptVoiceMirror()}
-        onDecline={() => session?.declineVoiceMirror()}
-      />
+        <SettingsSheet
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          session={session}
+          snapshot={s}
+          roomCode={roomCode}
+          language={language}
+          onChangeLanguage={() => {
+            setSettingsOpen(false);
+            setPickerOpen(true);
+          }}
+          onShowDisclosure={() => {
+            setSettingsOpen(false);
+            session?.showDisclosure();
+          }}
+        />
 
-      <ConsentSheet
-        open={Boolean(s?.consent.prompt)}
-        disclosure={s?.consent.disclosure ?? null}
-        granted={Boolean(s?.consent.granted)}
-        onAllow={() => session?.grantConsent()}
-        onDecline={() => session?.declineConsent()}
-      />
-    </div>
-  );
-}
+        <Sheet
+          open={confirmEnd}
+          onClose={() => setConfirmEnd(false)}
+          title="End this call?"
+          footer={
+            <div className="grid grid-cols-2 gap-3">
+              <Button onClick={() => setConfirmEnd(false)} data-autofocus>
+                Keep talking
+              </Button>
+              <Button variant="danger" onClick={leave}>
+                End call
+              </Button>
+            </div>
+          }
+        >
+          <p className="pb-1 text-body text-fg-muted">{peerName ? `${peerName} will be disconnected.` : 'The other person will be disconnected.'} The conversation is not saved.</p>
+        </Sheet>
 
-function TranscriptBubble({ seg }: { seg: SegmentRecord; key?: string }) {
-  const isMe = seg.speaker === 'local';
-  const secondary = seg.untranslated
-    ? 'Not translated — translation was unavailable'
-    : isMe
-      ? seg.translation === 'pending'
-        ? 'Translating…'
-        : seg.translated
-      : seg.original;
-  return (
-    <div className={cn('flex flex-col', isMe ? 'items-end' : 'items-start')}>
-      <span className="mb-1 px-1 text-[11px] font-medium text-[var(--text-3)]">{isMe ? 'You' : seg.speakerName || 'Them'}</span>
-      <div
-        className={cn(
-          'max-w-[85%] rounded-[20px] px-4 py-3',
-          isMe ? 'rounded-br-[6px] bg-[var(--blue)] text-white' : 'rounded-bl-[6px] bg-white/[0.09] text-[var(--text-1)]'
-        )}
-      >
-        <p className="text-[16px] leading-snug">{isMe ? seg.original : seg.translated}</p>
-        <p className={cn('mt-1.5 text-[13px] leading-snug', isMe ? 'text-white/65' : 'text-[var(--text-3)]')}>{secondary}</p>
+        <LanguagePicker open={pickerOpen} selected={language} title="You speak" onSelect={onLanguageChange} onClose={() => setPickerOpen(false)} />
+
+        <ConsentSheet
+          open={Boolean(s?.voice.prompt)}
+          disclosure={VOICEMIRROR_DISCLOSURE}
+          granted={false}
+          allowLabel="Share voice style"
+          onAllow={() => session?.acceptVoiceMirror()}
+          onDecline={() => session?.declineVoiceMirror()}
+        />
+
+        <ConsentSheet
+          open={Boolean(s?.consent.prompt)}
+          disclosure={s?.consent.disclosure ?? null}
+          granted={Boolean(s?.consent.granted)}
+          onAllow={() => session?.grantConsent()}
+          onDecline={() => session?.declineConsent()}
+        />
       </div>
     </div>
   );
-}
-
-/** The last thing the other person said, shown on the idle panel. */
-function lastReceived(segments: SessionSnapshot['segments']): string | null {
-  for (let i = segments.length - 1; i >= 0; i--) {
-    if (segments[i].speaker === 'peer') return segments[i].translated;
-  }
-  return null;
 }

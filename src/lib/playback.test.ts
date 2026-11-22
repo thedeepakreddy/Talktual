@@ -82,6 +82,20 @@ describe('PlaybackController (M2.2)', () => {
     expect(synth.spoken[1].text).toBe('w3');
   });
 
+  it('Phase 4 age bound: a waiting item past notAfter is dropped instead of played late', async () => {
+    const { PlaybackController } = await load();
+    const c = new PlaybackController();
+    const log = track(c);
+    c.enqueue({ segmentId: 'p', text: 'playing', lang: 'en' });
+    await vi.waitFor(() => expect(synth.spoken).toHaveLength(1));
+    c.enqueue({ segmentId: 'old', text: 'old', lang: 'en', notAfter: Date.now() - 1 });
+    c.enqueue({ segmentId: 'fresh', text: 'fresh', lang: 'en', notAfter: Date.now() + 60_000 });
+    synth.finishLast();
+    await vi.waitFor(() => expect(synth.spoken).toHaveLength(2));
+    expect(synth.spoken[1].text).toBe('fresh');
+    expect(log).toContain('old:dropped');
+  });
+
   it('reports failed (not ended) when neither server audio nor a browser voice could play', async () => {
     const { PlaybackController } = await load();
     const c = new PlaybackController();
@@ -212,6 +226,89 @@ describe('PCM streaming bounds (M2.2)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('browser playback restrictions (reliability fix)', () => {
+  function suspendedCtx(opts: { resumes: boolean }) {
+    const ref: { ctx: { state: string; currentTime: number; started: number } | null } = { ctx: null };
+    class FakeCtx {
+      state = 'suspended';
+      currentTime = 0; // a suspended context's clock does not advance
+      destination = {};
+      started = 0;
+      constructor() {
+        ref.ctx = this;
+      }
+      createGain() {
+        return { connect() {}, disconnect() {} };
+      }
+      createBuffer(_c: number, length: number, rate: number) {
+        const data = new Float32Array(length);
+        return { duration: length / rate, getChannelData: () => data };
+      }
+      createBufferSource() {
+        const ctx = this;
+        return { buffer: null, onended: null, connect() {}, start() { ctx.started++; }, stop() {} };
+      }
+      resume() {
+        if (opts.resumes) {
+          this.state = 'running';
+          return Promise.resolve();
+        }
+        return new Promise<void>(() => {}); // no user gesture: stays pending forever
+      }
+    }
+    vi.stubGlobal('AudioContext', FakeCtx);
+    return ref;
+  }
+  const pcm = (seconds: number) =>
+    fetchMock.mockImplementation(async () => {
+      const body = new ReadableStream({
+        start(c) {
+          for (let i = 0; i < seconds; i++) c.enqueue(new Uint8Array(2000));
+          c.close();
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'X-Audio-Format': 'pcm', 'X-Sample-Rate': '1000' } });
+    });
+
+  it('suspended AudioContext (no gesture): streamed server audio is NOT played silently — the browser voice speaks instead', async () => {
+    const ref = suspendedCtx({ resumes: false });
+    pcm(3);
+    const { PlaybackController } = await load();
+    const c = new PlaybackController();
+    const log = track(c);
+    const done = c.enqueue({ segmentId: 's', text: 'hola', lang: 'es-ES' });
+    await vi.waitFor(() => expect(synth.spoken).toHaveLength(1), { timeout: 2000 });
+    expect(ref.ctx!.started).toBe(0); // nothing scheduled into the dead context
+    synth.finishLast();
+    await done;
+    expect(log).toEqual(['s:queued', 's:started', 's:ended:browser']);
+  });
+
+  it('a long clip into a suspended context no longer blocks the queue forever', async () => {
+    suspendedCtx({ resumes: false });
+    pcm(30); // 30 s of audio: previously stuck in the backpressure loop on a frozen clock
+    const { PlaybackController } = await load();
+    const c = new PlaybackController();
+    c.enqueue({ segmentId: 'long', text: 'largo', lang: 'es-ES' });
+    c.enqueue({ segmentId: 'next', text: 'siguiente', lang: 'es-ES' });
+    await vi.waitFor(() => expect(synth.spoken.map((x) => x.text)).toContain('largo'), { timeout: 2000 });
+    synth.finishLast();
+    await vi.waitFor(() => expect(synth.spoken.map((x) => x.text)).toContain('siguiente'), { timeout: 2000 });
+  });
+
+  it('a context that can resume is resumed and used for server audio', async () => {
+    const ref = suspendedCtx({ resumes: true });
+    pcm(1);
+    const { PlaybackController } = await load();
+    const c = new PlaybackController();
+    const log = track(c);
+    await c.enqueue({ segmentId: 'ok', text: 'hola', lang: 'es-ES' });
+    expect(ref.ctx!.started).toBeGreaterThan(0);
+    expect(synth.spoken).toHaveLength(0);
+    expect(log.at(-1)).toBe('ok:ended:server');
   });
 });
 

@@ -1,248 +1,209 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
-@theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", monospace;
-}
+/* ===========================================================================
+   Talktual design tokens — "Quiet instrument" (see DESIGN.md).
+   Semantic tokens only; components never use raw colors.
+   =========================================================================== */
 
 :root {
-  /* Apple system colors, dark appearance */
-  --blue: #0a84ff;
-  --green: #30d158;
-  --amber: #ff9f0a;
-  --red: #ff453a;
-
-  --text-1: #f5f5f7;
-  --text-2: rgba(235, 235, 245, 0.62);
-  --text-3: rgba(235, 235, 245, 0.32);
-
-  --surface: rgba(255, 255, 255, 0.045);
-  --surface-2: rgba(255, 255, 255, 0.08);
-  --hairline: rgba(255, 255, 255, 0.09);
-
-  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  color-scheme: dark;
+  --bg: #0e0f11;
+  --raised: #16181b;
+  --surface: #1d2024;
+  --surface-hover: #252930;
+  --line: #2b2f35;
+  --line-strong: #3b4048;
+  --fg: #ecedee;
+  --fg-muted: #a3a9b1;
+  --fg-subtle: #878e96;
+  --selected: #383d45;
+  --accent: #f5a524;
+  --on-accent: #1c1305;
+  --accent-text: #f7b24a;
+  --accent-soft: rgb(245 165 36 / 0.14);
+  --incoming: #86bfff;
+  --incoming-soft: rgb(134 191 255 / 0.12);
+  --success: #4cd488;
+  --danger: #ff6b6e;
+  --danger-soft: rgb(255 107 110 / 0.14);
+  --focus: #86bfff;
+  --sheet-shadow: 0 -8px 32px rgb(0 0 0 / 0.45);
+  --scrim: rgb(0 0 0 / 0.55);
 }
 
-html,
-body {
-  height: 100%;
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f6f6f4;
+    --raised: #ffffff;
+    --surface: #ededea;
+    --surface-hover: #e4e4e0;
+    --line: #dadad5;
+    --line-strong: #c4c4be;
+    --fg: #141517;
+    --fg-muted: #555b63;
+    --fg-subtle: #60666e;
+    --selected: #ffffff;
+    --accent-text: #8f5300;
+    --accent-soft: rgb(245 165 36 / 0.18);
+    --incoming: #1f64c0;
+    --incoming-soft: rgb(31 100 192 / 0.1);
+    --success: #1b7f47;
+    --danger: #c42f35;
+    --danger-soft: rgb(196 47 53 / 0.1);
+    --focus: #1f64c0;
+    --sheet-shadow: 0 -8px 32px rgb(0 0 0 / 0.12);
+    --scrim: rgb(20 21 23 / 0.35);
+  }
 }
 
-body {
-  margin: 0;
-  background: #08080a;
-  color: var(--text-1);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  /* A push-to-talk hold must never turn into a pull-to-refresh. */
-  overscroll-behavior: none;
+@theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-bg: var(--bg);
+  --color-raised: var(--raised);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-selected: var(--selected);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-incoming: var(--incoming);
+  --color-incoming-soft: var(--incoming-soft);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-focus: var(--focus);
+
+  /* Type scale (rem → respects the user's text-size setting) */
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1rem;
+  --text-label: 0.8125rem;
+  --text-label--line-height: 1.125rem;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.375rem;
+  --text-body-lg: 1.0625rem;
+  --text-body-lg--line-height: 1.5625rem;
+  --text-heading: 1.0625rem;
+  --text-heading--line-height: 1.5rem;
+  --text-title: 1.5rem;
+  --text-title--line-height: 1.875rem;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-sheet: 20px;
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* Ambient depth behind everything, so flat black never reads as "unfinished". */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    radial-gradient(90rem 50rem at 50% -20%, rgba(10, 132, 255, 0.09), transparent 60%),
-    radial-gradient(60rem 40rem at 50% 120%, rgba(255, 159, 10, 0.06), transparent 60%);
-}
+/* Element defaults live in the base layer so utilities (e.g. text-on-accent)
+   always win over them; unlayered rules would beat every utility. */
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
 
-#root {
-  position: relative;
-  z-index: 1;
-  min-height: 100%;
-}
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 100%;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* A push-to-talk hold must never turn into a pull-to-refresh. */
+    overscroll-behavior: none;
+  }
 
-button {
-  font-family: inherit;
-  -webkit-tap-highlight-color: transparent;
-}
+  #root {
+    min-height: 100%;
+  }
 
-input,
-select {
-  font-family: inherit;
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  /* One focus treatment everywhere: visible for keyboard, invisible for touch. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+  }
 }
 
 @layer utilities {
-  .glass {
-    background: var(--surface);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid var(--hairline);
-  }
-
-  .hairline-t {
-    border-top: 1px solid var(--hairline);
-  }
-
   .safe-b {
-    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
-
   .safe-t {
-    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-top: max(0.5rem, env(safe-area-inset-top));
   }
-
   .no-touch {
     touch-action: none;
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
   }
-
   .tnum {
     font-variant-numeric: tabular-nums;
   }
-}
-
-/* ---------------------------------------------------------------------------
-   Speaker grille — the single strongest "this is a radio" cue. Two offset dot
-   grids read as a real perforated metal panel rather than a flat texture.
---------------------------------------------------------------------------- */
-.grille {
-  background-image:
-    radial-gradient(circle at center, rgba(255, 255, 255, 0.16) 1.1px, transparent 1.3px),
-    radial-gradient(circle at center, rgba(0, 0, 0, 0.55) 1.1px, transparent 1.3px);
-  background-size: 9px 9px, 9px 9px;
-  background-position: 0 0, 0.5px 0.5px;
-  transition: opacity 260ms var(--ease-out);
-}
-
-/* ---------------------------------------------------------------------------
-   Push-to-talk button. Built from a machined bezel, a domed face, and a
-   specular highlight so it reads as a physical part under a thumb.
---------------------------------------------------------------------------- */
-.ptt-bezel {
-  border-radius: 9999px;
-  background: conic-gradient(
-    from 145deg,
-    #46464d 0deg,
-    #7a7a85 60deg,
-    #2b2b30 130deg,
-    #5c5c66 210deg,
-    #33333a 290deg,
-    #46464d 360deg
-  );
-  padding: 10px;
-  box-shadow:
-    0 24px 48px -12px rgba(0, 0, 0, 0.85),
-    0 2px 0 rgba(255, 255, 255, 0.08) inset,
-    0 -2px 6px rgba(0, 0, 0, 0.6) inset;
-  transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
-}
-
-.ptt-face {
-  position: relative;
-  border-radius: 9999px;
-  background:
-    radial-gradient(120% 120% at 50% 8%, #34343b 0%, #1d1d22 46%, #131317 100%);
-  box-shadow:
-    0 1px 1px rgba(255, 255, 255, 0.14) inset,
-    0 -18px 32px rgba(0, 0, 0, 0.55) inset;
-  transition: background 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
-}
-
-/* Specular sheen across the top of the dome. */
-.ptt-face::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 42%);
-  pointer-events: none;
-}
-
-.ptt-live .ptt-face {
-  background:
-    radial-gradient(120% 120% at 50% 8%, #ffc061 0%, #ff9f0a 44%, #c9700a 100%);
-  box-shadow:
-    0 1px 1px rgba(255, 255, 255, 0.4) inset,
-    0 -18px 32px rgba(120, 60, 0, 0.5) inset;
-}
-
-.ptt-live.ptt-bezel,
-.ptt-live .ptt-bezel {
-  box-shadow:
-    0 10px 26px -8px rgba(0, 0, 0, 0.8),
-    0 0 46px rgba(255, 159, 10, 0.42),
-    0 2px 0 rgba(255, 255, 255, 0.08) inset;
-}
-
-.ptt-pressed {
-  transform: scale(0.965);
-}
-
-.ptt-recv .ptt-face {
-  background:
-    radial-gradient(120% 120% at 50% 8%, #4aa8ff 0%, #0a84ff 46%, #0a5fbd 100%);
-}
-
-.ptt-disabled {
-  opacity: 0.35;
-  filter: saturate(0.2);
-}
-
-/* Transmit halo. Kept off the button itself so the press animation stays crisp. */
-@keyframes ptt-ripple {
-  0% {
-    transform: scale(0.92);
-    opacity: 0.5;
-  }
-  100% {
-    transform: scale(1.5);
-    opacity: 0;
+  .scroll-area {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
 }
 
-.ptt-ripple {
-  animation: ptt-ripple 1.9s var(--ease-out) infinite;
+/* Live-level bars on the talk control (decorative; state is also in text). */
+@keyframes level {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.level-bar {
+  transform-origin: center;
+  animation: level 900ms var(--ease-out) infinite;
 }
 
-/* Status LED with a real bloom. */
-.led {
-  position: relative;
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-}
-
-.led::after {
-  content: "";
-  position: absolute;
-  inset: -5px;
-  border-radius: 9999px;
-  background: inherit;
-  opacity: 0.32;
-  filter: blur(4px);
-}
-
-@keyframes led-breathe {
+@keyframes pulse-dot {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
-
-.led-pulse {
-  animation: led-breathe 1.8s ease-in-out infinite;
-}
-
-/* Sheets slide from the bottom edge like a native modal. */
-.sheet-scroll {
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
-.sheet-scroll::-webkit-scrollbar {
-  width: 0;
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ptt-ripple,
-  .led-pulse {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

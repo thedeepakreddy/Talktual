@@ -1,0 +1,47 @@
+{
+ "at": "2026-11-22T03:24:40.846Z",
+ "tree": "/home/user/Talktual",
+ "label": "branch-fix-servertts",
+ "rows": [
+  {
+   "tree": "branch-fix-servertts",
+   "scenario": "final-before-release",
+   "direction": "A→B (en→es)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 0,
+   "peerWebAudioChunks": 1,
+   "errors": 0
+  },
+  {
+   "tree": "branch-fix-servertts",
+   "scenario": "final-before-release",
+   "direction": "B→A (es→en)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 0,
+   "peerWebAudioChunks": 1,
+   "errors": 0
+  },
+  {
+   "tree": "branch-fix-servertts",
+   "scenario": "no-final-onend-only",
+   "direction": "A→B (en→es)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 0,
+   "peerWebAudioChunks": 1,
+   "errors": 0
+  },
+  {
+   "tree": "branch-fix-servertts",
+   "scenario": "no-final-onend-only",
+   "direction": "B→A (es→en)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 0,
+   "peerWebAudioChunks": 1,
+   "errors": 0
+  }
+ ]
+}
