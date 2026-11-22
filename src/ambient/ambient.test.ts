@@ -104,6 +104,16 @@ describe('language check', () => {
     expect(d.add('I think the station is just over there and it is not far')).toBe('en');
     const h = new LanguageMismatchDetector('hu-HU');
     expect(h.add('nem tudom hogy hol van az állomás de azt hiszem hogy itt van a közelben')).toBeNull();
+    // After plenty of Hungarian, a switch to English is still detected (the run is what counts).
+    const m = new LanguageMismatchDetector('hu-HU');
+    for (let i = 0; i < 5; i++) m.add('nem tudom hogy hol van az állomás de itt van');
+    expect(m.add('I think that the train is late again')).toBeNull();
+    expect(m.add('and you know it is not the first time this week')).toBe('en');
+    // One Hungarian phrase in between resets the run.
+    const r = new LanguageMismatchDetector('hu-HU');
+    r.add('I think that the train is late again');
+    r.add('igen igen nem tudom hogy hol van');
+    expect(r.add('and you know it is not the first time')).toBeNull();
   });
 });
 
@@ -270,6 +280,24 @@ describe('AmbientSession', () => {
       expect(FakeAsr.all).toHaveLength(1);
       expect(FakeAsr.all.some((a) => a.active)).toBe(false);
     }
+  });
+
+  it('without headphones, speech waits for the speaker to pause (early text is shown at once, the sentence is not cut off)', async () => {
+    const h = harness();
+    h.s.start();
+    await flush();
+    const words = 'holnap reggel nyolc órakor találkozunk a pályaudvar előtt és utána'.split(' ');
+    for (let n = 2; n <= words.length; n++) {
+      h.asr().say(words.slice(0, n).join(' '), false);
+      await vi.advanceTimersByTimeAsync(300);
+    }
+    expect(h.s.getSnapshot().lines.some((l) => l.early && l.state === 'translated')).toBe(true);
+    expect(h.playback.played).toHaveLength(0); // still talking → not spoken yet
+    expect(h.asr().active).toBe(true); // and still listening
+    h.asr().say(words.join(' '), true);
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.playback.played.length).toBeGreaterThan(0);
   });
 
   it('with headphones: keeps listening while speaking', async () => {
