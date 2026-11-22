@@ -134,7 +134,7 @@ describe('hybrid and cloud routing', () => {
     h.session.sendText('the conference starts after lunch');
     await settle(40);
     expect(h.translate).toHaveBeenCalledTimes(1);
-    expect(segs(h).map((s) => s.translated)).toEqual(['Gracias', 'CLOUD(the conference starts after lunch)']);
+    expect(segs(h).map((s) => s.translated)).toEqual(['Muchas gracias', 'CLOUD(the conference starts after lunch)']);
     expect(h.session.getSnapshot().segments.filter((s) => s.speaker === 'local').map((s) => s.processedOn)).toEqual(['device', 'cloud']);
   });
 
