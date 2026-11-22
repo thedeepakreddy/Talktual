@@ -1009,6 +1009,7 @@ export class CommunicationSession {
 
   private onLocalFinal(seg: RecognizedSegment): void {
     if (this.isTerminal || !seg.text.trim()) return;
+    if (seg.promoted) this.diag.count('asr_interim_promoted');
     if (this.seg) {
       this.touchContinuousFloor();
       this.commit({ partial: { ...this.snap.partial, local: '' } });

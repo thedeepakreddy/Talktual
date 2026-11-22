@@ -145,12 +145,21 @@ export async function startStack({ apiPort, webPort, serverOverrides = {}, fetch
     stdio: 'inherit',
   });
   if (build.status !== 0) throw new Error('vite build failed');
+  const web = `http://127.0.0.1:${webPort}`;
+  // Refuse to start if something already serves this port: a leftover preview
+  // would silently serve a DIFFERENT build (this happened once — see docs/reliability).
+  try {
+    await fetch(web);
+    throw new Error(`port ${webPort} is already serving — a previous preview is still running`);
+  } catch (e) {
+    if (String(e?.message).includes('already serving')) throw e;
+  }
+  // Spawn vite itself (not via npx) so stop() kills the real server process.
   const preview = spawn(
-    'npx',
-    ['vite', 'preview', '--outDir', dist, '--port', String(webPort), '--strictPort', '--host', '127.0.0.1'],
+    path.join(cwd, 'node_modules/.bin/vite'),
+    ['preview', '--outDir', dist, '--port', String(webPort), '--strictPort', '--host', '127.0.0.1'],
     { cwd, stdio: 'ignore' }
   );
-  const web = `http://127.0.0.1:${webPort}`;
   const end = Date.now() + 20000;
   for (;;) {
     try {

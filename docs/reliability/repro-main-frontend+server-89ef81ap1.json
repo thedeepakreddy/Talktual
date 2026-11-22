@@ -1,0 +1,25 @@
+{
+ "at": "2026-11-22T03:13:27.058Z",
+ "tree": "/tmp/claude-0/-home-user-Talktual/6181e3bf-ed8a-559a-bb57-6dbbd271a2d7/scratchpad/main-wt",
+ "label": "main-frontend+server-89ef81ap1",
+ "rows": [
+  {
+   "tree": "main-frontend+server-89ef81ap1",
+   "scenario": "final-before-release",
+   "direction": "A→B (en→es)",
+   "translateCalls": null,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  },
+  {
+   "tree": "main-frontend+server-89ef81ap1",
+   "scenario": "final-before-release",
+   "direction": "B→A (es→en)",
+   "translateCalls": null,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "errors": 0
+  }
+ ]
+}
