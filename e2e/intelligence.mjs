@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { loadChromium, startStack, pairPeers, root } from './harness.mjs';
+import { loadChromium, startStack, pairPeers, root, feedText, openSettings, closeSettings, voiceMatchControls } from './harness.mjs';
 
 const results = [];
 async function step(name, fn) {
@@ -35,12 +35,7 @@ async function utter(page, text) {
 }
 const spoken = (page) => page.evaluate(() => window.__spoken.map((s) => s.text));
 const waitSpoken = (page, sub, ms = 8000) => page.waitForFunction((s) => window.__spoken.some((x) => x.text.includes(s)), sub, { timeout: ms });
-async function transcript(page) {
-  await page.getByRole('button', { name: 'Show transcript' }).click();
-  const t = await page.getByRole('dialog', { name: 'Transcript' }).innerText();
-  await page.getByRole('button', { name: 'Close transcript' }).click();
-  return t;
-}
+const transcript = feedText;
 
 const chromium = await loadChromium();
 const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
@@ -96,13 +91,15 @@ try {
     assert.equal(stack.providerCalls.length - before, 1);
   });
 
-  await step('assist sheet: context visible and correctable; off switch clears it and translation becomes context-free', async () => {
-    await host.page.getByRole('button', { name: 'Conversation assistance' }).click();
-    const sheet = host.page.getByRole('dialog', { name: 'Conversation assistance' });
-    assert.match(await sheet.innerText(), /Plaza Mayor/);
+  await step('settings: context visible and correctable; off switch clears it and translation becomes context-free', async () => {
+    await openSettings(host.page);
+    await host.page.getByRole('button', { name: /What it remembers/ }).click();
+    const memory = host.page.getByRole('dialog', { name: 'What assistance remembers' });
+    assert.match(await memory.innerText(), /Plaza Mayor/);
+    await host.page.getByRole('button', { name: 'Back' }).click();
     await host.page.getByRole('switch', { name: 'Assistance' }).click();
-    await host.page.getByText('Nothing yet.').waitFor();
-    await host.page.getByRole('button', { name: 'Close assistance' }).click();
+    await host.page.getByRole('switch', { name: 'Assistance', checked: false }).waitFor();
+    await closeSettings(host.page);
     await utter(host.page, 'Tell Rose to wait at the bank again');
     await waitSpoken(guest.page, 'again');
     const q = stack.providerCalls.filter((c) => c.kind === 'translate').map((c) => c.q);
@@ -111,7 +108,7 @@ try {
 
   await step('no page errors; VoiceMirror off', async () => {
     for (const p of [host, guest]) assert.deepEqual(p.errors, []);
-    assert.equal(await host.page.getByRole('button', { name: /voice match/i }).count(), 0);
+    assert.equal(await voiceMatchControls(host.page), 0);
   });
 } catch {
   exitCode = 1;
@@ -130,7 +127,9 @@ try {
     const dlgText = await h.page.getByRole('dialog', { name: /before you talk/i }).innerText();
     assert.doesNotMatch(dlgText, /runs on your device/);
     for (const p of [h.page, g.page]) await p.getByRole('button', { name: /allow microphone/i }).click();
-    assert.equal(await h.page.getByRole('button', { name: 'Conversation assistance' }).count(), 0);
+    await openSettings(h.page);
+    assert.equal(await h.page.getByRole('switch', { name: 'Assistance' }).count(), 0);
+    await closeSettings(h.page);
     await utter(h.page, 'Tell Rose to wait at the bank');
     await waitSpoken(g.page, 'Rose');
     assert.ok(off.providerCalls.some((c) => c.q === 'Tell Rose to wait at the bank'));

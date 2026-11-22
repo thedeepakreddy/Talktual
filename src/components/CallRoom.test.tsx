@@ -394,7 +394,11 @@ describe('VoiceMirror controls (Phase 3)', () => {
     const dialog = await screen.findByRole('dialog', { name: /share your voice style/i });
     expect(dialog.textContent).toMatch(/does not copy or clone your voice/);
     expect(dialog.textContent).toMatch(/Nothing is stored/);
+    // Settings closed so the disclosure is the only dialog.
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Share voice style' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    openSettings();
     expect(toggle().getAttribute('aria-checked')).toBe('true');
     fireEvent.click(toggle());
     expect(toggle().getAttribute('aria-checked')).toBe('false');

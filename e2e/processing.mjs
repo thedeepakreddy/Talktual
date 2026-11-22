@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { loadChromium, startStack, pairPeers, root } from './harness.mjs';
+import { loadChromium, startStack, pairPeers, root, feedText, openSettings, closeSettings, voiceMatchControls } from './harness.mjs';
 
 const results = [];
 async function step(name, fn) {
@@ -37,16 +37,12 @@ async function typeMsg(page, text) {
   await page.getByRole('button', { name: 'Send' }).click();
 }
 async function setMode(page, label) {
-  await page.getByRole('button', { name: 'Privacy and processing' }).click();
-  await page.getByRole('radio', { name: label }).check();
-  await page.getByRole('button', { name: 'Close privacy' }).click();
+  await openSettings(page);
+  await page.getByRole('radio', { name: label }).click();
+  await page.getByRole('radio', { name: label, checked: true }).waitFor();
+  await closeSettings(page);
 }
-async function transcript(page) {
-  await page.getByRole('button', { name: 'Show transcript' }).click();
-  const t = await page.getByRole('dialog', { name: 'Transcript' }).innerText();
-  await page.getByRole('button', { name: 'Close transcript' }).click();
-  return t;
-}
+const transcript = feedText;
 const spoken = (page) => page.evaluate(() => window.__spoken.map((s) => s.text));
 
 const chromium = await loadChromium();
@@ -64,7 +60,7 @@ try {
   });
 
   await step('On-device only: pressing to talk starts NO recognizer and sends no audio; typing is offered', async () => {
-    await setMode(host.page, 'On-device only');
+    await setMode(host.page, 'On-device');
     const before = await host.page.evaluate(() => window.__sr.length);
     await host.page.getByRole('button', { name: 'Push to talk' }).hover();
     await host.page.mouse.down();
@@ -123,7 +119,7 @@ try {
 
   await step('no page errors; VoiceMirror off', async () => {
     for (const p of [host, guest]) assert.deepEqual(p.errors, []);
-    assert.equal(await host.page.getByRole('button', { name: /voice match/i }).count(), 0);
+    assert.equal(await voiceMatchControls(host.page), 0);
   });
 } catch {
   exitCode = 1;
@@ -139,7 +135,9 @@ try {
   await step('rollback: no privacy controls or typed input; speech goes through the Phase 5 path', async () => {
     const { host: h, guest: g } = await pairPeers(browser, off.web);
     for (const p of [h.page, g.page]) await p.getByRole('button', { name: /allow microphone/i }).click();
-    assert.equal(await h.page.getByRole('button', { name: 'Privacy and processing' }).count(), 0);
+    await openSettings(h.page);
+    assert.equal(await h.page.getByRole('radiogroup', { name: 'Processing mode' }).count(), 0);
+    await closeSettings(h.page);
     assert.equal(await h.page.getByRole('button', { name: 'Type' }).count(), 0);
     await h.page.getByRole('button', { name: 'Push to talk' }).hover();
     await h.page.mouse.down();

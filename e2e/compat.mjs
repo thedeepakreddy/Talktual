@@ -14,7 +14,7 @@
 
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { loadChromium, startStack, pairPeers, talk, initScript } from './harness.mjs';
+import { loadChromium, startStack, pairPeers, talk, initScript, openSettings, closeSettings, readCallCode } from './harness.mjs';
 
 const require = createRequire(import.meta.url);
 const results = [];
@@ -53,8 +53,9 @@ const launch = () => chromium.launch({ args: ['--use-fake-ui-for-media-stream', 
       assert.match(await dialog.textContent(), /ElevenLabs/);
       await dialog.getByRole('button', { name: /allow microphone/i }).click();
       await pair.host.page.getByRole('button', { name: /allow microphone/i }).click();
-      assert.equal(await pair.guest.page.getByText('Batch transcribe').count(), 1);
-      assert.equal(await pair.guest.page.getByRole('button', { name: /hands-free/i }).count(), 0, 'hands-free not offered without streaming ASR');
+      await openSettings(pair.guest.page);
+      assert.equal(await pair.guest.page.getByRole('radio', { name: 'Hands-free' }).count(), 0, 'hands-free not offered without streaming ASR');
+      await closeSettings(pair.guest.page);
     });
 
     await step('1: guest holds, a real MediaRecorder captures the fake mic, transcript is translated and heard by host', async () => {
@@ -116,17 +117,15 @@ const launch = () => chromium.launch({ args: ['--use-fake-ui-for-media-stream', 
       await page.goto(stack.web);
       await noHScroll('home');
       await page.getByLabel('Your name').fill('Ana');
-      await page.getByRole('button', { name: /start a channel/i }).tap();
-      await page.waitForFunction(() => document.querySelectorAll('span.tnum').length === 6 && !document.body.innerText.includes('······'));
+      await page.getByRole('button', { name: /^start a call$/i }).tap();
+      const code = await readCallCode(page);
       await noHScroll('invite');
-      const code = (await page.locator('span.tnum').allTextContents()).join('');
       // Second participant on desktop.
       const other = await browser.newContext({ locale: 'es-ES', permissions: ['microphone'] });
       await other.addInitScript(initScript, {});
       const op = await other.newPage();
       await op.goto(`${stack.web}/?join=${code}`);
       await op.getByLabel('Your name').fill('Luis');
-      await op.getByRole('button', { name: /join a channel/i }).click();
       await op.getByRole('button', { name: /^join$/i }).click();
       const dialog = page.getByRole('dialog', { name: /before you talk/i });
       await dialog.waitFor({ timeout: 15000 });

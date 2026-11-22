@@ -203,7 +203,7 @@ export async function talk(page, text) {
   return { pressedAt, saidAt, releasedAt };
 }
 
-/** Host starts a channel, guest joins via link; returns once both are in the call. */
+/** Host starts a call, guest joins via invite link; returns once both are in the call. */
 export async function pairPeers(browser, web, initOpts = {}) {
   const mk = async (locale, opts) => {
     const context = await browser.newContext({ locale, permissions: ['microphone'] });
@@ -264,4 +264,19 @@ export async function readTransport(page) {
   const v = await row.textContent();
   await closeSettings(page);
   return v;
+}
+
+/** Switches listening mode from Call settings ("Hold to talk" / "Hands-free"). */
+export async function setHandsFree(page, on) {
+  await openSettings(page);
+  await page.getByRole('radio', { name: on ? 'Hands-free' : 'Hold to talk' }).click();
+  await closeSettings(page);
+}
+
+/** Number of "Voice match" controls in Call settings (0 when VoiceMirror is off). */
+export async function voiceMatchControls(page) {
+  await openSettings(page);
+  const n = await page.getByRole('switch', { name: 'Voice match' }).count();
+  await closeSettings(page);
+  return n;
 }
