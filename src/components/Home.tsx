@@ -68,7 +68,7 @@ export function Home({ language, onLanguageChange, userName, onUserNameChange, o
 
       <footer className="safe-b pt-4 text-center text-meta text-fg-subtle">
         by{' '}
-        <a href="https://askdeepakai-datascientist.onrender.com/" target="_blank" rel="noopener noreferrer" className="text-fg-muted underline-offset-2 hover:underline">
+        <a href="https://askdeepakai-datascientist.onrender.com/" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-fg-muted underline-offset-2 hover:underline">
           AskDeepakAI
         </a>
       </footer>

@@ -15,7 +15,8 @@
   --line-strong: #3b4048;
   --fg: #ecedee;
   --fg-muted: #a3a9b1;
-  --fg-subtle: #80878f;
+  --fg-subtle: #878e96;
+  --selected: #383d45;
   --accent: #f5a524;
   --on-accent: #1c1305;
   --accent-text: #f7b24a;
@@ -41,7 +42,8 @@
     --line-strong: #c4c4be;
     --fg: #141517;
     --fg-muted: #555b63;
-    --fg-subtle: #6a7078;
+    --fg-subtle: #60666e;
+    --selected: #ffffff;
     --accent-text: #8f5300;
     --accent-soft: rgb(245 165 36 / 0.18);
     --incoming: #1f64c0;
@@ -68,6 +70,7 @@
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
   --color-fg-subtle: var(--fg-subtle);
+  --color-selected: var(--selected);
   --color-accent: var(--accent);
   --color-on-accent: var(--on-accent);
   --color-accent-text: var(--accent-text);
@@ -101,53 +104,57 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-html,
-body {
-  height: 100%;
-}
+/* Element defaults live in the base layer so utilities (e.g. text-on-accent)
+   always win over them; unlayered rules would beat every utility. */
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-sans);
-  font-size: 100%;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  /* A push-to-talk hold must never turn into a pull-to-refresh. */
-  overscroll-behavior: none;
-}
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 100%;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* A push-to-talk hold must never turn into a pull-to-refresh. */
+    overscroll-behavior: none;
+  }
 
-#root {
-  min-height: 100%;
-}
+  #root {
+    min-height: 100%;
+  }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  color: inherit;
-}
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
 
-button {
-  -webkit-tap-highlight-color: transparent;
-  cursor: pointer;
-}
+  button {
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+  }
 
-button:disabled {
-  cursor: default;
-}
+  button:disabled {
+    cursor: default;
+  }
 
-/* One focus treatment everywhere: visible for keyboard, invisible for touch. */
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  border-radius: inherit;
-}
+  /* One focus treatment everywhere: visible for keyboard, invisible for touch. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
 
-::selection {
-  background: var(--accent-soft);
+  ::selection {
+    background: var(--accent-soft);
+  }
 }
 
 @layer utilities {

@@ -31,7 +31,7 @@ A two-person translated call is a conversation, not a dashboard. The interface s
 | `--color-line-strong` | `#3B4048` | `#C4C4BE` | control borders |
 | `--color-fg` | `#ECEDEE` | `#141517` | primary text |
 | `--color-fg-muted` | `#A3A9B1` | `#555B63` | secondary text (≥ 7:1 / ≥ 6:1) |
-| `--color-fg-subtle` | `#80878F` | `#6A7078` | metadata only (≥ 4.5:1) |
+| `--color-fg-subtle` | `#878E96` | `#60666E` | metadata only (≥ 4.5:1) |
 | `--color-accent` | `#F5A524` | `#F5A524` | talk (live), primary action fill |
 | `--color-on-accent` | `#1C1305` | `#1C1305` | text/icons on accent |
 | `--color-accent-text` | `#F7B24A` | `#8F5300` | accent as text |
@@ -65,11 +65,11 @@ Rem-based, so text scales with the user's browser setting. Letter-spacing −0.0
 ### Layout and breakpoints
 * **Phone (< 640):** single column. The call is a header, the conversation (scrolls) and the dock.
 * **Tablet (640–1023):** same structure, content column max 640, centered.
-* **Desktop (≥ 1024):** conversation column max 720. Sheets open as a right-side panel (400 px) instead of a bottom sheet, so the conversation stays visible.
-* **Touch targets:** ≥ 44 × 44 px (the talk control is 96 px).
+* **Desktop (≥ 1024):** conversation column max 760. Sheets open as a right-side panel (400 px) instead of a bottom sheet, so the conversation stays visible.
+* **Touch targets:** ≥ 44 × 44 px (the talk control is 88 px).
 
 ## Components (`src/components/ui`)
-* **Button** (`primary` accent fill · `secondary` surface · `ghost` text · `danger`), heights 48 (default) and 40 (compact). One primary per screen.
+* **Button** (`primary` accent fill · `secondary` surface · `ghost` text · `danger`), heights 48 (default) and 44 (compact). One primary per screen.
 * **IconButton**: 44 px, requires `label` (becomes `aria-label`).
 * **Sheet**: dialog with title, close, Escape, focus moves in on open and returns on close; bottom sheet on phones, side panel on desktop.
 * **Switch**: `role="switch"`, label left, optional one-line description.

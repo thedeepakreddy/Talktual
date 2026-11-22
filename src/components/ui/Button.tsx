@@ -19,7 +19,7 @@ const VARIANT: Record<Variant, string> = {
 };
 const SIZE: Record<Size, string> = {
   md: 'h-12 px-5 text-body font-semibold gap-2 rounded-md',
-  sm: 'h-10 px-4 text-label font-semibold gap-1.5 rounded-sm',
+  sm: 'h-11 px-4 text-label font-semibold gap-1.5 rounded-sm',
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

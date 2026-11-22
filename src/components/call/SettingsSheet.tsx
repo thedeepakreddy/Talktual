@@ -40,6 +40,10 @@ export function SettingsSheet({ open, onClose, session, snapshot: s, roomCode, l
   useEffect(() => {
     if (open) setPage('main');
   }, [open]);
+  // A sub-page starts at its top, not at the parent's scroll offset.
+  useEffect(() => {
+    document.querySelector('[role="dialog"] .scroll-area')?.scrollTo?.(0, 0);
+  }, [page]);
 
   const proc = s?.processing;
   const intel = s?.intelligence;
@@ -97,7 +101,7 @@ export function SettingsSheet({ open, onClose, session, snapshot: s, roomCode, l
               </div>
               <Row label="Where things run" value={proc.degraded ? 'Some unavailable' : undefined} onClick={() => setPage('runs')} />
               <div className="py-3">
-                <Button variant="ghost" size="sm" className="-ml-3" onClick={() => session?.clearPrivateData()}>
+                <Button variant="ghost" size="sm" className="-ml-3 text-danger" onClick={() => session?.clearPrivateData()}>
                   Clear this call’s data
                 </Button>
               </div>

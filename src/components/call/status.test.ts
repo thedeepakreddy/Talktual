@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { SessionSnapshot } from '../../engine/CommunicationSession';
-import { deriveStatus, connectionLabel } from './status';
+import { deriveStatus, connectionLabel, headerState } from './status';
 
 /** Minimal snapshot: only the fields deriveStatus reads. */
 function snap(over: Record<string, unknown> = {}): SessionSnapshot {
@@ -59,6 +59,13 @@ describe('deriveStatus', () => {
     const proc = (network: string, speech = 'cloud') => ({ available: true, network, mode: 'cloud', capabilities: [{ task: 'speech-input', state: speech }] });
     expect(deriveStatus(snap({ processing: proc('offline') })).banner).toMatchObject({ tone: 'offline', text: 'Offline — on-device only' });
     expect(deriveStatus(snap({ processing: proc('online', 'unavailable') })).banner).toMatchObject({ tone: 'info', action: 'type' });
+  });
+
+  it('ended: the banner carries the sentence, the status line stays quiet (no repetition)', () => {
+    const st = deriveStatus(snap({ phase: 'ended', phaseReason: 'peer-left' }));
+    expect(st.banner).toEqual({ tone: 'info', text: 'Luis left the call' });
+    expect(st.hint).toBe('');
+    expect(headerState(snap({ phase: 'ended', phaseReason: 'peer-left' }), 'Luis')).toBe('Call ended');
   });
 
   it('connection labels name the peer and never leak codes', () => {

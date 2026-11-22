@@ -53,7 +53,11 @@ export function deriveStatus(s: SessionSnapshot | null): DerivedStatus {
   const continuous = s?.mode === 'continuous';
   const playing = Boolean(s?.playing);
   if (s?.activity === 'stopped') return { hint: 'Microphone off', tone: 'muted', banner };
-  if (!connected) return { hint: connectionLabel(s, peer) ?? '', tone: phase === 'failed' ? 'problem' : 'muted', banner };
+  if (!connected) {
+    const label = connectionLabel(s, peer) ?? '';
+    // Never say the same thing twice: if the banner already carries it, the status line stays quiet.
+    return { hint: banner?.text === label ? '' : label, tone: phase === 'failed' ? 'problem' : 'muted', banner };
+  }
   if (holding) {
     if (conv && conv.overlapHeld > 0) return { hint: conv.overlapHeld === 1 ? '1 message waits until you finish' : `${conv.overlapHeld} messages wait until you finish`, tone: 'live', banner };
     return { hint: s?.hearingVoice ? 'Listening…' : 'Speak now', tone: 'live', banner };
@@ -63,4 +67,13 @@ export function deriveStatus(s: SessionSnapshot | null): DerivedStatus {
   if (conv?.peerTalking) return { hint: `${peer} is talking…`, tone: 'incoming', banner };
   if ((s?.translating ?? 0) > 0) return { hint: 'Translating…', tone: 'idle', banner };
   return { hint: 'Hold to talk', tone: 'idle', banner };
+}
+
+/** Terse header state when not connected (the banner holds the full sentence). */
+export function headerState(s: SessionSnapshot | null, peer: string): string {
+  const phase = s?.phase ?? 'connecting';
+  if (phase === 'ended') return 'Call ended';
+  if (phase === 'failed') return 'Disconnected';
+  if (phase === 'reconnecting') return 'Reconnecting…';
+  return connectionLabel(s, peer) ?? '';
 }

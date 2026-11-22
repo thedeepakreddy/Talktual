@@ -114,7 +114,8 @@ export function ConversationFeed({ snapshot: s, peerName, peerLanguage }: FeedPr
 function Turn({ seg, showName, peerName }: { seg: SegmentRecord; showName: boolean; peerName: string }) {
   const mine = seg.speaker === 'local';
   const markers = markersFor(seg);
-  const tags = (seg.signals ?? []).map((x) => SIGNAL_TAG[x.category]).filter(Boolean);
+  // Signals help the listener read intent; on your own lines they're noise.
+  const tags = mine ? [] : (seg.signals ?? []).map((x) => SIGNAL_TAG[x.category]).filter(Boolean);
   const provisional = seg.state === 'provisional';
   const playing = seg.playback === 'started';
   const primary = mine ? seg.original : seg.translated || seg.original;

@@ -81,7 +81,7 @@ try {
     await guest.page.goto(stack.web);
     await guest.page.getByLabel('Your name').fill('Luis');
     await guest.page.getByRole('button', { name: 'Join with a code' }).click();
-    await guest.page.getByLabel('Channel code').fill(code.slice(0, 3));
+    await guest.page.getByLabel('Call code').fill(code.slice(0, 3));
     await shot(guest.page, vp, '03b-join-code');
 
     // Invite-link path (the one actually used).
@@ -132,6 +132,16 @@ try {
       await host.page.getByRole('button', { name: /Your language/ }).click();
       await shot(host.page, vp, '12-language');
       await closeSheet(host.page);
+    });
+
+    await safe('hands-free', async () => {
+      await openSettings(host.page);
+      await host.page.getByRole('radio', { name: 'Hands-free' }).click();
+      await closeSheet(host.page);
+      await host.page.waitForFunction(() => window.__srRunning());
+      await host.page.evaluate(() => window.__say('see you at the', false));
+      await shot(host.page, vp, '13a-hands-free');
+      await host.page.getByRole('button', { name: 'Stop hands-free' }).click();
     });
 
     await safe('typing', async () => {

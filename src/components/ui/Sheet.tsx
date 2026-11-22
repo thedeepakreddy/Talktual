@@ -30,9 +30,19 @@ export function Sheet({ open, onClose, title, onBack, closeLabel = 'Close', chil
   const panelRef = useRef<HTMLDivElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
 
+  // Callers pass inline handlers that change on every engine update; keep the
+  // latest in refs so the open/close effect runs only when `open` changes
+  // (re-running it would bounce focus back to the opener mid-call).
+  const onCloseRef = useRef(onClose);
+  const dismissibleRef = useRef(dismissible);
+  onCloseRef.current = onClose;
+  dismissibleRef.current = dismissible;
+
   useEffect(() => {
     if (!open) return;
     returnTo.current = document.activeElement as HTMLElement | null;
+    const focusables = () =>
+      panelRef.current ? [...panelRef.current.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),[href],[tabindex]:not([tabindex="-1"])')] : [];
     const t = setTimeout(() => {
       const panel = panelRef.current;
       if (!panel) return;
@@ -40,22 +50,20 @@ export function Sheet({ open, onClose, title, onBack, closeLabel = 'Close', chil
       first?.focus();
     }, 30);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && dismissible) {
+      if (e.key === 'Escape' && dismissibleRef.current) {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
       if (e.key === 'Tab' && panelRef.current) {
         // Keep keyboard focus inside the dialog.
-        const f = [...panelRef.current.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),[href],[tabindex]:not([tabindex="-1"])')];
+        const f = focusables();
         if (!f.length) return;
         const first = f[0];
         const last = f[f.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
+        const inside = panelRef.current.contains(document.activeElement);
+        if (!inside || (e.shiftKey && document.activeElement === first) || (!e.shiftKey && document.activeElement === last)) {
           e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
+          (e.shiftKey ? last : first).focus();
         }
       }
     };
@@ -65,14 +73,14 @@ export function Sheet({ open, onClose, title, onBack, closeLabel = 'Close', chil
       window.removeEventListener('keydown', onKey);
       returnTo.current?.focus?.();
     };
-  }, [open, onClose, dismissible]);
+  }, [open]);
 
   return (
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-40">
           <motion.div
-            className="absolute inset-0 bg-[var(--scrim)]"
+            className="absolute inset-0 bg-[var(--scrim)] lg:bg-black/20"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
