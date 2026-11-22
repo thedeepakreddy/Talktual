@@ -10,6 +10,7 @@ import type { SegmentRecord } from '../engine/events';
 import { LanguagePicker } from './LanguagePicker';
 import { ConsentSheet } from './ConsentSheet';
 import { AssistPanel } from './AssistPanel';
+import { PrivacyPanel } from './PrivacyPanel';
 import { VOICEMIRROR_DISCLOSURE } from '../voicemirror/disclosure';
 
 interface CallRoomProps {
@@ -41,6 +42,9 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
 
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAssist, setShowAssist] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [typing, setTyping] = useState(false);
+  const [draft, setDraft] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -302,6 +306,26 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
         </div>
       )}
 
+      {/* ---- Phase 6 processing status (only when something is off-normal) ---- */}
+      {s?.processing.available && (s.processing.mode !== 'cloud' || s.processing.network !== 'online' || s.processing.peerPrivate) && (
+        <div className="mt-2 flex flex-wrap justify-center gap-2" role="status" aria-label="Processing status">
+          {s.processing.mode === 'local-only' && (
+            <span className="rounded-full border border-[var(--green,#7ee2a8)]/30 bg-[var(--green,#7ee2a8)]/10 px-3 py-1 text-[12px] text-[var(--green,#7ee2a8)]">On-device only</span>
+          )}
+          {s.processing.mode === 'hybrid' && <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[12px] text-[var(--text-2)]">Hybrid processing</span>}
+          {s.processing.network === 'offline' && <span className="rounded-full border border-[var(--amber)]/25 bg-[var(--amber)]/10 px-3 py-1 text-[12px] text-[#ffcf80]">Offline — on-device only</span>}
+          {s.processing.network === 'providers-unreachable' && (
+            <span className="rounded-full border border-[var(--amber)]/25 bg-[var(--amber)]/10 px-3 py-1 text-[12px] text-[#ffcf80]">Cloud unreachable — using this device</span>
+          )}
+          {s.processing.peerPrivate && <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[12px] text-[var(--text-2)]">They asked for on-device processing</span>}
+          {s.processing.degraded && (
+            <button onClick={() => setShowPrivacy(true)} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[12px] text-[var(--text-2)] underline-offset-2 hover:underline">
+              Some functions unavailable
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ---- Phase 5 suggestion (one at a time, dismissible, never acts on its own) ---- */}
       {s?.intelligence.suggestions.length ? (
         <div className="mt-2 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3.5 py-2.5" role="note" aria-label="Suggestion">
@@ -483,6 +507,25 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
               {continuous ? 'Hands-free: on' : 'Hands-free: off'}
             </button>
           )}
+          {s?.processing.available && (
+            <button
+              onClick={() => setShowPrivacy(true)}
+              aria-label="Privacy and processing"
+              className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 font-medium text-[var(--text-2)] transition-colors hover:bg-white/[0.1]"
+            >
+              {s.processing.mode === 'local-only' ? 'On-device' : s.processing.mode === 'hybrid' ? 'Hybrid' : 'Cloud'}
+            </button>
+          )}
+          {s?.processing.available && (
+            <button
+              onClick={() => setTyping((v) => !v)}
+              aria-pressed={typing}
+              disabled={!connected}
+              className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 font-medium text-[var(--text-2)] transition-colors hover:bg-white/[0.1] disabled:opacity-40"
+            >
+              Type
+            </button>
+          )}
           {s?.intelligence.available && (
             <button
               onClick={() => setShowAssist(true)}
@@ -559,6 +602,32 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
         )}
       </AnimatePresence>
 
+      {/* ---- Phase 6 typed input: always offered when speech recognition is unavailable ---- */}
+      {s?.processing.available && connected && (typing || s.processing.capabilities.find((c) => c.task === 'speech-input')?.state === 'unavailable') && (
+        <form
+          className="mt-2 flex gap-2 pb-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            session?.sendText(draft);
+            setDraft('');
+          }}
+        >
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            maxLength={500}
+            aria-label="Type a message"
+            placeholder="Type a message"
+            className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-[15px] text-[var(--text-1)] placeholder:text-[var(--text-3)]"
+          />
+          <button type="submit" disabled={!draft.trim()} className="rounded-xl bg-[var(--blue)] px-4 py-2 text-[14px] font-medium text-white disabled:opacity-40">
+            Send
+          </button>
+        </form>
+      )}
+
+      <PrivacyPanel open={showPrivacy} onClose={() => setShowPrivacy(false)} session={session} snapshot={s ?? null} />
+
       <AssistPanel open={showAssist} onClose={() => setShowAssist(false)} session={session} snapshot={s ?? null} />
 
       <LanguagePicker
@@ -601,6 +670,9 @@ function markersFor(seg: SegmentRecord): string[] {
   if (seg.uncertain) m.push('Unclear audio — may be inaccurate');
   if (seg.repaired && seg.speaker === 'local') m.push('Tidied repeats');
   if (seg.assisted) m.push('Context-assisted');
+  if (seg.typed) m.push('Typed');
+  if (seg.processedOn === 'device') m.push('Translated on this device');
+  if (seg.privateRequest) m.push('They asked for on-device processing');
   if (seg.correctedBy) m.push('Corrected later');
   return m;
 }

@@ -106,11 +106,22 @@ export function initScript(opts = {}) {
     },
     cancel() {},
     getVoices() {
-      return [];
+      // opts.simulatedLocalVoices: SIMULATED on-device voices (the test hardware has none).
+      return (opts.simulatedLocalVoices || []).map((lang) => ({ name: `Simulated ${lang}`, lang, localService: true, voiceURI: `sim-${lang}`, default: false }));
     },
     onvoiceschanged: null,
   };
   Object.defineProperty(window, 'speechSynthesis', { value: synth, configurable: true });
+  if (opts.simulatedLocalVoices) {
+    // SIMULATION: synthesis is faked anyway; a fake utterance accepts the fake voices.
+    window.SpeechSynthesisUtterance = class {
+      constructor(text) {
+        this.text = text;
+        this.lang = '';
+        this.voice = null;
+      }
+    };
+  }
 }
 
 export async function startStack({ apiPort, webPort, serverOverrides = {}, fetchOpts = {}, outDir, cwd = root, buildEnv = {} }) {

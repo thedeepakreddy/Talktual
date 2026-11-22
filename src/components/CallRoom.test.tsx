@@ -320,6 +320,53 @@ describe('Phase 5 assistance UI', () => {
   });
 });
 
+describe('Phase 6 privacy and processing UI', () => {
+  const network = { onLine: () => true, subscribe: () => () => {} };
+  async function connectPriv(f: ReturnType<typeof renderRoom>) {
+    await act(async () => {
+      f.call.status('waiting-for-peer');
+      f.call.status('connected');
+      f.call.receive({ t: 'hello', lang: 'es-ES', name: 'Luis', caps: ['priv1'] });
+      await settle();
+    });
+  }
+
+  it('privacy sheet shows where things run; On-device mode turns speech off, typing on; typed phrase is translated on this device', async () => {
+    const f = renderRoom({ consent: true, deps: { processing: { network } } });
+    await connectPriv(f);
+    fireEvent.click(screen.getByRole('button', { name: 'Privacy and processing' }));
+    let sheet = screen.getByRole('dialog', { name: 'Privacy and processing' });
+    expect(sheet.textContent).toContain('Speech recognition');
+    expect(sheet.textContent).toMatch(/Talktual offline phrasebook/);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('radio', { name: 'On-device only' }));
+      await settle();
+    });
+    sheet = screen.getByRole('dialog', { name: 'Privacy and processing' });
+    expect(sheet.textContent).toMatch(/not available on this device in On-device mode/);
+    expect(sheet.textContent).toMatch(/No recognition, translation or voice service receives anything/);
+    fireEvent.click(screen.getByRole('button', { name: 'Close privacy' }));
+    expect(screen.getByRole('status', { name: 'Processing status' }).textContent).toContain('On-device only');
+    const box = screen.getByRole('textbox', { name: 'Type a message' });
+    await act(async () => {
+      fireEvent.change(box, { target: { value: 'where is the train station' } });
+      fireEvent.submit(box.closest('form')!);
+      await settle(40);
+    });
+    expect(f.translate).not.toHaveBeenCalled();
+    expect(f.call.segments().at(-1)).toMatchObject({ translated: '¿Dónde está la estación de tren?', priv: 'device' });
+    fireEvent.click(screen.getByRole('button', { name: 'Show transcript' }));
+    expect(screen.getByRole('dialog', { name: 'Transcript' }).textContent).toMatch(/Typed · Translated on this device/);
+  });
+
+  it('hidden when the feature is off', async () => {
+    const f = renderRoom({ consent: true });
+    await connect(f);
+    expect(screen.queryByRole('button', { name: 'Privacy and processing' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Type a message' })).toBeNull();
+  });
+});
+
 describe('VoiceMirror controls (Phase 3)', () => {
   it('hidden when the feature is off (default build)', async () => {
     const f = renderRoom({ consent: true });
