@@ -83,6 +83,13 @@ export interface SegmentRecord {
   assisted?: boolean;
   /** A later turn corrected this one (id of the correcting segment). */
   correctedBy?: string;
+  // --- Phase 6 processing location (advisory display) ---
+  /** Where the translation was produced. */
+  processedOn?: 'device' | 'cloud';
+  /** Typed, not spoken. */
+  typed?: boolean;
+  /** The sender asked for on-device processing of these words. */
+  privateRequest?: boolean;
   createdAt: number;
 }
 
@@ -119,7 +126,7 @@ export function makeEvent(e: Payload<EngineEvent>, at = Date.now()): EngineEvent
 
 export type PeerMessage =
   | { v?: 1; t: 'hello'; lang: string; name: string; /** Phase 4: capability strings, e.g. ['conv1']. */ caps?: string[] }
-  | { v?: 1; t: 'partial'; text: string; lang: string; turn?: string }
+  | { v?: 1; t: 'partial'; text: string; lang: string; turn?: string; priv?: 'device' }
   | {
       v?: 1;
       t: 'segment';
@@ -140,6 +147,8 @@ export type PeerMessage =
       repaired?: boolean;
       /** Phase 5 (sent only to 'aci1' peers): how the sender's translation was context-assisted. */
       assist?: string[];
+      /** Phase 6 (sent only to 'priv1' peers): the sender is in on-device mode — keep processing of these words on-device. */
+      priv?: 'device';
     }
   /** Phase 4: the sender opened/closed its speaking turn ("floor"). */
   | { v?: 1; t: 'floor'; turn: string; open: boolean }
@@ -170,7 +179,7 @@ export function isPeerMessage(value: unknown): value is PeerMessage {
         (m.caps === undefined || (Array.isArray(m.caps) && m.caps.length <= 16 && m.caps.every((c) => isStr(c, 16))))
       );
     case 'partial':
-      return isStr(m.text, MAX_TEXT) && isStr(m.lang, 35) && (m.turn === undefined || isId(m.turn));
+      return isStr(m.text, MAX_TEXT) && isStr(m.lang, 35) && (m.turn === undefined || isId(m.turn)) && (m.priv === undefined || m.priv === 'device');
     case 'floor':
       return isId(m.turn) && typeof m.open === 'boolean';
     case 'interrupt':
@@ -193,6 +202,7 @@ export function isPeerMessage(value: unknown): value is PeerMessage {
         (m.turn === undefined || isId(m.turn)) &&
         (m.uncertain === undefined || typeof m.uncertain === 'boolean') &&
         (m.repaired === undefined || typeof m.repaired === 'boolean') &&
+        (m.priv === undefined || m.priv === 'device') &&
         (m.assist === undefined ||
           (Array.isArray(m.assist) && m.assist.length <= 8 && m.assist.every((a) => typeof a === 'string' && /^(sense:[\p{L}'-]{1,30}:[a-z-]{1,20}|protect:\d{1,2})$/u.test(a))))
       );

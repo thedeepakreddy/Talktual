@@ -50,7 +50,12 @@ import {
   type ConversationConfig,
   type Unit,
 } from '../conversation';
-import type { PlaybackItem, TranslationResult } from './ports';
+import type { PlaybackItem, TranslationRequest, TranslationResult, TtsRoute } from './ports';
+import { anySignal, PolicyBlockedError, ProcessingPolicy, PROCESSING_MODES, type InferenceTask, type NetworkState, type ProcessingMode, type RouteReason } from '../privacy/policy';
+import { browserNetworkSource, NetworkMonitor, type NetworkSource } from '../privacy/network';
+import { RuntimeRegistry, type RegistryLimits } from '../local/registry';
+import { PhrasebookRuntime } from '../local/phrasebook';
+import type { AsrRuntime, RuntimeInfo, TranslateRuntime, VoiceRuntime } from '../local/types';
 import {
   ACI_CAP,
   IntelligenceController,
@@ -62,6 +67,8 @@ import {
 } from '../intelligence';
 
 export const PARTIAL_SEND_INTERVAL_MS = 180;
+/** Phase 6 wire capability: the peer honours `priv: 'device'` on segments/partials. */
+export const PRIV_CAP = 'priv1';
 const perfNow = () => globalThis.performance?.now?.() ?? Date.now();
 export const PARTIAL_TRANSLATE_DEBOUNCE_MS = 400;
 export const NOTICE_MS = 5000;
@@ -104,13 +111,42 @@ export interface SessionDeps {
    * VITE_COMMUNICATION_INTELLIGENCE=0.
    */
   intelligence?: boolean | { prefs?: Partial<AciPrefs>; limits?: Partial<AciLimits> };
+  /**
+   * Phase 6 processing modes (cloud / hybrid / on-device only), central policy,
+   * local runtimes and offline handling. Off when absent — exact Phase 5
+   * behaviour. Production turns it on unless VITE_PROCESSING_MODES=0.
+   */
+  processing?: boolean | ProcessingOptions;
+  /** Phase 6: drops client-side caches (translation cache) — called on session end and mode change. */
+  clearCaches?: () => void;
   now?: () => number;
   setTimeout?: typeof setTimeout;
   clearTimeout?: typeof clearTimeout;
 }
 
+export interface ProcessingOptions {
+  /** Initial mode (otherwise the user's saved choice, otherwise 'cloud'). */
+  mode?: ProcessingMode;
+  /** Extra on-device runtimes (the bundled phrasebook is always registered). */
+  translators?: TranslateRuntime[];
+  voices?: VoiceRuntime[];
+  asr?: AsrRuntime[];
+  network?: NetworkSource;
+  registryLimits?: RegistryLimits;
+}
+
+export const PROCESSING_STORAGE_KEY = 'talktual.processing.v1';
+
+export type CapabilityState = 'device' | 'cloud' | 'device+cloud' | 'unavailable';
+export interface CapabilityRow {
+  task: 'speech-input' | 'translation' | 'speech-output' | 'captions' | 'typed-input' | 'assistance';
+  state: CapabilityState;
+  /** Short, non-sensitive explanation. */
+  detail: string;
+}
+
 export interface Notice {
-  code: ErrorCode | 'info' | 'untranslated-out' | 'untranslated-in' | 'peer-away' | 'degraded' | 'slow';
+  code: ErrorCode | 'info' | 'untranslated-out' | 'untranslated-in' | 'peer-away' | 'degraded' | 'slow' | 'local-only' | 'offline';
   message: string;
   sticky: boolean;
 }
@@ -162,6 +198,19 @@ export interface SessionSnapshot {
     peerTalking: boolean;
     /** Phase 4 drafts (provisional translations) are sent; user-controllable (disclosed). */
     drafts: boolean;
+  };
+  /** Phase 6 processing modes. */
+  processing: {
+    available: boolean;
+    mode: ProcessingMode;
+    network: NetworkState;
+    capabilities: CapabilityRow[];
+    /** Functions unavailable right now (disclosed). */
+    degraded: boolean;
+    /** Discovered on-device runtimes (for the privacy sheet). */
+    runtimes: RuntimeInfo[];
+    /** The other person is in on-device mode. */
+    peerPrivate: boolean;
   };
   /** Phase 5 communication intelligence. */
   intelligence: {
@@ -223,6 +272,14 @@ export class CommunicationSession {
   private peerCaps = false;
   private wasTalking = false;
   private drafts = true;
+
+  // --- Phase 6 processing policy (null when disabled) ---
+  private policy: ProcessingPolicy | null = null;
+  private registry: RuntimeRegistry | null = null;
+  private netSource: NetworkSource | null = null;
+  private netmon: NetworkMonitor | null = null;
+  private peerPrivCap = false;
+  private asrGate: { signal: AbortSignal; end: () => void } | null = null;
 
   // --- Phase 5 communication intelligence (null when disabled) ---
   private aci: IntelligenceController | null = null;
@@ -294,7 +351,29 @@ export class CommunicationSession {
       voice: { available: Boolean(deps.voiceTap), prompt: false, sharing: false, descriptorSent: false, peerActive: false },
       conversation: { enabled: Boolean(deps.conversation), peerCapable: false, degraded: false, held: null, overlapHeld: 0, peerTalking: false, drafts: true },
       intelligence: { available: Boolean(deps.intelligence), prefs: null, suggestions: [], context: null, peerCapable: false },
+      processing: { available: false, mode: 'cloud', network: 'online', capabilities: [], degraded: false, runtimes: [], peerPrivate: false },
     };
+    if (deps.processing) {
+      const opts: ProcessingOptions = typeof deps.processing === 'object' ? deps.processing : {};
+      let saved: string | null = null;
+      try {
+        saved = deps.storage?.getItem(PROCESSING_STORAGE_KEY) ?? null;
+      } catch {
+        saved = null;
+      }
+      const mode = opts.mode ?? (PROCESSING_MODES.includes(saved as ProcessingMode) ? (saved as ProcessingMode) : 'cloud');
+      this.policy = new ProcessingPolicy(mode, this.now);
+      this.registry = new RuntimeRegistry(
+        { now: this.now, setTimeout: (fn, ms) => this.setT(fn, ms), clearTimeout: (t) => this.clearT(t as ReturnType<typeof setTimeout>) },
+        opts.registryLimits
+      );
+      this.registry.addTranslator(new PhrasebookRuntime(this.now));
+      for (const t of opts.translators ?? []) this.registry.addTranslator(t);
+      for (const v of opts.voices ?? []) this.registry.addVoice(v);
+      for (const a of opts.asr ?? []) this.registry.addAsr(a);
+      this.netSource = opts.network ?? browserNetworkSource(typeof window !== 'undefined' ? window : undefined);
+      this.snap = { ...this.snap, processing: { ...this.snap.processing, available: true, mode } };
+    }
     if (deps.intelligence) {
       const opts = typeof deps.intelligence === 'object' ? deps.intelligence : {};
       this.aci = new IntelligenceController(this.now, opts);
@@ -421,6 +500,18 @@ export class CommunicationSession {
       })
       .catch(() => {});
 
+    if (this.policy && this.registry && this.netSource) {
+      const policy = this.policy;
+      this.netmon = new NetworkMonitor(this.netSource, this.now, (s) => policy.setNetwork(s));
+      this.unsubs.push(policy.onChange(() => this.onPolicyChange()));
+      policy.setNetwork(this.netmon.state);
+      this.registry
+        .discover()
+        .then(() => this.refreshProcessing())
+        .catch(() => this.refreshProcessing());
+      this.refreshProcessing();
+    }
+
     this.call = this.deps.connect(this.config.roomCode, this.deps.signalingUrl, {
       onMessage: (msg) => this.onPeerMessage(msg),
       onStatus: (s) => this.onTransportStatus(s as TransportStatus),
@@ -473,6 +564,18 @@ export class CommunicationSession {
     if (!this.canAcceptTalk() || this.privacy.mode !== 'push-to-talk' || this.snap.holding) return;
     if (!this.privacy.mayCapture(this.snap.features.route)) {
       this.promptConsent();
+      return;
+    }
+    // Phase 6: in on-device/offline mode, speech input may be unavailable → fail closed, offer typing.
+    if (this.policy && !this.asrPlan(false).steps.length) {
+      this.setNotice({
+        code: this.policy.mode === 'local-only' ? 'local-only' : 'offline',
+        message:
+          this.policy.mode === 'local-only'
+            ? 'Speech recognition isn’t available on this device in On-device mode — type your message instead.'
+            : 'You’re offline — speech recognition needs a connection. Type your message instead.',
+        sticky: false,
+      });
       return;
     }
     this.deps.onUserGesture?.();
@@ -695,6 +798,14 @@ export class CommunicationSession {
     this.provSent.clear();
     // Phase 5: session context is ephemeral — gone at session end.
     this.aci?.reset();
+    // Phase 6: local runtimes unloaded, caches and the routing audit dropped.
+    if (this.policy) {
+      this.registry?.dispose();
+      this.netmon?.dispose();
+      this.netmon = null;
+      this.policy.clearAudit();
+      this.deps.clearCaches?.();
+    }
     if (this.aciTimer) this.clearT(this.aciTimer);
     this.aciTimer = null;
     if (this.floorTimer) this.clearT(this.floorTimer);
@@ -741,6 +852,27 @@ export class CommunicationSession {
   private startAsr(reason: 'press' | 'continuous'): void {
     if (!this.privacy.mayCapture(this.snap.features.route) || !this.snap.features.stt) return;
     if (this.pausedForPlayback && reason === 'continuous') return;
+    let asrOpts: { processLocally?: boolean } | undefined;
+    if (this.policy && !this.asr) {
+      const plan = this.asrPlan(true);
+      if (!plan.steps.length) return;
+      if (plan.steps[0] === 'device') {
+        asrOpts = { processLocally: true };
+        this.policy.noteDevice('asr', plan.reason);
+      } else {
+        try {
+          const gate = this.policy.beginRemote('asr', { cloudConsent: this.privacy.hasConsent(this.snap.features.route) });
+          this.asrGate = gate;
+          gate.signal.addEventListener('abort', () => {
+            if (this.asrGate === gate) this.stopAsr('abort', 'policy');
+          });
+        } catch (e) {
+          if (e instanceof PolicyBlockedError) return;
+          throw e;
+        }
+      }
+      this.diag.record('route', { kind: 'asr', status: plan.steps[0], reason: plan.reason });
+    }
     if (!this.asr) {
       // Callbacks from a recognizer that is no longer current (aborted by
       // stop/leave/mode change) are ignored: nothing captured after a stop
@@ -764,7 +896,7 @@ export class CommunicationSession {
         onEnd: () => {
           if (current()) this.onAsrEnd();
         },
-      });
+      }, asrOpts);
       this.asr = created;
     }
     if (this.activity.state === 'idle' || this.activity.state === 'stopped') this.activity.to('ready', 'start');
@@ -791,6 +923,8 @@ export class CommunicationSession {
   /** `abort` discards; `stop` flushes the last phrase first. */
   private stopAsr(how: 'stop' | 'abort', reason: string, disposing = false): void {
     const asr = this.asr;
+    this.asrGate?.end();
+    this.asrGate = null;
     if (!asr) return;
     this.voice?.onCaptureStop();
     if (how === 'abort' || disposing) {
@@ -870,7 +1004,7 @@ export class CommunicationSession {
     const now = this.now();
     if (!text || now - this.lastPartialSentAt < PARTIAL_SEND_INTERVAL_MS) return;
     this.lastPartialSentAt = now;
-    this.call?.send({ t: 'partial', text, lang: this.config.lang, ...(this.peerCaps && this.turnId ? { turn: this.turnId } : {}) });
+    this.call?.send({ t: 'partial', text, lang: this.config.lang, ...(this.peerCaps && this.turnId ? { turn: this.turnId } : {}), ...(this.privFlag() ? { priv: 'device' as const } : {}) });
   }
 
   private onLocalFinal(seg: RecognizedSegment): void {
@@ -907,9 +1041,10 @@ export class CommunicationSession {
     this.sendChain = this.sendChain
       .then(async () => {
         if (signal.aborted) return;
-        const { result, assist } = await this.translateLocal(id, record.original, sourceLang, targetLang, signal);
+        const { result, assist, location } = await this.translateLocal(id, record.original, sourceLang, targetLang, signal);
         if (signal.aborted || this.isTerminal || result.status === 'cancelled') return;
-        this.finishOutbound(id, seq, record.original, sourceLang, targetLang, result, finalAt, assist ? { assist } : {});
+        if (location && location !== 'none') this.updateSegment(id, { processedOn: location });
+        this.finishOutbound(id, seq, record.original, sourceLang, targetLang, result, finalAt, { ...(assist ? { assist } : {}), ...(this.privFlag() ? { priv: 'device' as const } : {}) });
       })
       .catch((err) => {
         this.diag.count('pipeline_errors');
@@ -1037,7 +1172,8 @@ export class CommunicationSession {
    * translator's raw input never leaks (failure → original; malformed
    * protected names → one context-free retry).
    */
-  private async translateLocal(id: string, text: string, from: string, to: string, signal: AbortSignal): Promise<{ result: TranslationResult; assist?: string[] }> {
+  private async translateLocal(id: string, text: string, from: string, to: string, signal: AbortSignal): Promise<{ result: TranslationResult; assist?: string[]; location?: 'device' | 'cloud' | 'none' }> {
+    if (this.policy) return this.translateLocalRouted(id, text, from, to, signal);
     const req = { segmentId: id, text, from, to, signal };
     const aci = this.aci;
     if (!aci) return { result: await this.deps.translate(req) };
@@ -1063,6 +1199,225 @@ export class CommunicationSession {
     this.updateSegment(id, { assisted: undefined, notes: [{ kind: 'assisted', text: 'Context assistance skipped for this phrase (translation changed protected names).' }] });
     if (signal.aborted) return { result: { ...r, status: 'cancelled', text } };
     return { result: await this.deps.translate(req) };
+  }
+
+  /** Phase 6 variant: same Phase 5 semantics, but every step goes through the processing policy. */
+  private async translateLocalRouted(id: string, text: string, from: string, to: string, signal: AbortSignal): Promise<{ result: TranslationResult; assist?: string[]; location: 'device' | 'cloud' | 'none' }> {
+    const req: TranslationRequest = { segmentId: id, text, from, to, signal };
+    let d: OutboundDecision | null = null;
+    if (this.aci) {
+      const t0 = perfNow();
+      try {
+        d = this.aci.outbound({ segmentId: id, text, lang: from, targetLang: to });
+      } catch (err) {
+        this.diag.count('aci_errors');
+        console.error('intelligence failed (faithful fallback):', err);
+      }
+      this.diag.sample('aci_ms', Math.round((perfNow() - t0) * 100) / 100);
+      if (d) this.applyOutbound(d);
+    }
+    if (from.split('-')[0] === to.split('-')[0]) {
+      return { result: { segmentId: id, status: 'passthrough', text: text.trim(), attempts: 0, latencyMs: 0 }, location: 'device' };
+    }
+    const cloudText = d && d.mtInput !== text ? d.mtInput : undefined;
+    const r = await this.routedTranslate(req, { cloudText });
+    if (r.location === 'cloud' && cloudText && d && this.aci && r.result.status === 'translated') {
+      const restored = this.aci.restoreTranslation(d, r.result.text);
+      if (restored.ok) return { result: { ...r.result, text: restored.text }, assist: this.peerAci && d.assist.length ? d.assist : undefined, location: 'cloud' };
+      this.diag.count('aci_restore_fallback');
+      this.updateSegment(id, { assisted: undefined, notes: [{ kind: 'assisted', text: 'Context assistance skipped for this phrase (translation changed protected names).' }] });
+      if (signal.aborted) return { result: { ...r.result, status: 'cancelled', text }, location: 'none' };
+      return this.routedTranslate(req, {});
+    }
+    return r;
+  }
+
+  /**
+   * Executes a translation plan: on-device and/or cloud steps in the order the
+   * policy allows. A cloud step re-checks permission at execution time and is
+   * aborted if permission is revoked mid-flight (then the next allowed step
+   * runs). Bounded: each step at most once; no loops.
+   */
+  private async routedTranslate(
+    req: TranslationRequest,
+    opts: { cloudText?: string; peerRequestedDevice?: boolean }
+  ): Promise<{ result: TranslationResult; location: 'device' | 'cloud' | 'none' }> {
+    const policy = this.policy!;
+    const reg = this.registry!;
+    const plan = policy.plan('translate', { deviceAvailable: reg.canTranslate(req.from, req.to), cloudAvailable: true, peerRequestedDevice: opts.peerRequestedDevice });
+    const cancelled = (): { result: TranslationResult; location: 'none' } => ({ result: { segmentId: req.segmentId, status: 'cancelled', text: req.text, attempts: 0, latencyMs: 0 }, location: 'none' });
+    let last: TranslationResult = { segmentId: req.segmentId, status: 'failed', text: req.text, error: { code: 'unavailable', message: plan.reason }, attempts: 0, latencyMs: 0 };
+    let why: RouteReason | 'not-covered' = plan.reason;
+    for (const step of plan.steps) {
+      if (req.signal?.aborted) return cancelled();
+      if (step === 'device') {
+        const o = await reg.translate({ text: req.text, from: req.from, to: req.to, signal: req.signal });
+        if (o.ok) {
+          policy.noteDevice('translate', plan.reason);
+          this.diag.record('route', { kind: 'translate', status: 'device', reason: plan.reason });
+          return { result: { segmentId: req.segmentId, status: 'translated', text: o.text, attempts: 1, latencyMs: Math.round(o.ms) }, location: 'device' };
+        }
+        const miss = 'reason' in o ? o.reason : 'error';
+        if (miss === 'cancelled') return cancelled();
+        why = 'not-covered';
+        this.diag.count(`local_${miss}`);
+        continue;
+      }
+      let gate: { signal: AbortSignal; end: () => void };
+      try {
+        gate = policy.beginRemote('translate', { peerRequestedDevice: opts.peerRequestedDevice });
+      } catch {
+        continue; // permission changed since planning
+      }
+      try {
+        const r = await this.deps.translate({ ...req, text: opts.cloudText ?? req.text, signal: anySignal(req.signal, gate.signal) });
+        if (r.status === 'cancelled') {
+          if (req.signal?.aborted) return cancelled();
+          this.diag.count('remote_revoked');
+          continue; // revoked mid-flight → next allowed step (never resumes remotely)
+        }
+        if (r.status === 'failed') {
+          if (r.error?.code === 'network' || r.error?.code === 'timeout') this.netmon?.networkFailure();
+          last = { ...r, text: req.text }; // never leak the MT input
+          continue;
+        }
+        this.netmon?.success();
+        this.diag.record('route', { kind: 'translate', status: 'cloud', reason: plan.reason });
+        return { result: r, location: 'cloud' };
+      } finally {
+        gate.end();
+      }
+    }
+    this.diag.record('route', { kind: 'translate', status: 'none', reason: why });
+    if (last.error?.code === 'unavailable') last = { ...last, error: { code: 'unavailable', message: why } };
+    return { result: last, location: 'none' };
+  }
+
+  // ==========================================================================
+  // Phase 6 processing modes — controls and status
+  // ==========================================================================
+
+  /** User choice of processing mode. Changing it never resumes remote work that was revoked. */
+  setProcessingMode(mode: ProcessingMode): void {
+    const policy = this.policy;
+    if (!policy || !PROCESSING_MODES.includes(mode) || mode === policy.mode || this.isTerminal) return;
+    policy.setMode(mode);
+    try {
+      this.deps.storage?.setItem(PROCESSING_STORAGE_KEY, mode);
+    } catch {
+      /* setting lasts for this page */
+    }
+    this.deps.clearCaches?.();
+    this.diag.record('processing', { mode });
+    this.sendHello();
+    this.refreshProcessing();
+  }
+
+  /**
+   * "Clear what this call knows": cancels pending playback and remote work,
+   * drops client caches, the routing audit and the intelligence context.
+   * (The visible transcript stays until the call ends.)
+   */
+  clearPrivateData(): void {
+    if (this.deps.playback.active) this.interrupt('stop');
+    this.abortProvisional();
+    this.deps.clearCaches?.();
+    this.policy?.clearAudit();
+    this.registry?.unloadAll();
+    if (this.aci) {
+      this.aci.reset();
+      this.refreshAci();
+    }
+    this.diag.count('private_data_cleared');
+  }
+
+  /** Typed message: no audio, no speech recognition; translated under the current policy. */
+  sendText(raw: string): void {
+    const text = raw.replace(/\s+/g, ' ').trim().slice(0, 500);
+    if (!text || this.isTerminal || this.phase.state !== 'connected') return;
+    if (this.seg && this.outq) {
+      const turn = newSegmentId();
+      this.onUnitCommitted({ id: newSegmentId(), turn, text, rev: 0, repaired: false, uncertain: false }, 'complete');
+      const last = this.ledger.list().at(-1);
+      if (last?.speaker === 'local') this.updateSegment(last.id, { typed: true });
+    } else {
+      this.onLocalFinal({ text, lang: this.config.lang, startedAt: this.now(), endedAt: this.now(), engine: 'webspeech' });
+      const last = this.ledger.list().at(-1);
+      if (last?.speaker === 'local') this.updateSegment(last.id, { typed: true });
+    }
+    this.diag.count('typed_messages');
+  }
+
+  /** Our words should stay on-device on the other side too (sent to priv1 peers). */
+  private privFlag(): boolean {
+    return Boolean(this.policy && this.peerPrivCap && this.policy.mode === 'local-only');
+  }
+
+  private asrPlan(audit: boolean) {
+    const policy = this.policy!;
+    const ctx = {
+      deviceAvailable: Boolean(this.registry?.hasLocalAsr(this.config.lang)),
+      cloudAvailable: Boolean(this.snap.features.stt),
+      cloudConsent: this.privacy.hasConsent(this.snap.features.route),
+    };
+    return audit ? policy.plan('asr', ctx) : policy.preview('asr', ctx);
+  }
+
+  /** Resolved when a segment STARTS playing (so later mode changes apply to queued speech). */
+  private ttsRouteFor(lang: string, peerRequestedDevice: boolean): TtsRoute {
+    const policy = this.policy;
+    if (!policy) return 'cloud-first';
+    const plan = policy.plan('tts', { deviceAvailable: Boolean(this.registry?.hasLocalVoice(lang)), cloudAvailable: true, peerRequestedDevice });
+    this.diag.record('route', { kind: 'tts', status: plan.steps[0] ?? 'none', reason: plan.reason });
+    if (!plan.steps.length || (plan.steps[0] === 'device' && plan.steps.length === 1)) return 'device-only';
+    if (plan.steps[0] === 'device') return 'device-first';
+    return 'cloud-first';
+  }
+
+  private onPolicyChange(): void {
+    const policy = this.policy;
+    if (!policy || this.isTerminal) return;
+    const cloudBlocked = !policy.cloudPermitted('translate').ok;
+    if (cloudBlocked) {
+      // Speech that would be synthesized in the cloud must not continue.
+      if (this.deps.playback.active) this.interrupt('stop');
+      this.abortProvisional();
+    }
+    this.refreshProcessing();
+  }
+
+  /** Publishes the capability matrix for the current mode/network (no audit entries). */
+  private refreshProcessing(): void {
+    const policy = this.policy;
+    const reg = this.registry;
+    if (!policy || !reg || this.disposed) return;
+    const peerLang = this.snap.peer.lang;
+    const lang = this.config.lang;
+    const row = (task: InferenceTask, label: CapabilityRow['task'], deviceAvailable: boolean, cloudAvailable: boolean, deviceDetail: string, cloudDetail: string): CapabilityRow => {
+      const p = policy.preview(task, { deviceAvailable, cloudAvailable, cloudConsent: true });
+      const has = (l: 'device' | 'cloud') => p.steps.includes(l);
+      const state: CapabilityState = has('device') && has('cloud') ? 'device+cloud' : has('device') ? 'device' : has('cloud') ? 'cloud' : 'unavailable';
+      const why: Record<string, string> = {
+        'local-only': 'not available on this device in On-device mode',
+        offline: 'needs a connection — you’re offline',
+        unavailable: 'not available',
+        'no-consent': 'needs your permission',
+        'peer-requested-device': 'the other person asked for on-device processing',
+      };
+      const detail = state === 'unavailable' ? why[p.reason] ?? 'not available' : state === 'device' ? deviceDetail : state === 'cloud' ? cloudDetail : `${deviceDetail}; otherwise ${cloudDetail}`;
+      return { task: label, state, detail };
+    };
+    const pairOk = peerLang ? reg.canTranslate(lang, peerLang) : false;
+    const caps: CapabilityRow[] = [
+      row('asr', 'speech-input', reg.hasLocalAsr(lang), Boolean(this.snap.features.stt), 'on this device', this.snap.features.route === 'server-stt' ? 'Talktual server → ElevenLabs' : 'your browser’s cloud speech service'),
+      row('translate', 'translation', pairOk, true, 'on this device — common phrases only', `Talktual server → ${this.server?.translator ?? 'translation service'}`),
+      row('caption', 'captions', pairOk, this.snap.features.liveCaptions, 'on this device — common phrases only', `Talktual server → ${this.server?.translator ?? 'translation service'}`),
+      row('tts', 'speech-output', reg.hasLocalVoice(lang), true, 'on-device voice', this.server?.tts ? 'Talktual server → ElevenLabs (or a browser voice)' : 'browser voice (may be a cloud voice)'),
+      { task: 'typed-input', state: 'device', detail: 'always available — no audio is processed' },
+      ...(this.aci ? [{ task: 'assistance' as const, state: (this.aci.getPrefs().enabled ? 'device' : 'unavailable') as CapabilityState, detail: this.aci.getPrefs().enabled ? 'on this device' : 'turned off' }] : []),
+    ];
+    const degraded = caps.some((c) => c.state === 'unavailable' && c.task !== 'captions' && c.task !== 'assistance');
+    this.commit({ processing: { ...this.snap.processing, mode: policy.mode, network: policy.network, capabilities: caps, degraded, runtimes: reg.infos(), peerPrivate: this.snap.processing.peerPrivate } });
   }
 
   private applyOutbound(d: OutboundDecision): void {
@@ -1129,6 +1484,7 @@ export class CommunicationSession {
     if (!aci || this.disposed) return;
     const suggestions = aci.activeSuggestions();
     this.commit({ intelligence: { ...this.snap.intelligence, prefs: aci.getPrefs(), suggestions, context: aci.summary() } });
+    this.refreshProcessing();
     if (this.aciTimer) this.clearT(this.aciTimer);
     this.aciTimer = null;
     if (suggestions.length && !this.isTerminal) {
@@ -1200,8 +1556,8 @@ export class CommunicationSession {
     this.prov = { id: u.id, controller };
     const sourceLang = this.config.lang;
     const targetLang = this.snap.peer.lang ?? sourceLang;
-    this.deps
-      .translate({ segmentId: u.id, text: u.text, from: sourceLang, to: targetLang, signal: controller.signal })
+    const draftReq = { segmentId: u.id, text: u.text, from: sourceLang, to: targetLang, signal: controller.signal };
+    (this.policy ? this.routedTranslate(draftReq, {}).then((x) => x.result) : this.deps.translate(draftReq))
       .then((r) => {
         if (controller.signal.aborted || this.isTerminal || r.status === 'cancelled' || r.status === 'failed') return;
         // Only if the unit is still held at the same revision: never send a provisional after its final.
@@ -1310,8 +1666,9 @@ export class CommunicationSession {
     const targetLang = this.snap.peer.lang ?? sourceLang;
     const started = this.now();
     this.translateLocal(unit.id, unit.text, sourceLang, targetLang, signal)
-      .then(({ result, assist }) => {
+      .then(({ result, assist, location }) => {
         if (signal.aborted || this.isTerminal || result.status === 'cancelled') return;
+        if (location && location !== 'none') this.updateSegment(unit.id, { processedOn: location });
         if (this.lat?.observe(this.now() - started)) {
           const degraded = this.lat.degraded;
           this.diag.record('conv_degraded', { status: degraded ? 'on' : 'off' });
@@ -1323,6 +1680,7 @@ export class CommunicationSession {
             ? { state: 'final' as const, rev: unit.rev, turn: unit.turn, ...(unit.uncertain ? { uncertain: true } : {}), ...(unit.repaired ? { repaired: true } : {}) }
             : {}),
           ...(assist ? { assist } : {}),
+          ...(this.privFlag() ? { priv: 'device' as const } : {}),
         };
         this.finishOutbound(unit.id, seq, unit.text, sourceLang, targetLang, result, p.committedAt, extra);
       })
@@ -1458,12 +1816,14 @@ export class CommunicationSession {
     if (msg.t === 'hello') {
       this.peerCaps = Boolean(this.conv && Array.isArray(msg.caps) && msg.caps.includes(CONVERSATION_CAP));
       this.peerAci = Boolean(this.aci && Array.isArray(msg.caps) && msg.caps.includes(ACI_CAP));
+      this.peerPrivCap = Boolean(this.policy && Array.isArray(msg.caps) && msg.caps.includes(PRIV_CAP));
       this.aci?.setLangs(this.config.lang, msg.lang);
       if (this.aci && this.snap.intelligence.peerCapable !== this.peerAci) this.commit({ intelligence: { ...this.snap.intelligence, peerCapable: this.peerAci } });
       if (this.snap.conversation.peerCapable !== this.peerCaps) {
         this.commit({ conversation: { ...this.snap.conversation, peerCapable: this.peerCaps } });
       }
       this.commit({ peer: { name: msg.name || null, lang: msg.lang } });
+      this.refreshProcessing();
       this.emit({ type: 'peer.updated', name: msg.name || null, lang: msg.lang });
       return;
     }
@@ -1482,12 +1842,44 @@ export class CommunicationSession {
         return;
       }
       if (this.partialTimer) this.clearT(this.partialTimer);
+      if (this.policy && this.registry) {
+        const policy = this.policy;
+        const reg = this.registry;
+        const peerPriv = this.peerPrivCap && msg.priv === 'device';
+        const plan = policy.preview('caption', { deviceAvailable: reg.canTranslate(msg.lang, myLang), cloudAvailable: true, peerRequestedDevice: peerPriv });
+        if (plan.steps[0] !== 'cloud') {
+          // On-device (or nothing): a covered phrase is translated locally, otherwise the raw caption is shown.
+          if (this.partialTimer) this.clearT(this.partialTimer);
+          this.partialTimer = this.setT(() => {
+            this.partialAbort?.abort();
+            const controller = new AbortController();
+            this.partialAbort = controller;
+            const show = (t: string) => !controller.signal.aborted && !this.isTerminal && this.commit({ partial: { ...this.snap.partial, peer: t } });
+            if (!plan.steps.length) return void show(msg.text);
+            reg
+              .translate({ text: msg.text, from: msg.lang, to: myLang, signal: controller.signal })
+              .then((o) => show(o.ok ? o.text : msg.text))
+              .catch(() => show(msg.text));
+          }, PARTIAL_TRANSLATE_DEBOUNCE_MS);
+          return;
+        }
+      }
       this.partialTimer = this.setT(() => {
         this.partialAbort?.abort();
         const controller = new AbortController();
         this.partialAbort = controller;
+        let gate: { signal: AbortSignal; end: () => void } | null = null;
+        if (this.policy) {
+          try {
+            gate = this.policy.beginRemote('caption', { peerRequestedDevice: this.peerPrivCap && msg.priv === 'device' });
+          } catch {
+            this.commit({ partial: { ...this.snap.partial, peer: msg.text } });
+            return;
+          }
+        }
+        const sig = gate ? anySignal(controller.signal, gate.signal) : controller.signal;
         this.deps
-          .translateCaption(msg.text, msg.lang, myLang, controller.signal)
+          .translateCaption(msg.text, msg.lang, myLang, sig)
           .then((t) => {
             if (!controller.signal.aborted && !this.isTerminal) this.commit({ partial: { ...this.snap.partial, peer: t } });
           })
@@ -1496,7 +1888,8 @@ export class CommunicationSession {
             if (!controller.signal.aborted && !this.isTerminal && (err as Error)?.name !== 'AbortError') {
               this.commit({ partial: { ...this.snap.partial, peer: msg.text } });
             }
-          });
+          })
+          .finally(() => gate?.end());
       }, PARTIAL_TRANSLATE_DEBOUNCE_MS);
       return;
     }
@@ -1536,6 +1929,9 @@ export class CommunicationSession {
         : {}),
     };
     this.listen?.touchPeerTurn(msg.turn, receivedAt);
+    // Phase 6: the sender asked that their words be processed on-device only.
+    const peerPriv = Boolean(this.policy && this.peerPrivCap && msg.priv === 'device');
+    if (peerPriv !== this.snap.processing.peerPrivate && this.policy) this.commit({ processing: { ...this.snap.processing, peerPrivate: peerPriv } });
 
     const deliver = (text: string, untranslated: boolean) => {
       if (this.isTerminal) return;
@@ -1552,6 +1948,7 @@ export class CommunicationSession {
         ...(interrupted ? { interrupted: true } : {}),
         ...(held ? { overlapHeld: true } : {}),
         ...aci.record,
+        ...(peerPriv ? { privateRequest: true } : {}),
       };
       this.addSegment(record);
       if (aci.correctsId) this.updateSegment(aci.correctsId, { correctedBy: msg.id });
@@ -1574,6 +1971,7 @@ export class CommunicationSession {
         // Resolved at playback start → a revocation applies to queued segments too.
         voice: this.voice ? () => this.voice?.peerHints() : undefined,
         ...(this.conv ? { notAfter: receivedAt + this.conv.maxPlaybackAgeMs } : {}),
+        ...(this.policy ? { ttsRoute: () => this.ttsRouteFor(untranslated ? msg.sourceLang : myLang, peerPriv) } : {}),
       };
       if (held && this.listen) {
         // Overlap: don't talk over the local user; play when they stop (age-bounded).
@@ -1598,8 +1996,8 @@ export class CommunicationSession {
     } else if (sameLanguage) {
       deliver(msg.original, false);
     } else {
-      this.deps
-        .translate({ segmentId: msg.id, text: msg.original, from: msg.sourceLang, to: myLang, signal: this.work.signal })
+      const fixReq = { segmentId: msg.id, text: msg.original, from: msg.sourceLang, to: myLang, signal: this.work.signal };
+      (this.policy ? this.routedTranslate(fixReq, { peerRequestedDevice: peerPriv }).then((x) => x.result) : this.deps.translate(fixReq))
         .then((r) => {
           if (r.status === 'cancelled') return;
           deliver(r.status === 'failed' ? msg.original : r.text, r.status === 'failed');
@@ -1658,7 +2056,7 @@ export class CommunicationSession {
   // ==========================================================================
 
   private sendHello(): void {
-    const caps = [...(this.conv ? [CONVERSATION_CAP] : []), ...(this.aci ? [ACI_CAP] : [])];
+    const caps = [...(this.conv ? [CONVERSATION_CAP] : []), ...(this.aci ? [ACI_CAP] : []), ...(this.policy ? [PRIV_CAP] : [])];
     this.call?.send({ t: 'hello', lang: this.config.lang, name: this.config.userName, ...(caps.length ? { caps } : {}) });
   }
 
@@ -1675,6 +2073,7 @@ export class CommunicationSession {
         disclosure: route ? disclosureFor(route, this.server?.translator ?? null, { drafts: Boolean(this.conv), intelligence: Boolean(this.aci) }) : null,
       },
     });
+    this.refreshProcessing();
     const degraded = degradationMessage(features);
     if (degraded && features.serverKnown) this.setNotice({ code: 'degraded', message: degraded, sticky: true });
     if (granted && this.activity.state === 'idle') {

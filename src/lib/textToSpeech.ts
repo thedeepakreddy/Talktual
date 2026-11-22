@@ -10,7 +10,7 @@
 import { API_BASE } from "./config";
 import { audioContext } from "./audio";
 
-import type { PlaybackItem, PlaybackListener, PlaybackPort } from "../engine/ports";
+import type { PlaybackItem, PlaybackListener, PlaybackPort, TtsRoute } from "../engine/ports";
 import type { RenderHints } from "../voicemirror/types";
 import type { PlaybackStatus } from "../engine/events";
 
@@ -167,7 +167,7 @@ export class PlaybackController implements PlaybackPort {
         this.emit(item.segmentId, "started");
         let outcome: Engine | "none" | "cancelled" = "none";
         try {
-          outcome = await playOne(item.text, item.lang, state, safeHints(item.voice));
+          outcome = await playOne(item.text, item.lang, state, safeHints(item.voice), safeRoute(item.ttsRoute));
         } catch (err) {
           console.error("TTS playback failed:", err);
           outcome = state.aborted ? "cancelled" : "none";
@@ -233,12 +233,27 @@ function safeHints(resolve?: () => RenderHints | undefined): RenderHints | undef
   }
 }
 
+function safeRoute(resolve?: () => TtsRoute): TtsRoute {
+  try {
+    return resolve?.() ?? "cloud-first";
+  } catch {
+    return "device-only"; // fail closed: never send text to the server on a policy error
+  }
+}
+
 async function playOne(
   text: string,
   lang: string,
   state: PlaybackState,
-  hints?: RenderHints
+  hints?: RenderHints,
+  route: TtsRoute = "cloud-first"
 ): Promise<Engine | "none" | "cancelled"> {
+  // Phase 6: on-device voices first (or only). Never a network voice here.
+  if (route !== "cloud-first") {
+    const spoke = await browserSpeak(text, lang, state, hints, true);
+    if (state.aborted) return "cancelled";
+    if (spoke || route === "device-only") return spoke ? "browser" : "none";
+  }
   try {
     const res = await fetch(`${API_BASE}/api/tts`, {
       method: "POST",
@@ -401,8 +416,13 @@ async function playEncoded(res: Response, state: PlaybackState): Promise<void> {
 }
 
 /** Last resort so a call never goes silent, even with no API key configured. */
-function browserSpeak(text: string, lang: string, state: PlaybackState, hints?: RenderHints): Promise<boolean> {
+function browserSpeak(text: string, lang: string, state: PlaybackState, hints?: RenderHints, localOnly = false): Promise<boolean> {
   if (!("speechSynthesis" in window) || state.aborted) return Promise.resolve(false);
+  // On-device only: an explicit localService voice is required (the default voice may be a network voice).
+  if (localOnly) {
+    const voices = window.speechSynthesis.getVoices().filter((v) => v.localService);
+    if (!voices.some((v) => v.lang === lang || v.lang.startsWith(lang.split("-")[0]))) return Promise.resolve(false);
+  }
 
   return new Promise<boolean>((resolve) => {
     let settled = false;
@@ -419,10 +439,8 @@ function browserSpeak(text: string, lang: string, state: PlaybackState, hints?: 
       utterance.rate = hints.browserRate;
     }
 
-    const voice = window.speechSynthesis
-      .getVoices()
-      .find((v) => v.lang === lang) ??
-      window.speechSynthesis.getVoices().find((v) => v.lang.startsWith(lang.split("-")[0]));
+    const pool = window.speechSynthesis.getVoices().filter((v) => !localOnly || v.localService);
+    const voice = pool.find((v) => v.lang === lang) ?? pool.find((v) => v.lang.startsWith(lang.split("-")[0]));
     if (voice) utterance.voice = voice;
 
     utterance.onend = () => finish(true);

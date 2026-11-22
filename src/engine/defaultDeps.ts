@@ -10,6 +10,8 @@ import { detectBrowserCapabilities } from './capabilities';
 import type { SessionDeps } from './CommunicationSession';
 import type { StorageLike } from './ports';
 import { createBrowserVoiceTap } from '../voicemirror/browserTap';
+import { clearTranslationCache } from '../lib/translate';
+import { BrowserTranslatorRuntime, LocalVoiceRuntime, OnDeviceAsrRuntime } from '../local/platform';
 
 /** VoiceMirror is a Phase 3 prototype: off unless the build sets VITE_VOICEMIRROR=1. */
 export const VOICEMIRROR_FLAG = import.meta.env.VITE_VOICEMIRROR === '1';
@@ -25,6 +27,11 @@ export const CONVERSATION_FLAG = !['0', 'off', 'false'].includes(String(import.m
  * provider calls). VITE_COMMUNICATION_INTELLIGENCE=0 rolls back to Phase 4.
  */
 export const INTELLIGENCE_FLAG = !['0', 'off', 'false'].includes(String(import.meta.env.VITE_COMMUNICATION_INTELLIGENCE ?? '').toLowerCase());
+
+/** Phase 6 processing modes + on-device runtimes: ON by default. VITE_PROCESSING_MODES=0 rolls back to Phase 5. */
+export const PROCESSING_FLAG = !['0', 'off', 'false'].includes(String(import.meta.env.VITE_PROCESSING_MODES ?? '').toLowerCase());
+/** On-device speech recognition probe: OFF by default (crashed the tab on the test hardware). */
+export const ONDEVICE_ASR_FLAG = import.meta.env.VITE_ONDEVICE_ASR === '1';
 
 function browserStorage(): StorageLike | null {
   try {
@@ -53,6 +60,24 @@ export function createDefaultDeps(): SessionDeps {
     onUserGesture: () => void unlockAudio(),
     conversation: CONVERSATION_FLAG,
     intelligence: INTELLIGENCE_FLAG,
+    processing: PROCESSING_FLAG
+      ? {
+          translators: [
+            new BrowserTranslatorRuntime((globalThis as { Translator?: never }).Translator, [
+              ['en', 'es'], ['es', 'en'], ['en', 'fr'], ['fr', 'en'], ['en', 'de'], ['de', 'en'], ['en', 'pt'], ['pt', 'en'], ['en', 'it'], ['it', 'en'], ['es', 'fr'], ['fr', 'es'],
+            ]),
+          ],
+          voices: [new LocalVoiceRuntime(typeof speechSynthesis !== 'undefined' ? () => speechSynthesis.getVoices() : undefined)],
+          asr: [
+            new OnDeviceAsrRuntime(
+              (window as unknown as { SpeechRecognition?: never; webkitSpeechRecognition?: never }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: never }).webkitSpeechRecognition,
+              ONDEVICE_ASR_FLAG,
+              ['en-US', 'es-ES', 'fr-FR', 'de-DE', 'pt-BR', 'it-IT']
+            ),
+          ],
+        }
+      : undefined,
+    clearCaches: clearTranslationCache,
     voiceTap: VOICEMIRROR_FLAG && Boolean(navigator.mediaDevices?.getUserMedia) ? createBrowserVoiceTap() : undefined,
   };
 }
