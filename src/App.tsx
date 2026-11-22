@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { MotionConfig } from 'motion/react';
 import { Home } from './components/Home';
 import { StartCall } from './components/StartCall';
 import { JoinCall } from './components/JoinCall';
 import { CallRoom } from './components/CallRoom';
-import { Language } from './types';
+import { Language, detectLanguage } from './types';
 import { unlockAudio } from './lib/audio';
 import { prewarm } from './lib/translate';
 import { normalizeRoomCode } from './lib/roomCode';
@@ -11,10 +12,12 @@ import { normalizeRoomCode } from './lib/roomCode';
 type Screen = 'home' | 'start' | 'join' | 'call';
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>('home');
-  const [language, setLanguage] = useState<Language | null>(null);
-  const [roomCode, setRoomCode] = useState('');
+  const [screen, setScreen] = useState<Screen>('home');
+  const [language, setLanguage] = useState<Language>(() => detectLanguage());
   const [userName, setUserName] = useState('');
+  const [roomCode, setRoomCode] = useState('');
+  /** Arrived through an invite link: the code is known, skip the home screen. */
+  const [invited, setInvited] = useState(false);
 
   // Mobile browsers only allow audio playback if the page has already played
   // some during a real user gesture. Every entry point below runs from a tap,
@@ -28,72 +31,69 @@ export default function App() {
     const joinCode = normalizeRoomCode(new URLSearchParams(window.location.search).get('join'));
     if (joinCode) {
       setRoomCode(joinCode);
-      setCurrentScreen('join');
+      setInvited(true);
+      setScreen('join');
     }
   }, []);
 
-  const handleStartCall = (lang: Language, name: string) => {
-    primeAudio();
-    setLanguage(lang);
-    setUserName(name);
-    setCurrentScreen('start');
-  };
-
-  const handleJoinCall = (lang: Language, name: string) => {
-    primeAudio();
-    setLanguage(lang);
-    setUserName(name);
-    setCurrentScreen('join');
-  };
-
-  const handleJoinedRoom = useCallback((code: string, lang?: Language) => {
-    primeAudio();
-    if (lang) setLanguage(lang);
-    setRoomCode(code);
-    setCurrentScreen('call');
-  }, []);
-
-  const handleEndCall = useCallback(() => {
-    setRoomCode('');
-    setCurrentScreen('home');
+  const clearInviteUrl = () => {
     if (window.history.pushState) {
       const url = window.location.protocol + '//' + window.location.host + window.location.pathname;
       window.history.pushState({ path: url }, '', url);
     }
+  };
+
+  const start = () => {
+    primeAudio();
+    setScreen('start');
+  };
+  const join = () => {
+    primeAudio();
+    setRoomCode('');
+    setInvited(false);
+    setScreen('join');
+  };
+
+  const enterCall = useCallback((code: string) => {
+    primeAudio();
+    setRoomCode(code);
+    setScreen('call');
   }, []);
 
-  if (currentScreen === 'start' && language) {
-    return (
-      <StartCall
-        language={language}
-        onBack={() => setCurrentScreen('home')}
-        onJoined={handleJoinedRoom}
-      />
-    );
-  }
+  const endCall = useCallback(() => {
+    setRoomCode('');
+    setInvited(false);
+    setScreen('home');
+    clearInviteUrl();
+  }, []);
 
-  if (currentScreen === 'join' && language) {
-    return (
-      <JoinCall
-        language={language}
-        onBack={() => setCurrentScreen('home')}
-        onJoined={(code, lang) => handleJoinedRoom(code, lang)}
-        initialCode={roomCode}
-      />
-    );
-  }
+  const back = () => {
+    setInvited(false);
+    setScreen('home');
+    clearInviteUrl();
+  };
 
-  if (currentScreen === 'call' && language) {
-    return (
-      <CallRoom
-        roomCode={roomCode}
-        language={language}
-        userName={userName}
-        onLanguageChange={setLanguage}
-        onEndCall={handleEndCall}
-      />
-    );
-  }
-
-  return <Home onStartCall={handleStartCall} onJoinCall={handleJoinCall} />;
+  return (
+    <MotionConfig reducedMotion="user">
+      {screen === 'start' && <StartCall language={language} onBack={back} onJoined={enterCall} />}
+      {screen === 'join' && (
+        <JoinCall
+          language={language}
+          onLanguageChange={setLanguage}
+          userName={userName}
+          onUserNameChange={setUserName}
+          initialCode={roomCode}
+          invited={invited}
+          onBack={back}
+          onJoined={(code) => enterCall(code)}
+        />
+      )}
+      {screen === 'call' && (
+        <CallRoom roomCode={roomCode} language={language} userName={userName} onLanguageChange={setLanguage} onEndCall={endCall} />
+      )}
+      {screen === 'home' && (
+        <Home language={language} onLanguageChange={setLanguage} userName={userName} onUserNameChange={setUserName} onStart={start} onJoin={join} />
+      )}
+    </MotionConfig>
+  );
 }

@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Check, Copy, Share2 } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Share } from 'lucide-react';
 import { Language } from '../types';
-import { cn } from '../utils';
 import { SIGNALING_URL } from '../lib/config';
 import { generateRoomCode } from '../lib/roomCode';
+import { Button, IconButton } from './ui';
 
 interface StartCallProps {
   language: Language;
@@ -83,103 +82,51 @@ export function StartCall({ language, onBack, onJoined }: StartCallProps) {
   const share = async () => {
     if (!navigator.share) return copy('link');
     try {
-      await navigator.share({ title: 'Talktual', text: `Join my channel: ${roomCode}`, url: joinUrl });
+      await navigator.share({ title: 'Talktual', text: `Join my Talktual call: ${roomCode}`, url: joinUrl });
     } catch {
       /* dismissed */
     }
   };
 
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.35 }}
-      className="mx-auto flex min-h-screen w-full max-w-md flex-col px-6"
-    >
-      <div className="safe-t flex items-center justify-between py-4">
-        <button
-          onClick={onBack}
-          aria-label="Back"
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-[var(--text-1)] transition-colors hover:bg-white/[0.1]"
-        >
-          <ArrowLeft className="h-[18px] w-[18px]" />
-        </button>
-        <div className="flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.05] px-3 py-1.5">
-          <span className="text-[15px] leading-none">{language.flag}</span>
-          <span className="text-[13px] font-medium text-[var(--text-2)]">{language.native}</span>
-        </div>
-      </div>
+    <main className="mx-auto flex min-h-dvh w-full max-w-[420px] flex-col px-4 sm:px-6">
+      <header className="safe-t flex h-14 items-center gap-1 -ml-2">
+        <IconButton label="Back" onClick={onBack}>
+          <ArrowLeft className="h-5 w-5" />
+        </IconButton>
+        <h1 className="text-heading font-semibold">Invite someone</h1>
+      </header>
 
-      <div className="flex flex-1 flex-col items-center justify-center py-4">
-        <h1 className="text-[26px] font-bold tracking-[-0.02em] text-[var(--text-1)]">
-          Invite someone
-        </h1>
-        <p className="mt-2 max-w-[18rem] text-center text-[15px] leading-snug text-[var(--text-2)]">
-          They scan this, pick their own language, and you’re talking.
-        </p>
-
-        <div className="mt-8 rounded-[28px] bg-white p-5 shadow-[0_24px_60px_-20px_rgba(0,0,0,0.9)]">
+      <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
+        <p className="text-body text-fg-muted">They scan this, or open your link.</p>
+        {/* QR codes need a light, high-contrast field to scan reliably in any theme. */}
+        <div className="mt-6 rounded-lg bg-white p-4">
           {roomCode ? (
-            <QRCodeSVG value={joinUrl} size={188} fgColor="#08080a" bgColor="#ffffff" level="M" />
+            <QRCodeSVG value={joinUrl} size={192} fgColor="#0e0f11" bgColor="#ffffff" level="M" title="Invite QR code" />
           ) : (
-            <div className="h-[188px] w-[188px] animate-pulse rounded-2xl bg-zinc-200" />
+            <div className="h-[192px] w-[192px]" aria-hidden="true" />
           )}
         </div>
-
-        <div className="mt-8 w-full">
-          <p className="mb-2.5 text-center text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-3)]">
-            or share this code
-          </p>
-          <div className="flex justify-center gap-1.5">
-            {(roomCode || '······').split('').map((char, i) => (
-              <span
-                key={i}
-                className="tnum flex h-13 w-11 items-center justify-center rounded-xl border border-white/8 bg-white/[0.06] py-3 font-mono text-[22px] font-semibold text-[var(--text-1)]"
-              >
-                {char}
-              </span>
-            ))}
-          </div>
-        </div>
+        <p className="mt-6 text-label text-fg-muted">Call code</p>
+        <p data-call-code className="mt-1 font-mono text-[1.75rem] font-semibold tracking-[0.18em] tnum" aria-label={roomCode.split('').join(' ')}>
+          {roomCode || '······'}
+        </p>
+        <p role="status" className="mt-6 flex items-center gap-2 text-label text-fg-muted">
+          <span className="pulse-dot h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
+          Waiting for them to join…
+        </p>
       </div>
 
-      <div className="safe-b space-y-3">
-        <div className="flex gap-3">
-          <button
-            onClick={() => copy('code')}
-            className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.05] py-3.5 text-[15px] font-semibold text-[var(--text-1)] transition-all hover:bg-white/[0.09] active:scale-[0.985]"
-          >
-            {copied === 'code' ? (
-              <Check className="h-[17px] w-[17px] text-[var(--green)]" />
-            ) : (
-              <Copy className="h-[17px] w-[17px]" />
-            )}
-            {copied === 'code' ? 'Copied' : 'Copy code'}
-          </button>
-          <button
-            onClick={share}
-            className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.05] py-3.5 text-[15px] font-semibold text-[var(--text-1)] transition-all hover:bg-white/[0.09] active:scale-[0.985]"
-          >
-            {copied === 'link' ? (
-              <Check className="h-[17px] w-[17px] text-[var(--green)]" />
-            ) : (
-              <Share2 className="h-[17px] w-[17px]" />
-            )}
-            {copied === 'link' ? 'Copied' : 'Share link'}
-          </button>
-        </div>
-
-        <div className="flex items-center justify-center gap-2.5 pt-1">
-          <span
-            className={cn('led led-pulse')}
-            style={{ background: 'var(--amber)' }}
-            aria-hidden="true"
-          />
-          <p className="text-[13px] font-medium text-[var(--text-2)]">
-            Waiting for someone to join…
-          </p>
-        </div>
+      <div className="safe-b grid grid-cols-2 gap-3">
+        <Button variant="secondary" onClick={() => copy('code')} icon={copied === 'code' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}>
+          {copied === 'code' ? 'Copied' : 'Copy code'}
+        </Button>
+        <Button variant="primary" onClick={share} icon={copied === 'link' ? <Check className="h-4 w-4" /> : <Share className="h-4 w-4" />}>
+          {copied === 'link' ? 'Link copied' : canShare ? 'Share link' : 'Copy link'}
+        </Button>
       </div>
-    </motion.div>
+    </main>
   );
 }

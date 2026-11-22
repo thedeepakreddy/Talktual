@@ -1,0 +1,246 @@
+[
+  {"id":"ind-001","category":"reference","turns":[
+    {"speaker":"A","lang":"en","text":"We're staying at the Hotel Miramar."},
+    {"speaker":"B","lang":"es","text":"¿Cuántas noches?"},
+    {"speaker":"A","lang":"en","text":"Four nights. Can I park my car there?"}],
+   "target":2,"expect":{"references":[{"word":"there","antecedent":"the Hotel Miramar"}],"signals":["question"]}},
+  {"id":"ind-002","category":"reference","turns":[
+    {"speaker":"B","lang":"es","text":"Mi hermana Lucía llega mañana en el tren de las diez."},
+    {"speaker":"A","lang":"en","text":"Great, should I pick her up at the station?"}],
+   "target":1,"expect":{"references":[{"word":"her","antecedent":"Lucía"}],"signals":["question","offer"]}},
+  {"id":"ind-003","category":"reference","turns":[
+    {"speaker":"A","lang":"en","text":"I talked to Mark and David about the contract this morning."},
+    {"speaker":"B","lang":"es","text":"¿Y qué dijo él?"}],
+   "target":1,"expect":{"references":[{"word":"él","antecedent":null}],"signals":["question"]}},
+  {"id":"ind-004","category":"reference","turns":[
+    {"speaker":"B","lang":"es","text":"Compré una mochila y una maleta en el mercado."},
+    {"speaker":"A","lang":"en","text":"Nice. Is it big enough for the flight?"}],
+   "target":1,"expect":{"references":[{"word":"it","antecedent":null}],"signals":["question"]}},
+  {"id":"ind-005","category":"reference","turns":[
+    {"speaker":"A","lang":"en","text":"Is there somewhere I can buy painkillers?"},
+    {"speaker":"B","lang":"es","text":"Hay una farmacia en la esquina, al lado del banco."},
+    {"speaker":"A","lang":"en","text":"Perfect, I'll go there after lunch."}],
+   "target":2,"expect":{"references":[{"word":"there","antecedent":"una farmacia"}],"signals":[]}},
+  {"id":"ind-006","category":"reference","turns":[
+    {"speaker":"A","lang":"en","text":"Can you bring that one over here?"}],
+   "target":0,"expect":{"references":[{"word":"that one","antecedent":null}],"signals":["request"]}},
+  {"id":"ind-007","category":"reference","turns":[
+    {"speaker":"A","lang":"en","text":"Oh no, I left my jacket in the restaurant."},
+    {"speaker":"B","lang":"es","text":"No te preocupes, yo la recojo mañana."}],
+   "target":1,"expect":{"references":[{"word":"la","antecedent":"my jacket"}],"signals":["offer"]}},
+  {"id":"ind-008","category":"reference","turns":[
+    {"speaker":"A","lang":"en","text":"My boss, Karen, wants the report by Friday."},
+    {"speaker":"B","lang":"es","text":"Vale, sin problema."},
+    {"speaker":"A","lang":"en","text":"She also asked if you could translate the summary."}],
+   "target":2,"expect":{"references":[{"word":"She","antecedent":"Karen"}],"signals":["request"]}},
+  {"id":"ind-009","category":"reference","turns":[
+    {"speaker":"B","lang":"es","text":"Mañana tengo reunión con la directora y con la abogada."},
+    {"speaker":"A","lang":"en","text":"Okay."},
+    {"speaker":"B","lang":"es","text":"Ella quiere que lleves los documentos."}],
+   "target":2,"expect":{"references":[{"word":"Ella","antecedent":null}],"signals":["request"]}},
+
+  {"id":"ind-010","category":"ambiguity","turns":[
+    {"speaker":"A","lang":"en","text":"We rented a little boat on the river yesterday."},
+    {"speaker":"B","lang":"es","text":"¿Y pescasteis algo?"},
+    {"speaker":"A","lang":"en","text":"Not much, we mostly sat on the bank and talked."}],
+   "target":2,"expect":{"senses":[{"word":"bank","sense":"river side"}],"signals":[]}},
+  {"id":"ind-011","category":"ambiguity","turns":[
+    {"speaker":"A","lang":"en","text":"Do you have cash for the taxi?"},
+    {"speaker":"B","lang":"es","text":"No, tengo que pasar por el banco primero."}],
+   "target":1,"expect":{"senses":[{"word":"banco","sense":"financial institution"}],"signals":[]}},
+  {"id":"ind-012","category":"ambiguity","turns":[
+    {"speaker":"B","lang":"es","text":"Mañana compro la vela."}],
+   "target":0,"expect":{"senses":[{"word":"vela","sense":"ambiguous"}],"signals":[]}},
+  {"id":"ind-013","category":"ambiguity","turns":[
+    {"speaker":"A","lang":"en","text":"Here we are. What do you recommend at this restaurant?"},
+    {"speaker":"B","lang":"es","text":"Déjame ver la carta primero."}],
+   "target":1,"expect":{"senses":[{"word":"carta","sense":"menu"}],"signals":[]}},
+  {"id":"ind-014","category":"ambiguity","turns":[
+    {"speaker":"A","lang":"en","text":"What are you doing tonight?"},
+    {"speaker":"B","lang":"es","text":"Tengo una cita a las siete."}],
+   "target":1,"expect":{"senses":[{"word":"cita","sense":"ambiguous"}],"signals":[]}},
+  {"id":"ind-015","category":"ambiguity","turns":[
+    {"speaker":"B","lang":"es","text":"La máquina del parking solo acepta monedas."},
+    {"speaker":"A","lang":"en","text":"Do you have any change?"}],
+   "target":1,"expect":{"senses":[{"word":"change","sense":"coins"}],"signals":["question","request"]}},
+  {"id":"ind-016","category":"ambiguity","turns":[
+    {"speaker":"B","lang":"es","text":"¡Mira, allí arriba! ¿Lo ves?"},
+    {"speaker":"A","lang":"en","text":"Wait, was that a bat?"}],
+   "target":1,"expect":{"senses":[{"word":"bat","sense":"ambiguous"}],"signals":["question"]}},
+  {"id":"ind-017","category":"ambiguity","turns":[
+    {"speaker":"B","lang":"es","text":"Mi hermano le va a pedir matrimonio a su novia el sábado."},
+    {"speaker":"A","lang":"en","text":"That's amazing! Has he bought the ring yet?"}],
+   "target":1,"expect":{"senses":[{"word":"ring","sense":"jewelry"}],"references":[{"word":"he","antecedent":"Mi hermano"}],"signals":["question"]}},
+  {"id":"ind-018","category":"ambiguity","turns":[
+    {"speaker":"A","lang":"en","text":"Where should I leave the documents?"},
+    {"speaker":"B","lang":"es","text":"Déjalos en el sobre."}],
+   "target":1,"expect":{"senses":[{"word":"sobre","sense":"envelope"}],"signals":["request"]}},
+
+  {"id":"ind-019","category":"entity","turns":[
+    {"speaker":"B","lang":"es","text":"¿Quién nos recoge en el aeropuerto?"},
+    {"speaker":"A","lang":"en","text":"Rose will meet us at the gate."}],
+   "target":1,"expect":{"entities":["Rose"],"signals":[]}},
+  {"id":"ind-020","category":"entity","turns":[
+    {"speaker":"A","lang":"en","text":"Bill said the invoice is ready."}],
+   "target":0,"expect":{"entities":["Bill"],"signals":[]}},
+  {"id":"ind-021","category":"entity","turns":[
+    {"speaker":"B","lang":"es","text":"Esta noche cenamos con Rosa y su marido."}],
+   "target":0,"expect":{"entities":["Rosa"],"signals":[]}},
+  {"id":"ind-022","category":"entity","turns":[
+    {"speaker":"B","lang":"es","text":"¿Dónde aterrizáis?"},
+    {"speaker":"A","lang":"en","text":"We land in Reading and then drive to Bath."}],
+   "target":1,"expect":{"entities":["Reading","Bath"],"signals":[]}},
+  {"id":"ind-023","category":"entity","turns":[
+    {"speaker":"A","lang":"en","text":"Who's your contact at the energy company?"},
+    {"speaker":"B","lang":"es","text":"Trabajo con Pilar Soto, de Iberdrola."}],
+   "target":1,"expect":{"entities":["Pilar Soto","Iberdrola"],"signals":[]}},
+  {"id":"ind-024","category":"entity","turns":[
+    {"speaker":"A","lang":"en","text":"Ask Grace and Hope whether they want the window seats."}],
+   "target":0,"expect":{"entities":["Grace","Hope"],"signals":["request"]}},
+
+  {"id":"ind-025","category":"signal","turns":[
+    {"speaker":"B","lang":"es","text":"¿A qué hora sale el último autobús al centro?"}],
+   "target":0,"expect":{"signals":["question"]}},
+  {"id":"ind-026","category":"signal","turns":[
+    {"speaker":"B","lang":"es","text":"La dirección es un poco complicada."},
+    {"speaker":"A","lang":"en","text":"Could you write it down for me?"}],
+   "target":1,"expect":{"references":[{"word":"it","antecedent":"La dirección"}],"signals":["request"]}},
+  {"id":"ind-027","category":"signal","turns":[
+    {"speaker":"A","lang":"en","text":"My flight is at six tomorrow morning."},
+    {"speaker":"B","lang":"es","text":"Si quieres, te llevo al aeropuerto."}],
+   "target":1,"expect":{"signals":["offer"]}},
+  {"id":"ind-028","category":"signal","turns":[
+    {"speaker":"A","lang":"en","text":"Can we move the meeting to three?"},
+    {"speaker":"B","lang":"es","text":"Vale, perfecto, a las tres."}],
+   "target":1,"expect":{"signals":["confirmation"]}},
+  {"id":"ind-029","category":"signal","turns":[
+    {"speaker":"A","lang":"en","text":"Do you want to join us for dinner tonight?"},
+    {"speaker":"B","lang":"es","text":"Gracias, pero esta noche no puedo."}],
+   "target":1,"expect":{"signals":["refusal"]}},
+  {"id":"ind-030","category":"signal","turns":[
+    {"speaker":"B","lang":"es","text":"Tienes que hacer transbordo en Atocha y coger la línea uno."},
+    {"speaker":"A","lang":"en","text":"Sorry, I don't understand. Change what?"}],
+   "target":1,"expect":{"signals":["clarification-request","misunderstanding"]}},
+  {"id":"ind-031","category":"signal","turns":[
+    {"speaker":"A","lang":"en","text":"The hotel was really nice, by the way."},
+    {"speaker":"B","lang":"es","text":"Me alegro mucho."},
+    {"speaker":"A","lang":"en","text":"On a different note, did you finish the slides for Monday?"}],
+   "target":2,"expect":{"signals":["topic-change","question"]}},
+  {"id":"ind-032","category":"signal","turns":[
+    {"speaker":"A","lang":"en","text":"Call an ambulance right now, he's not breathing!"}],
+   "target":0,"expect":{"signals":["urgency","request"]}},
+  {"id":"ind-033","category":"signal","turns":[
+    {"speaker":"B","lang":"es","text":"Es urgente, necesito que firmes esto antes de las doce."}],
+   "target":0,"expect":{"signals":["urgency","request"]}},
+  {"id":"ind-034","category":"signal","turns":[
+    {"speaker":"A","lang":"en","text":"The flight got moved to the overnight one, so we land at dawn."},
+    {"speaker":"B","lang":"es","text":"¿Cómo? No entiendo lo que dices."}],
+   "target":1,"expect":{"signals":["clarification-request","misunderstanding"]}},
+  {"id":"ind-035","category":"signal","turns":[
+    {"speaker":"A","lang":"en","text":"I was wondering where the nearest cash machine is"}],
+   "target":0,"expect":{"signals":["question"]}},
+
+  {"id":"ind-036","category":"correction","turns":[
+    {"speaker":"A","lang":"en","text":"The reservation is for Thursday."},
+    {"speaker":"B","lang":"es","text":"Vale, el jueves."},
+    {"speaker":"A","lang":"en","text":"Sorry, no, I meant Tuesday, not Thursday."}],
+   "target":2,"expect":{"signals":["correction"]}},
+  {"id":"ind-037","category":"correction","turns":[
+    {"speaker":"A","lang":"en","text":"What time should we meet?"},
+    {"speaker":"B","lang":"es","text":"A las cinco. Perdón, a las cinco no, a las seis."}],
+   "target":1,"expect":{"signals":["correction"]}},
+  {"id":"ind-038","category":"correction","turns":[
+    {"speaker":"A","lang":"en","text":"My room is 412."},
+    {"speaker":"B","lang":"es","text":"De acuerdo, la 412."},
+    {"speaker":"A","lang":"en","text":"Wait, no, it's 421. Sorry."}],
+   "target":2,"expect":{"signals":["correction"]}},
+  {"id":"ind-039","category":"correction","turns":[
+    {"speaker":"B","lang":"es","text":"El museo está en la calle Alcalá."},
+    {"speaker":"A","lang":"en","text":"Thanks, I'll walk there."},
+    {"speaker":"B","lang":"es","text":"Ay, me equivoqué: está en la calle Atocha, no en Alcalá."}],
+   "target":2,"expect":{"entities":["Atocha","Alcalá"],"signals":["correction"]}},
+
+  {"id":"ind-040","category":"idiom","turns":[
+    {"speaker":"B","lang":"es","text":"¿Es difícil el examen de conducir aquí?"},
+    {"speaker":"A","lang":"en","text":"Don't worry, it's a piece of cake."}],
+   "target":1,"expect":{"idioms":["a piece of cake"],"signals":[]}},
+  {"id":"ind-041","category":"idiom","turns":[
+    {"speaker":"B","lang":"es","text":"Llevamos diez horas trabajando."},
+    {"speaker":"A","lang":"en","text":"Let's call it a day, we can finish tomorrow."}],
+   "target":1,"expect":{"idioms":["call it a day"],"signals":["offer"]}},
+  {"id":"ind-042","category":"idiom","turns":[
+    {"speaker":"A","lang":"en","text":"Is it hard to set up the router?"},
+    {"speaker":"B","lang":"es","text":"No te preocupes, eso es pan comido."}],
+   "target":1,"expect":{"idioms":["pan comido"],"signals":[]}},
+  {"id":"ind-043","category":"idiom","turns":[
+    {"speaker":"B","lang":"es","text":"Mi jefe me tomó el pelo con lo del ascenso."}],
+   "target":0,"expect":{"idioms":["me tomó el pelo"],"signals":[]}},
+
+  {"id":"ind-044","category":"sensitive","turns":[
+    {"speaker":"B","lang":"es","text":"¿Cómo te aviso cuando llegue?"},
+    {"speaker":"A","lang":"en","text":"My number is 07700 900123, text me when you land."}],
+   "target":1,"expect":{"signals":["request"],"mustNotStore":["07700 900123"]}},
+  {"id":"ind-045","category":"sensitive","turns":[
+    {"speaker":"B","lang":"es","text":"Mándame el billete a lucia.martin@example.com, por favor."}],
+   "target":0,"expect":{"signals":["request"],"mustNotStore":["lucia.martin@example.com"]}},
+  {"id":"ind-046","category":"sensitive","turns":[
+    {"speaker":"B","lang":"es","text":"Para la reserva necesito su número de pasaporte y la tarjeta."},
+    {"speaker":"A","lang":"en","text":"Sure, the passport is 533380006 and the card number is 4111 1111 1111 1111."}],
+   "target":1,"expect":{"signals":["confirmation"],"mustNotStore":["533380006","4111 1111 1111 1111"]}},
+
+  {"id":"ind-047","category":"neutral","turns":[
+    {"speaker":"A","lang":"en","text":"Good morning! How was your flight?"}],
+   "target":0,"expect":{"signals":["question"],"noNotes":true}},
+  {"id":"ind-048","category":"neutral","turns":[
+    {"speaker":"B","lang":"es","text":"Muchas gracias por la cena, estaba todo buenísimo."}],
+   "target":0,"expect":{"signals":[],"noNotes":true}},
+  {"id":"ind-049","category":"neutral","turns":[
+    {"speaker":"B","lang":"es","text":"¿Soléis comer temprano?"},
+    {"speaker":"A","lang":"en","text":"We usually have lunch around one o'clock."}],
+   "target":1,"expect":{"signals":[],"noNotes":true}},
+  {"id":"ind-050","category":"neutral","turns":[
+    {"speaker":"A","lang":"en","text":"How many people are coming on Saturday?"},
+    {"speaker":"B","lang":"es","text":"Somos seis en total."}],
+   "target":1,"expect":{"signals":[],"noNotes":true}},
+  {"id":"ind-051","category":"neutral","turns":[
+    {"speaker":"A","lang":"en","text":"I'm almost ready, just give me ten minutes."}],
+   "target":0,"expect":{"signals":["request"],"noNotes":true}},
+
+  {"id":"ind-052","category":"adversarial","turns":[
+    {"speaker":"B","lang":"es","text":"¿Qué tal la reunión?"},
+    {"speaker":"A","lang":"en","text":"Oh, great. Just great. Three hours to decide absolutely nothing."}],
+   "target":1,"expect":{"signals":[]}},
+  {"id":"ind-053","category":"adversarial","turns":[
+    {"speaker":"A","lang":"en","text":"Ana from accounting and my cousin Anna both arrive on Friday."},
+    {"speaker":"B","lang":"es","text":"Vale, apuntado."},
+    {"speaker":"A","lang":"en","text":"Anna needs a vegetarian meal."}],
+   "target":2,"expect":{"entities":["Anna"],"signals":[]}},
+  {"id":"ind-054","category":"adversarial","turns":[
+    {"speaker":"A","lang":"en","text":"I loved the museum this morning."},
+    {"speaker":"B","lang":"es","text":"Sí, es precioso."},
+    {"speaker":"A","lang":"en","text":"Changing the subject, are you hungry?"},
+    {"speaker":"B","lang":"es","text":"Un poco, la verdad."},
+    {"speaker":"A","lang":"en","text":"Is that place expensive?"}],
+   "target":4,"expect":{"references":[{"word":"that place","antecedent":null}],"signals":["question"]}},
+  {"id":"ind-055","category":"adversarial","turns":[
+    {"speaker":"B","lang":"es","text":"Llego el 3/4."},
+    {"speaker":"A","lang":"en","text":"March 4th?"},
+    {"speaker":"B","lang":"es","text":"No, no, el tres de abril."}],
+   "target":2,"expect":{"signals":["correction"]}},
+  {"id":"ind-056","category":"adversarial","turns":[
+    {"speaker":"B","lang":"es","text":"¿Qué tal el concierto?"},
+    {"speaker":"A","lang":"en","text":"That gig was sick, the drummer totally killed it."}],
+   "target":1,"expect":{"senses":[{"word":"sick","sense":"excellent (slang)"}],"idioms":["killed it"],"signals":[]}},
+  {"id":"ind-057","category":"adversarial","turns":[
+    {"speaker":"B","lang":"es","text":"Por la mañana paseamos junto al río y luego tengo que cambiar dinero."},
+    {"speaker":"A","lang":"en","text":"Okay, so let's meet at the bank at noon."}],
+   "target":1,"expect":{"senses":[{"word":"bank","sense":"ambiguous"}],"signals":["confirmation","offer"]}},
+  {"id":"ind-058","category":"adversarial","turns":[
+    {"speaker":"B","lang":"es","text":"Ya hemos terminado el postre."},
+    {"speaker":"A","lang":"en","text":"Bill, can you ask the waiter for the bill?"}],
+   "target":1,"expect":{"entities":["Bill"],"senses":[{"word":"bill","sense":"restaurant check"}],"signals":["request"]}},
+  {"id":"ind-059","category":"adversarial","turns":[
+    {"speaker":"B","lang":"es","text":"Aquí hacen la mejor paella de la ciudad."},
+    {"speaker":"A","lang":"en","text":"I'm dying to try it."}],
+   "target":1,"expect":{"idioms":["dying to"],"references":[{"word":"it","antecedent":"la mejor paella"}],"signals":[]}}
+]

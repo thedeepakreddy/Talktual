@@ -5,7 +5,7 @@
 // Usage: npm run test:e2e
 
 import assert from 'node:assert/strict';
-import { loadChromium, startStack, pairPeers, talk } from './harness.mjs';
+import { loadChromium, startStack, pairPeers, talk, openSettings, closeSettings, feedText, readTransport, endCall } from './harness.mjs';
 
 const results = [];
 async function step(name, fn) {
@@ -35,7 +35,7 @@ let host, guest;
 try {
   console.log(`Chromium ${browser.version()} — running scenarios`);
 
-  await step('host starts a channel; guest joins via ?join= link; both land in the call', async () => {
+  await step('host starts a call; guest joins via ?join= link; both land in the call', async () => {
     ({ host, guest } = await pairPeers(browser, stack.web));
     await guest.page.getByText('English').first().waitFor({ timeout: 5000 });
   });
@@ -57,7 +57,7 @@ try {
 
   let transport = 'unknown';
   await step('transport is reported (P2P data channel or relay)', async () => {
-    transport = await host.page.locator('text=/^(Direct|Relayed)$/').first().textContent();
+    transport = await readTransport(host.page);
     assert.ok(['Direct', 'Relayed'].includes(transport));
   });
 
@@ -106,8 +106,10 @@ try {
   });
 
   await step('hands-free: opt-in shows a persistent indicator, listens, and Stop ends it', async () => {
-    await host.page.getByRole('button', { name: /hands-free: off/i }).click();
-    await host.page.getByText(/listening continuously/i).waitFor({ timeout: 5000 });
+    await openSettings(host.page);
+    await host.page.getByRole('radio', { name: 'Hands-free' }).click();
+    await closeSettings(host.page);
+    await host.page.getByText('Hands-free: listening continuously').waitFor({ timeout: 5000 });
     await host.page.waitForFunction(() => window.__srRunning());
     await host.page.evaluate(() => window.__say('hello there'));
     await guest.page.waitForFunction(() => window.__spoken.filter((s) => s.text === 'hola ahí').length === 2);
@@ -116,7 +118,8 @@ try {
   });
 
   await step('mid-call language switch retargets the next turn without reconnecting', async () => {
-    await guest.page.getByRole('button', { name: /you speak spanish/i }).click();
+    await openSettings(guest.page);
+    await guest.page.getByRole('button', { name: /your language: español/i }).click();
     await guest.page.getByLabel('Search languages').fill('French');
     await guest.page.getByRole('button', { name: /Français/ }).click();
     await host.page.getByText('Français').first().waitFor({ timeout: 5000 });
@@ -141,20 +144,18 @@ try {
     assert.equal(live.length, 2, 'both seats live after reconnect');
   });
 
-  await step('transcript lists both sides', async () => {
-    await host.page.getByRole('button', { name: 'Show transcript' }).click();
-    const dialog = host.page.getByRole('dialog', { name: 'Transcript' });
-    await dialog.getByText('hello there').first().waitFor();
-    await dialog.getByText('Luis').first().waitFor();
-    await dialog.getByText('Not translated — translation was unavailable').waitFor();
-    await dialog.getByRole('button', { name: 'Close transcript' }).click();
+  await step('the conversation lists both sides, with honest translation state', async () => {
+    const text = await feedText(host.page);
+    assert.match(text, /hello there/);
+    assert.match(text, /Luis/);
+    assert.match(text, /Not translated — translation was unavailable/);
   });
 
   await step('host leaves → guest is told immediately and returned home', async () => {
-    await host.page.getByRole('button', { name: 'Leave channel' }).click();
-    await host.page.getByRole('button', { name: /start a channel/i }).waitFor();
-    await guest.page.getByText(/left the channel/i).first().waitFor({ timeout: 5000 });
-    await guest.page.getByRole('button', { name: /start a channel/i }).waitFor({ timeout: 10000 });
+    assert.equal(await endCall(host.page), true, 'a live call asks before ending');
+    await host.page.getByRole('button', { name: /^start a call$/i }).waitFor();
+    await guest.page.getByText(/left the call/i).first().waitFor({ timeout: 5000 });
+    await guest.page.getByRole('button', { name: /^start a call$/i }).waitFor({ timeout: 10000 });
   });
 
   await step('server cleaned up every session after the call', async () => {
@@ -165,7 +166,6 @@ try {
   await step('DEF-C04: joining an unknown code fails with a message (no infinite spinner)', async () => {
     await guest.page.goto(`${stack.web}/?join=QQQQQQ`);
     await guest.page.getByLabel('Your name').fill('Luis');
-    await guest.page.getByRole('button', { name: /join a channel/i }).click();
     await guest.page.getByRole('button', { name: /^join$/i }).click();
     await guest.page.getByRole('alert').getByText(/no one is waiting/i).waitFor({ timeout: 20000 });
     await new Promise((r) => setTimeout(r, 300));

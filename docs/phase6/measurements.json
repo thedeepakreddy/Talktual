@@ -1,0 +1,47 @@
+{
+ "at": "2026-11-22T01:30:57.647Z",
+ "hardware": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "cores": 4,
+  "memGB": 16,
+  "gpu": "none",
+  "platform": "linux x64",
+  "node": "v22.23.5",
+  "chromium": "157.0.8103.78"
+ },
+ "battery": "not measurable (container, no battery)",
+ "thermal": "not measurable (container)",
+ "localModuleBytes": {
+  "unminified": 42005,
+  "minified": 31346
+ },
+ "appBundleBytes": 699166,
+ "node": {
+  "coldLoadMs": 3.303,
+  "firstTranslateMs": 0.772,
+  "warmReloadMs": 1.532,
+  "heapLoadedKB": 278,
+  "heapAfterUnloadKB": 383,
+  "translate": {
+   "n": 5000,
+   "p50": 0.0188,
+   "p95": 0.16,
+   "max": 3.3901
+  },
+  "cpuMsPerCall": 0.0557,
+  "cpuUtilisation": 1.26,
+  "policyPlanMicroseconds": 0.145
+ },
+ "chromium": {
+  "importMs": 13.1,
+  "coldLoadMs": 5.2,
+  "translate": {
+   "n": 5000,
+   "p50": 0,
+   "p95": 0.2,
+   "max": 2.6
+  },
+  "heapDeltaKB_coarse": 0,
+  "timerResolutionNote": "performance.now() is coarsened in browsers (≈0.1 ms without cross-origin isolation)"
+ }
+}

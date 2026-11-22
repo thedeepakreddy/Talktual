@@ -11,4 +11,4 @@ export const API_BASE = SIGNALING_URL.replace(/^ws/, "http");
 export const RELEASE_TAIL_MS = 450;
 
 /** Max wait for the recognizer to finalize the last phrase before we force it. */
-export const FINALIZE_TIMEOUT_MS = 700;
+export const FINALIZE_TIMEOUT_MS = 1200;

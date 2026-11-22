@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { loadChromium, startStack, pairPeers, talk, root } from './harness.mjs';
+import { loadChromium, startStack, pairPeers, talk, root, openSettings, closeSettings, endCall } from './harness.mjs';
 
 const results = [];
 async function step(name, fn) {
@@ -54,7 +54,9 @@ try {
   await step('pair; both accept microphone consent; voice match is offered but OFF', async () => {
     ({ host, guest } = await pairPeers(browser, stack.web));
     for (const p of [host.page, guest.page]) await p.getByRole('button', { name: /allow microphone/i }).click();
-    await host.page.getByRole('button', { name: 'Voice match: off' }).waitFor();
+    await openSettings(host.page);
+    await host.page.getByRole('switch', { name: 'Voice match', checked: false }).waitFor();
+    await closeSettings(host.page);
   });
 
   await step('default: speech is played with default pitch/rate (no voice data shared)', async () => {
@@ -66,24 +68,28 @@ try {
   });
 
   await step('opt-in shows the VoiceMirror disclosure; accept turns it on', async () => {
-    await host.page.getByRole('button', { name: 'Voice match: off' }).click();
+    await openSettings(host.page);
+    await host.page.getByRole('switch', { name: 'Voice match' }).click();
     const d = host.page.getByRole('dialog', { name: /share your voice style/i });
     await d.waitFor();
     assert.match(await d.textContent(), /does not copy or clone/);
     await d.getByRole('button', { name: 'Share voice style' }).click();
-    await host.page.getByRole('button', { name: 'Voice match: on' }).waitFor();
+    await d.waitFor({ state: 'detached' });
+    await openSettings(host.page);
+    await host.page.getByRole('switch', { name: 'Voice match', checked: true }).waitFor();
+    await closeSettings(host.page);
   });
 
   let matched;
   await step('first short turn: not enough voiced speech yet → still default (fails closed)', async () => {
     await holdAndTalk(host.page, 'second turn', 3000);
     await guest.page.waitForFunction(() => window.__spoken.some((s) => s.text === '[en|es] second turn'), null, { timeout: 10000 });
-    assert.equal(await guest.page.getByText('Their voice style matched').count(), 0);
+    assert.equal(await guest.page.getByTestId('call-meta').getByText(/Voice matched/).count(), 0);
   });
 
   await step('host keeps talking (real mic → analyzer accumulates) → guest renders with the host’s voice style', async () => {
     await holdAndTalk(host.page, 'second and a half', 4000);
-    await guest.page.getByText('Their voice style matched').waitFor({ timeout: 10000 });
+    await guest.page.getByTestId('call-meta').getByText(/Voice matched/).waitFor({ timeout: 10000 });
     await holdAndTalk(host.page, 'third turn', 500);
     await guest.page.waitForFunction(() => window.__spoken.some((s) => s.text === '[en|es] third turn'), null, { timeout: 10000 });
     matched = await lastFor(guest.page, '[en|es] third turn');
@@ -93,8 +99,10 @@ try {
   });
 
   await step('revocation: host turns it off → guest’s next segment is back to default', async () => {
-    await host.page.getByRole('button', { name: 'Voice match: on' }).click();
-    await guest.page.getByText('Their voice style matched').waitFor({ state: 'detached', timeout: 5000 });
+    await openSettings(host.page);
+    await host.page.getByRole('switch', { name: 'Voice match' }).click();
+    await closeSettings(host.page);
+    await guest.page.getByTestId('call-meta').getByText(/Voice matched/).waitFor({ state: 'detached', timeout: 5000 });
     await talk(host.page, 'fourth turn');
     await guest.page.waitForFunction(() => window.__spoken.some((s) => s.text === '[en|es] fourth turn'), null, { timeout: 10000 });
     const u = await lastFor(guest.page, '[en|es] fourth turn');
@@ -110,7 +118,7 @@ try {
   });
 
   await step('leave → server holds no sessions', async () => {
-    await host.page.getByRole('button', { name: 'Leave channel' }).click();
+    await endCall(host.page);
     await new Promise((r) => setTimeout(r, 500));
     assert.equal(stack.api.sessions.size, 0);
   });

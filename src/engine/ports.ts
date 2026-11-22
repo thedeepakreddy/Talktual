@@ -18,6 +18,10 @@ export interface RecognizedSegment {
   /** ms epoch when the phrase was finalized. */
   endedAt: number;
   engine: AsrEngine;
+  /** Recognizer confidence 0..1 when the engine reports it (0/absent = unknown). Never logged. */
+  confidence?: number;
+  /** The engine never finalized this phrase; its last interim text was used (reliability fix). */
+  promoted?: boolean;
 }
 
 export type AsrErrorCode = 'permission-denied' | 'device-lost' | 'capture-unavailable' | 'network' | 'no-result' | 'provider' | 'unknown';
@@ -47,7 +51,12 @@ export interface AsrAdapter {
   dispose(): void;
 }
 
-export type AsrFactory = (lang: string, mode: ListeningMode, cb: AsrCallbacks) => AsrAdapter;
+export interface AsrOptions {
+  /** Phase 6: browser on-device recognition only (Web Speech `processLocally`). */
+  processLocally?: boolean;
+}
+
+export type AsrFactory = (lang: string, mode: ListeningMode, cb: AsrCallbacks, opts?: AsrOptions) => AsrAdapter;
 
 // --- Translation ---------------------------------------------------------------------
 
@@ -59,7 +68,7 @@ export interface TranslationRequest {
   signal?: AbortSignal;
 }
 
-export type TranslationErrorCode = 'timeout' | 'network' | 'http' | 'rate-limited' | 'malformed' | 'cancelled';
+export type TranslationErrorCode = 'timeout' | 'network' | 'http' | 'rate-limited' | 'malformed' | 'cancelled' | 'unavailable';
 
 export interface TranslationResult {
   segmentId: string;
@@ -84,7 +93,17 @@ export interface PlaybackItem {
    * so revoking stops affecting every segment that hasn't started yet.
    */
   voice?: () => import('../voicemirror/types').RenderHints | undefined;
+  /** Phase 4: ms epoch after which the item is stale and must be dropped if not started. */
+  notAfter?: number;
+  /**
+   * Phase 6: where speech may be synthesized, resolved when the item STARTS
+   * (so a mode change applies to queued items). Absent = 'cloud-first' (Phase 5 behaviour).
+   */
+  ttsRoute?: () => TtsRoute;
 }
+
+/** cloud-first: server voice, then any browser voice · device-first: on-device voice, then cloud · device-only: on-device voice or silence. */
+export type TtsRoute = 'cloud-first' | 'device-first' | 'device-only';
 
 export type PlaybackListener = (segmentId: string, status: PlaybackStatus, engine?: 'server' | 'browser') => void;
 

@@ -10,10 +10,11 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:server": "npm --prefix signaling-server test",
-    "test:e2e": "node e2e/smoke.mjs && node e2e/recovery.mjs && node e2e/compat.mjs",
+    "test:e2e": "node e2e/smoke.mjs && node e2e/recovery.mjs && node e2e/compat.mjs && node e2e/conversation.mjs && node e2e/intelligence.mjs && node e2e/processing.mjs && node e2e/a11y.mjs && REPRO_ASSERT=1 node e2e/repro-loop.mjs",
     "test:all": "npm run lint && npm test && npm run test:server && npm run build",
     "perf:latency": "node e2e/latency.mjs",
-    "perf:server": "node e2e/perf.mjs"
+    "perf:server": "node e2e/perf.mjs",
+    "screens": "node e2e/screens.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

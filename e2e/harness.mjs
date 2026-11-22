@@ -106,11 +106,22 @@ export function initScript(opts = {}) {
     },
     cancel() {},
     getVoices() {
-      return [];
+      // opts.simulatedLocalVoices: SIMULATED on-device voices (the test hardware has none).
+      return (opts.simulatedLocalVoices || []).map((lang) => ({ name: `Simulated ${lang}`, lang, localService: true, voiceURI: `sim-${lang}`, default: false }));
     },
     onvoiceschanged: null,
   };
   Object.defineProperty(window, 'speechSynthesis', { value: synth, configurable: true });
+  if (opts.simulatedLocalVoices) {
+    // SIMULATION: synthesis is faked anyway; a fake utterance accepts the fake voices.
+    window.SpeechSynthesisUtterance = class {
+      constructor(text) {
+        this.text = text;
+        this.lang = '';
+        this.voice = null;
+      }
+    };
+  }
 }
 
 export async function startStack({ apiPort, webPort, serverOverrides = {}, fetchOpts = {}, outDir, cwd = root, buildEnv = {} }) {
@@ -134,12 +145,21 @@ export async function startStack({ apiPort, webPort, serverOverrides = {}, fetch
     stdio: 'inherit',
   });
   if (build.status !== 0) throw new Error('vite build failed');
+  const web = `http://127.0.0.1:${webPort}`;
+  // Refuse to start if something already serves this port: a leftover preview
+  // would silently serve a DIFFERENT build (this happened once — see docs/reliability).
+  try {
+    await fetch(web);
+    throw new Error(`port ${webPort} is already serving — a previous preview is still running`);
+  } catch (e) {
+    if (String(e?.message).includes('already serving')) throw e;
+  }
+  // Spawn vite itself (not via npx) so stop() kills the real server process.
   const preview = spawn(
-    'npx',
-    ['vite', 'preview', '--outDir', dist, '--port', String(webPort), '--strictPort', '--host', '127.0.0.1'],
+    path.join(cwd, 'node_modules/.bin/vite'),
+    ['preview', '--outDir', dist, '--port', String(webPort), '--strictPort', '--host', '127.0.0.1'],
     { cwd, stdio: 'ignore' }
   );
-  const web = `http://127.0.0.1:${webPort}`;
   const end = Date.now() + 20000;
   for (;;) {
     try {
@@ -183,7 +203,7 @@ export async function talk(page, text) {
   return { pressedAt, saidAt, releasedAt };
 }
 
-/** Host starts a channel, guest joins via link; returns once both are in the call. */
+/** Host starts a call, guest joins via invite link; returns once both are in the call. */
 export async function pairPeers(browser, web, initOpts = {}) {
   const mk = async (locale, opts) => {
     const context = await browser.newContext({ locale, permissions: ['microphone'] });
@@ -197,14 +217,11 @@ export async function pairPeers(browser, web, initOpts = {}) {
   const guest = await mk('es-ES', initOpts.guest || {});
   await host.page.goto(initOpts.debug ? `${web}/?debug=1` : web);
   await host.page.getByLabel('Your name').fill('Ana');
-  await host.page.getByRole('button', { name: /start a channel/i }).click();
-  await host.page.waitForFunction(
-    () => document.querySelectorAll('span.tnum').length === 6 && !document.body.innerText.includes('······')
-  );
-  const code = (await host.page.locator('span.tnum').allTextContents()).join('');
+  await host.page.getByRole('button', { name: /^start a call$/i }).click();
+  const code = await readCallCode(host.page);
+  // Invite link: the guest lands on Join with the code filled in.
   await guest.page.goto(`${web}/?join=${code}`);
   await guest.page.getByLabel('Your name').fill('Luis');
-  await guest.page.getByRole('button', { name: /join a channel/i }).click();
   await guest.page.getByRole('button', { name: /^join$/i }).click();
   await Promise.all([
     host.page.getByRole('button', { name: 'Push to talk' }).waitFor({ timeout: 15000 }),
@@ -212,4 +229,63 @@ export async function pairPeers(browser, web, initOpts = {}) {
   ]);
   await host.page.getByText('Español').first().waitFor({ timeout: 5000 });
   return { host, guest, code };
+}
+
+/** The 6-character code on the "Invite someone" screen, once the lobby has issued it. */
+export async function readCallCode(page) {
+  const el = page.locator('[data-call-code]');
+  await page.waitForFunction(() => /^[A-Z0-9]{6}$/.test(document.querySelector('[data-call-code]')?.textContent?.trim() ?? ''));
+  return (await el.textContent()).trim();
+}
+
+/** Opens the single "Call settings" sheet and returns it. */
+export async function openSettings(page) {
+  await page.getByRole('button', { name: 'Call settings' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Call settings' });
+  await sheet.waitFor();
+  return sheet;
+}
+
+export async function closeSettings(page) {
+  await page.getByRole('button', { name: 'Close settings' }).click();
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+}
+
+/** Text of the conversation (the feed replaces the old transcript sheet). */
+export async function feedText(page) {
+  return page.getByRole('log', { name: 'Conversation' }).innerText();
+}
+
+/** "Direct" or "Relayed", read from Call settings → This call. */
+export async function readTransport(page) {
+  const sheet = await openSettings(page);
+  const row = sheet.getByText(/^(Direct|Relayed)$/).first();
+  await row.waitFor();
+  const v = await row.textContent();
+  await closeSettings(page);
+  return v;
+}
+
+/** Switches listening mode from Call settings ("Hold to talk" / "Hands-free"). */
+export async function setHandsFree(page, on) {
+  await openSettings(page);
+  await page.getByRole('radio', { name: on ? 'Hands-free' : 'Hold to talk' }).click();
+  await closeSettings(page);
+}
+
+/** Number of "Voice match" controls in Call settings (0 when VoiceMirror is off). */
+export async function voiceMatchControls(page) {
+  await openSettings(page);
+  const n = await page.getByRole('switch', { name: 'Voice match' }).count();
+  await closeSettings(page);
+  return n;
+}
+
+/** Ends the call from the header, confirming when the call is live. */
+export async function endCall(page) {
+  await page.getByRole('button', { name: 'End call' }).click();
+  const confirm = page.getByRole('dialog', { name: 'End this call?' });
+  const asked = await confirm.waitFor({ timeout: 1500 }).then(() => true, () => false);
+  if (asked) await confirm.getByRole('button', { name: 'End call' }).click();
+  return asked;
 }

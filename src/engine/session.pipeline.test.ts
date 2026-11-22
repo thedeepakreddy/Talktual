@@ -258,3 +258,23 @@ it('supports all listed languages in the picker data (ported)', () => {
   expect(SUPPORTED_LANGUAGES.length).toBe(31);
   expect(new Set(SUPPORTED_LANGUAGES.map((l) => l.code)).size).toBe(31);
 });
+
+describe('communication-loop diagnostics (reliability task)', () => {
+  it('counts promoted interims and turns that produced no text — no words recorded', async () => {
+    const h = makeSession({ consent: true });
+    await connected(h);
+    h.session.pressTalk();
+    await settle();
+    h.asr()!.cb.onFinal({ text: 'where is the station', lang: 'en-US', startedAt: 0, endedAt: 1, engine: 'webspeech', promoted: true });
+    h.session.releaseTalk();
+    await settle(40);
+    h.session.pressTalk();
+    await settle();
+    h.session.releaseTalk();
+    await settle(40);
+    const d = h.session.getDiagnostics();
+    expect(d.counters).toMatchObject({ asr_interim_promoted: 1, asr_release_no_text: 1 });
+    expect(JSON.stringify(d)).not.toContain('station');
+    expect(h.call.segments()).toHaveLength(1); // the promoted phrase was translated and sent
+  });
+});

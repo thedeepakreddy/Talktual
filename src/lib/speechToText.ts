@@ -21,7 +21,7 @@
 
 import { API_BASE, FINALIZE_TIMEOUT_MS, RELEASE_TAIL_MS } from "./config";
 import { getMic, setMicEnabled } from "./audio";
-import type { AsrAdapter, AsrCallbacks, AsrEngine, AsrErrorCode } from "../engine/ports";
+import type { AsrAdapter, AsrCallbacks, AsrEngine, AsrErrorCode, AsrOptions } from "../engine/ports";
 import type { ListeningMode, ProcessingRoute } from "../engine/events";
 
 export type SttEngine = AsrEngine;
@@ -78,13 +78,15 @@ export function supportsStreamingStt(): boolean {
 
 // --- Public factory ---------------------------------------------------------
 
-export function createAsr(lang: string, mode: ListeningMode, cb: AsrCallbacks): AsrAdapter {
+export function createAsr(lang: string, mode: ListeningMode, cb: AsrCallbacks, opts: AsrOptions = {}): AsrAdapter {
+  // On-device only: never fall back to the server recognizer.
+  if (opts.processLocally) return createWebSpeechAdapter(lang, mode, cb, true);
   return getSpeechRecognitionCtor() ? createWebSpeechAdapter(lang, mode, cb) : createServerSttAdapter(lang, cb);
 }
 
 // --- Web Speech engine (the fast path) --------------------------------------
 
-function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallbacks): AsrAdapter {
+function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallbacks, processLocally = false): AsrAdapter {
   const Ctor = getSpeechRecognitionCtor()!;
   let rec: SpeechRecognitionLike | null = null;
   let active = false; // between start() and the end of stop()/abort()
@@ -101,7 +103,24 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
     restartTimer = tailTimer = finalizeTimer = null;
   };
 
-  function emit(text: string) {
+  /**
+   * Latest NOT-yet-final text of the current phrase. Cloud recognizers often
+   * deliver the final result late after stop() — or never (Chrome on Android
+   * frequently ends without one). Reliability fix: when the engine ends or the
+   * finalize timer fires on a graceful stop, this text is promoted to a final
+   * instead of being discarded. An explicit abort (mic off, leave, mode change)
+   * still discards it.
+   */
+  let pendingInterim = "";
+
+  function flushPendingInterim() {
+    const t = pendingInterim.trim();
+    pendingInterim = "";
+    if (!t) return;
+    emit(t, undefined, true);
+  }
+
+  function emit(text: string, confidence?: number, promoted = false) {
     const clean = text.trim();
     if (!clean) return;
     // Chrome occasionally replays the last final result when a session ends.
@@ -109,7 +128,16 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
     lastEmitted = clean;
     lastEmittedAt = Date.now();
     const endedAt = Date.now();
-    cb.onFinal({ text: clean, lang, startedAt: phraseStartedAt || endedAt, endedAt, engine: "webspeech" });
+    cb.onFinal({
+      text: clean,
+      lang,
+      startedAt: phraseStartedAt || endedAt,
+      endedAt,
+      engine: "webspeech",
+      // Many browsers report 0 ("unknown"); the conversation layer treats 0 as absent.
+      ...(typeof confidence === "number" && Number.isFinite(confidence) ? { confidence } : {}),
+      ...(promoted ? { promoted: true } : {}),
+    });
     phraseStartedAt = endedAt;
   }
 
@@ -133,6 +161,7 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
   function build(): SpeechRecognitionLike {
     const r = new Ctor();
     r.lang = lang;
+    if (processLocally) (r as unknown as { processLocally: boolean }).processLocally = true;
     r.continuous = true;
     r.interimResults = true;
     r.maxAlternatives = 1;
@@ -143,9 +172,13 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         const text = result[0]?.transcript ?? "";
-        if (result.isFinal) emit(text);
+        if (result.isFinal) {
+          emit(text, result[0]?.confidence);
+          pendingInterim = "";
+        }
         else interim += text;
       }
+      pendingInterim = interim.trim();
       cb.onPartial(interim.trim());
     };
 
@@ -174,6 +207,8 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
 
     r.onend = () => {
       if (!active) return;
+      // Words the engine never finalized are still the user's words.
+      flushPendingInterim();
       if (stopping) {
         finish();
         return;
@@ -204,6 +239,7 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
   function abortNow() {
     const r = rec;
     const wasActive = active;
+    pendingInterim = ""; // abort = discard (privacy: nothing captured after a stop is sent)
     active = false;
     stopping = false;
     clearTimers();
@@ -273,6 +309,8 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
       finalizeTimer = setTimeout(() => {
         finalizeTimer = null;
         if (!active) return;
+        // The engine didn't flush in time: use what it had recognized so far.
+        flushPendingInterim();
         const r = rec;
         detach();
         try {
