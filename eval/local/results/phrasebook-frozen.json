@@ -1,0 +1,1066 @@
+{
+ "generatedAt": "2026-11-22T01:28:33.048Z",
+ "node": "v22.23.5",
+ "summary": {
+  "items": 100,
+  "inScope": 85,
+  "outOfScope": 15,
+  "coveredInScope": 55,
+  "coveredOutOfScope": 0,
+  "exactAmongCovered": 42,
+  "criticalPreservedAmongCovered": 54,
+  "coveredNotExact": 13,
+  "coveredCriticalMissing": 1,
+  "byLang": {
+   "en": {
+    "n": 60,
+    "covered": 33
+   },
+   "es": {
+    "n": 40,
+    "covered": 22
+   }
+  },
+  "loadMs": 1.986,
+  "translateMs": {
+   "p50": 0.0428,
+   "p95": 0.2091,
+   "max": 1.0604
+  }
+ },
+ "coveredNotExact": [
+  {
+   "id": "ph-002",
+   "input": "thank you very much",
+   "output": "Gracias",
+   "refs": [
+    "Muchas gracias"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-007",
+   "input": "can you speak more slowly please",
+   "output": "¿Puedes hablar más despacio, por favor?",
+   "refs": [
+    "¿Puede hablar más despacio, por favor?",
+    "¿Podría hablar más despacio, por favor?"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-039",
+   "input": "where is the nearest pharmacy",
+   "output": "¿Dónde está la farmacia?",
+   "refs": [
+    "¿Dónde está la farmacia más cercana?"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-040",
+   "input": "um sorry could you repeat that",
+   "output": "Lo siento, ¿puedes repetirlo?",
+   "refs": [
+    "Perdone, ¿puede repetirlo?",
+    "Perdón, ¿podría repetir eso?"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-044",
+   "input": "is there a bank around here",
+   "output": "¿Hay un banco cerca?",
+   "refs": [
+    "¿Hay un banco por aquí?",
+    "¿Hay algún banco por aquí cerca?"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-049",
+   "input": "we need a taxi to the hotel",
+   "output": "Necesito un taxi, lléveme al hotel",
+   "refs": [
+    "Necesitamos un taxi al hotel",
+    "Necesitamos un taxi para ir al hotel"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-051",
+   "input": "see you tomorrow at nine",
+   "output": "Nos vemos a las nueve",
+   "refs": [
+    "Hasta mañana a las nueve",
+    "Nos vemos mañana a las nueve"
+   ],
+   "critical": false
+  },
+  {
+   "id": "ph-062",
+   "input": "muchas gracias",
+   "output": "Thank you",
+   "refs": [
+    "Thank you very much",
+    "Thanks a lot"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-068",
+   "input": "son quince euros",
+   "output": "It costs fifteen euros",
+   "refs": [
+    "It's fifteen euros",
+    "That's fifteen euros"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-085",
+   "input": "se puede pagar con tarjeta",
+   "output": "Can we pay by card?",
+   "refs": [
+    "Can I pay by card?",
+    "Can you pay by card?",
+    "Do you take cards?"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-087",
+   "input": "eh perdona puedes repetir",
+   "output": "Excuse me, can you repeat that?",
+   "refs": [
+    "Sorry, can you repeat that?",
+    "Excuse me, could you repeat that?"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-090",
+   "input": "vale de acuerdo",
+   "output": "Okay, okay",
+   "refs": [
+    "Okay, agreed",
+    "OK, fine",
+    "All right, sure"
+   ],
+   "critical": true
+  },
+  {
+   "id": "ph-091",
+   "input": "nos trae la carta por favor",
+   "output": "The menu please",
+   "refs": [
+    "Could you bring us the menu, please?",
+    "Can we have the menu, please?"
+   ],
+   "critical": true
+  }
+ ],
+ "coveredOutOfScope": [],
+ "rows": [
+  {
+   "id": "ph-001",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-002",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-003",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-004",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-005",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-006",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-007",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-008",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-009",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-010",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-011",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-012",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-013",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-014",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-015",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-016",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-017",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-018",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-019",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-020",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-021",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-022",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-023",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-024",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-025",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-026",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-027",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-028",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-029",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-030",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-031",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-032",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-033",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-034",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-035",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-036",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-037",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-038",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-039",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-040",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-041",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-042",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-043",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-044",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-045",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-046",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-047",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-048",
+   "lang": "en",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-049",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-050",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-051",
+   "lang": "en",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": false,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-052",
+   "lang": "en",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-053",
+   "lang": "en",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-054",
+   "lang": "en",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-055",
+   "lang": "en",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-056",
+   "lang": "en",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-057",
+   "lang": "en",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-058",
+   "lang": "en",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-059",
+   "lang": "en",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-060",
+   "lang": "en",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-061",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-062",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-063",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-064",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-065",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-066",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-067",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-068",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-069",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-070",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-071",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-072",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-073",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-074",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-075",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-076",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-077",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-078",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-079",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-080",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-081",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-082",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-083",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-084",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-085",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-086",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-087",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-088",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-089",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-090",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-091",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": false,
+   "critical": true,
+   "coverage": "exact"
+  },
+  {
+   "id": "ph-092",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-093",
+   "lang": "es",
+   "inScope": true,
+   "covered": true,
+   "exact": true,
+   "critical": true,
+   "coverage": "template"
+  },
+  {
+   "id": "ph-094",
+   "lang": "es",
+   "inScope": true,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-095",
+   "lang": "es",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-096",
+   "lang": "es",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-097",
+   "lang": "es",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-098",
+   "lang": "es",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-099",
+   "lang": "es",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  },
+  {
+   "id": "ph-100",
+   "lang": "es",
+   "inScope": false,
+   "covered": false,
+   "exact": false,
+   "critical": false,
+   "coverage": null
+  }
+ ]
+}

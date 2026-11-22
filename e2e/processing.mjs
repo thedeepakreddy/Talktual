@@ -99,7 +99,7 @@ try {
     await setMode(host.page, 'Hybrid');
     const h0 = hostNet.inference().length;
     await typeMsg(host.page, 'thank you very much');
-    await guest.page.getByText('Gracias').first().waitFor({ timeout: 8000 });
+    await guest.page.getByText('Muchas gracias').first().waitFor({ timeout: 8000 });
     assert.equal(hostNet.inference().length - h0, 0);
     await typeMsg(host.page, 'the conference starts after lunch');
     await guest.page.getByText(/conference starts after lunch/).first().waitFor({ timeout: 8000 });
