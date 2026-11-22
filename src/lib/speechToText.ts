@@ -21,7 +21,7 @@
 
 import { API_BASE, FINALIZE_TIMEOUT_MS, RELEASE_TAIL_MS } from "./config";
 import { getMic, setMicEnabled } from "./audio";
-import type { AsrAdapter, AsrCallbacks, AsrEngine, AsrErrorCode } from "../engine/ports";
+import type { AsrAdapter, AsrCallbacks, AsrEngine, AsrErrorCode, AsrOptions } from "../engine/ports";
 import type { ListeningMode, ProcessingRoute } from "../engine/events";
 
 export type SttEngine = AsrEngine;
@@ -78,13 +78,15 @@ export function supportsStreamingStt(): boolean {
 
 // --- Public factory ---------------------------------------------------------
 
-export function createAsr(lang: string, mode: ListeningMode, cb: AsrCallbacks): AsrAdapter {
+export function createAsr(lang: string, mode: ListeningMode, cb: AsrCallbacks, opts: AsrOptions = {}): AsrAdapter {
+  // On-device only: never fall back to the server recognizer.
+  if (opts.processLocally) return createWebSpeechAdapter(lang, mode, cb, true);
   return getSpeechRecognitionCtor() ? createWebSpeechAdapter(lang, mode, cb) : createServerSttAdapter(lang, cb);
 }
 
 // --- Web Speech engine (the fast path) --------------------------------------
 
-function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallbacks): AsrAdapter {
+function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallbacks, processLocally = false): AsrAdapter {
   const Ctor = getSpeechRecognitionCtor()!;
   let rec: SpeechRecognitionLike | null = null;
   let active = false; // between start() and the end of stop()/abort()
@@ -141,6 +143,7 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
   function build(): SpeechRecognitionLike {
     const r = new Ctor();
     r.lang = lang;
+    if (processLocally) (r as unknown as { processLocally: boolean }).processLocally = true;
     r.continuous = true;
     r.interimResults = true;
     r.maxAlternatives = 1;

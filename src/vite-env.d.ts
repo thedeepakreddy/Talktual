@@ -13,6 +13,10 @@ interface ImportMetaEnv {
   readonly VITE_CONVERSATION_LAYER?: string;
   /** Phase 5: "0"/"off" disables communication intelligence (rollback). */
   readonly VITE_COMMUNICATION_INTELLIGENCE?: string;
+  /** Phase 6: "0"/"off" disables processing modes (rollback to Phase 5). */
+  readonly VITE_PROCESSING_MODES?: string;
+  /** Phase 6: "1" enables the on-device speech-recognition probe (off: crashed the tab on test hardware). */
+  readonly VITE_ONDEVICE_ASR?: string;
 }
 
 interface ImportMeta {
