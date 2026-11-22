@@ -66,7 +66,7 @@ Setup: two real Chromium pages, the real signaling server, and the real app buil
 | no final (onend only, Chrome Android style) | ❌ | ❌ | ✅ | ✅ |
 | server TTS path (stubbed PCM) → **real Chromium Web Audio** playback at the listener | — | — | ✅ 4/4 (both directions, incl. no-final) | (unit-tested) |
 
-**Disclosed mistake:** one earlier run set was invalid. A leftover `vite preview` from the first run kept serving the `main` build on the same port, so the first "branch before fix" and "branch after fix" runs actually tested `main`. The harness now spawns `vite` directly, so `stop()` really stops it, and it refuses to start on an already-served port. All results above are from clean runs (0 leftover processes).
+**Disclosed mistake:** one earlier run set was invalid. A leftover `vite preview` from the first run kept serving the `main` build on the same port, so the first "branch before fix" and "branch after fix" runs actually tested `main`. The harness now spawns `vite` directly, so `stop()` really stops it, and it refuses to start on an already-served port. All results in the table above are from clean runs (0 leftover processes). The two version-skew runs (§3) ran while that stale preview was still up. It served the `main` frontend, which is the frontend those runs were meant to test, rebuilt with the same server URL, so their conclusion stands. They weren't re-run after the harness fix.
 
 ## 5. Changes
 * **Branch `claude/kind-archimedes-n6y11p`:**
