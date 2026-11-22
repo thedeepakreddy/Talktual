@@ -19,3 +19,4 @@ e2e/.dist-proc/
 e2e/.dist-proc-off/
 eval/local/.bundle/
 e2e/.dist-repro/
+e2e/.dist-screens/

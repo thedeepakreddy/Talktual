@@ -25,6 +25,12 @@ async function connect(f: ReturnType<typeof renderRoom>) {
 }
 
 const ptt = () => screen.getByRole('button', { name: 'Push to talk' }) as HTMLButtonElement;
+const feed = () => screen.getByRole('log', { name: 'Conversation' });
+const openSettings = () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Call settings' }));
+  return screen.getByRole('dialog', { name: 'Call settings' });
+};
+const closeSettings = () => fireEvent.click(screen.getByRole('button', { name: 'Close settings' }));
 
 describe('CallRoom view over the engine', () => {
   it('first use: shows the processing disclosure; nothing is captured until Allow', async () => {
@@ -49,7 +55,8 @@ describe('CallRoom view over the engine', () => {
     });
     expect(FakeAsr.all).toHaveLength(1);
     expect(f.asr()!.active).toBe(true);
-    expect(screen.getByText('On air')).toBeTruthy();
+    expect(screen.getByText('Speak now')).toBeTruthy();
+    expect(ptt().getAttribute('aria-pressed')).toBe('true');
     await act(async () => {
       fireEvent.pointerUp(ptt());
       await settle();
@@ -65,18 +72,22 @@ describe('CallRoom view over the engine', () => {
   it('hands-free: explicit opt-in shows a persistent indicator; Stop ends capture', async () => {
     const f = renderRoom({ consent: true });
     await connect(f);
+    openSettings();
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /hands-free: off/i }));
+      fireEvent.click(screen.getByRole('radio', { name: 'Hands-free' }));
       await settle();
     });
-    expect(screen.getByText(/listening continuously/i)).toBeTruthy();
+    closeSettings();
+    expect(screen.getByText('Hands-free: listening continuously')).toBeTruthy();
     expect(f.asr()!.active).toBe(true);
-    expect(ptt().disabled).toBe(true);
+    // The talk control becomes "Stop hands-free"; holding is not possible.
+    expect(screen.queryByRole('button', { name: 'Push to talk' })).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
       await settle();
     });
-    expect(screen.queryByText(/listening continuously/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Stop hands-free' })).toBeNull();
+    expect(screen.queryByText('Hands-free: listening continuously')).toBeNull();
     expect(FakeAsr.all.every((a) => !a.active)).toBe(true);
   });
 
@@ -126,7 +137,7 @@ describe('CallRoom view over the engine', () => {
   it('leaving tears down the transport and returns home', async () => {
     const f = renderRoom({ consent: true });
     await connect(f);
-    fireEvent.click(screen.getByRole('button', { name: 'Leave channel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End call' }));
     expect(f.onEndCall).toHaveBeenCalled();
     expect(f.call.closed).toBe(1);
     f.unmount();
@@ -143,7 +154,7 @@ describe('CallRoom view over the engine', () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       await act(async () => f.call.status('peer-left'));
-      expect(screen.getAllByText(/Luis left the channel/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Luis left the call/i).length).toBeGreaterThan(0);
       await act(async () => vi.advanceTimersByTime(2000));
       expect(f.onEndCall).toHaveBeenCalled();
     } finally {
@@ -174,7 +185,7 @@ describe('CallRoom view over the engine', () => {
     expect(screen.getByText('<b>bold</b>', { exact: false })).toBeTruthy();
   });
 
-  it('incoming speech shows as the last heard line and in the transcript', async () => {
+  it('incoming speech appears in the conversation with the original underneath', async () => {
     const f = renderRoom({ consent: true });
     await connect(f);
     await act(async () => {
@@ -182,10 +193,8 @@ describe('CallRoom view over the engine', () => {
       await settle();
     });
     expect(screen.getByText('hello')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Show transcript' }));
-    const dialog = screen.getByRole('dialog', { name: 'Transcript' });
-    expect(dialog.textContent).toContain('Luis');
-    expect(dialog.textContent).toContain('hola');
+    expect(feed().textContent).toContain('Luis');
+    expect(feed().textContent).toContain('hola');
   });
 });
 
@@ -210,19 +219,15 @@ describe('Phase 4 conversation affordances', () => {
     });
     expect(screen.getByText(/Luis is talking/)).toBeTruthy();
     expect(screen.getByText(/I want to book a/)).toBeTruthy(); // live provisional caption
-    fireEvent.click(screen.getByRole('button', { name: 'Show transcript' }));
-    let dialog = screen.getByRole('dialog', { name: 'Transcript' });
-    expect(dialog.textContent).toContain('Still speaking — may change');
+    expect(feed().textContent).toContain('Still speaking — may change');
     await act(async () => {
       f.call.receive({ t: 'segment', id: 'a', original: 'quiero reservar una mesa', translated: 'I want to book a table', state: 'final', rev: 0, turn: 'T1', uncertain: true, ...seg });
       await settle();
     });
-    dialog = screen.getByRole('dialog', { name: 'Transcript' });
-    expect(dialog.textContent).not.toContain('Still speaking');
-    expect(dialog.textContent).toContain('I want to book a table');
-    expect(dialog.textContent).toContain('Unclear audio');
+    expect(feed().textContent).not.toContain('Still speaking');
+    expect(feed().textContent).toContain('I want to book a table');
+    expect(feed().textContent).toContain('Unclear audio');
     // We cut in while Luis still holds the floor → the rest of that turn is labelled, not played.
-    fireEvent.click(screen.getByRole('button', { name: 'Close transcript' }));
     await act(async () => {
       fireEvent.pointerDown(ptt());
       await settle();
@@ -231,9 +236,7 @@ describe('Phase 4 conversation affordances', () => {
       f.call.receive({ t: 'segment', id: 'b', original: 'y luego', translated: 'and then', state: 'final', turn: 'T1', ...seg });
       await settle();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Show transcript' }));
-    dialog = screen.getByRole('dialog', { name: 'Transcript' });
-    expect(dialog.textContent).toContain('Interrupted — not played');
+    expect(feed().textContent).toContain('Interrupted — not played');
     expect(f.playback.played.map((p) => p.segmentId)).not.toContain('b');
   });
 
@@ -268,7 +271,7 @@ describe('Phase 5 assistance UI', () => {
   }
   const seg = { sourceLang: 'es-ES', targetLang: 'en-US', sentAt: 1 } as const;
 
-  it('notes and tags appear under the line; the assist sheet shows, corrects and resets context; off switch', async () => {
+  it('notes and tags appear under the line; settings show, correct and reset context; off switch', async () => {
     const f = renderRoom({ consent: true, deps: { intelligence: true } });
     await connectAci(f);
     await act(async () => {
@@ -276,25 +279,25 @@ describe('Phase 5 assistance UI', () => {
       f.call.receive({ t: 'segment', id: 'b', original: '¿Llegas allí a las cinco?', translated: 'Do you get there at five?', ...seg });
       await settle();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Show transcript' }));
-    const dialog = screen.getByRole('dialog', { name: 'Transcript' });
-    expect(dialog.textContent).toContain('“allí” → Plaza Mayor (mentioned earlier)');
-    expect(dialog.textContent).toContain('Question');
-    fireEvent.click(screen.getByRole('button', { name: 'Close transcript' }));
+    expect(feed().textContent).toContain('“allí” → Plaza Mayor (mentioned earlier)');
+    expect(feed().textContent).toContain('Question');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation assistance' }));
-    const sheet = screen.getByRole('dialog', { name: 'Conversation assistance' });
+    const sheet = openSettings();
     expect(sheet.textContent).toMatch(/this call only/);
-    expect(sheet.textContent).toContain('Plaza Mayor');
+    fireEvent.click(screen.getByRole('button', { name: /What it remembers/ }));
+    const memory = screen.getByRole('dialog', { name: 'What assistance remembers' });
+    expect(memory.textContent).toContain('Plaza Mayor');
     fireEvent.click(screen.getByRole('button', { name: 'Forget Plaza Mayor' }));
-    expect(screen.getByRole('dialog', { name: 'Conversation assistance' }).textContent).not.toContain('Plaza Mayor');
+    expect(screen.getByRole('dialog', { name: 'What assistance remembers' }).textContent).not.toContain('Plaza Mayor');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     fireEvent.click(screen.getByRole('switch', { name: 'Concise speech' }));
-    expect(f.deps.intelligence).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Concise speech' }).getAttribute('aria-checked')).toBe('true');
     fireEvent.click(screen.getByRole('switch', { name: 'Assistance' }));
-    expect((screen.getByRole('switch', { name: 'Concise speech' }) as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getByText('Nothing yet.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Close assistance' }));
-    expect(screen.getByRole('button', { name: 'Conversation assistance' }).textContent).toBe('Assist: off');
+    expect(screen.getByRole('switch', { name: 'Assistance' }).getAttribute('aria-checked')).toBe('false');
+    // Off hides the sub-options instead of leaving dead controls.
+    expect(screen.queryByRole('switch', { name: 'Concise speech' })).toBeNull();
+    closeSettings();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('a suggestion is a dismissible note, not a popup', async () => {
@@ -316,7 +319,8 @@ describe('Phase 5 assistance UI', () => {
   it('hidden when the feature is off (default engine deps)', async () => {
     const f = renderRoom({ consent: true });
     await connect(f);
-    expect(screen.queryByRole('button', { name: 'Conversation assistance' })).toBeNull();
+    openSettings();
+    expect(screen.queryByRole('switch', { name: 'Assistance' })).toBeNull();
   });
 });
 
@@ -334,19 +338,22 @@ describe('Phase 6 privacy and processing UI', () => {
   it('privacy sheet shows where things run; On-device mode turns speech off, typing on; typed phrase is translated on this device', async () => {
     const f = renderRoom({ consent: true, deps: { processing: { network } } });
     await connectPriv(f);
-    fireEvent.click(screen.getByRole('button', { name: 'Privacy and processing' }));
-    let sheet = screen.getByRole('dialog', { name: 'Privacy and processing' });
+    openSettings();
+    fireEvent.click(screen.getByRole('button', { name: /Where things run/ }));
+    let sheet = screen.getByRole('dialog', { name: 'Where things run' });
     expect(sheet.textContent).toContain('Speech recognition');
     expect(sheet.textContent).toMatch(/Talktual offline phrasebook/);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     await act(async () => {
-      fireEvent.click(screen.getByRole('radio', { name: 'On-device only' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'On-device' }));
       await settle();
     });
-    sheet = screen.getByRole('dialog', { name: 'Privacy and processing' });
+    fireEvent.click(screen.getByRole('button', { name: /Where things run/ }));
+    sheet = screen.getByRole('dialog', { name: 'Where things run' });
     expect(sheet.textContent).toMatch(/not available on this device in On-device mode/);
     expect(sheet.textContent).toMatch(/No recognition, translation or voice service receives anything/);
-    fireEvent.click(screen.getByRole('button', { name: 'Close privacy' }));
-    expect(screen.getByRole('status', { name: 'Processing status' }).textContent).toContain('On-device only');
+    closeSettings();
+    expect(screen.getByTestId('call-meta').textContent).toContain('On-device only');
     const box = screen.getByRole('textbox', { name: 'Type a message' });
     await act(async () => {
       fireEvent.change(box, { target: { value: 'where is the train station' } });
@@ -355,15 +362,16 @@ describe('Phase 6 privacy and processing UI', () => {
     });
     expect(f.translate).not.toHaveBeenCalled();
     expect(f.call.segments().at(-1)).toMatchObject({ translated: '¿Dónde está la estación de tren?', priv: 'device' });
-    fireEvent.click(screen.getByRole('button', { name: 'Show transcript' }));
-    expect(screen.getByRole('dialog', { name: 'Transcript' }).textContent).toMatch(/Typed · Translated on this device/);
+    expect(feed().textContent).toMatch(/Typed · Translated on this device/);
   });
 
   it('hidden when the feature is off', async () => {
     const f = renderRoom({ consent: true });
     await connect(f);
-    expect(screen.queryByRole('button', { name: 'Privacy and processing' })).toBeNull();
     expect(screen.queryByRole('textbox', { name: 'Type a message' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Type' })).toBeNull();
+    openSettings();
+    expect(screen.queryByRole('radiogroup', { name: 'Processing mode' })).toBeNull();
   });
 });
 
@@ -371,21 +379,25 @@ describe('VoiceMirror controls (Phase 3)', () => {
   it('hidden when the feature is off (default build)', async () => {
     const f = renderRoom({ consent: true });
     await connect(f);
-    expect(screen.queryByRole('button', { name: /voice match/i })).toBeNull();
+    openSettings();
+    expect(screen.queryByRole('switch', { name: 'Voice match' })).toBeNull();
   });
 
   it('flag on: toggle opens the VoiceMirror disclosure; accepting turns it on; toggling again turns it off', async () => {
     const { FakeVoiceTap } = await import('../test/engineFakes');
     const f = renderRoom({ consent: true, deps: { voiceTap: new FakeVoiceTap() } });
     await connect(f);
-    fireEvent.click(screen.getByRole('button', { name: 'Voice match: off' }));
+    openSettings();
+    const toggle = () => screen.getByRole('switch', { name: 'Voice match' });
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(toggle());
     const dialog = await screen.findByRole('dialog', { name: /share your voice style/i });
     expect(dialog.textContent).toMatch(/does not copy or clone your voice/);
     expect(dialog.textContent).toMatch(/Nothing is stored/);
     fireEvent.click(screen.getByRole('button', { name: 'Share voice style' }));
-    expect(screen.getByRole('button', { name: 'Voice match: on' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Voice match: on' }));
-    expect(screen.getByRole('button', { name: 'Voice match: off' })).toBeTruthy();
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(toggle());
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
   });
 
   it('shows when the other person’s voice style is applied', async () => {
@@ -393,8 +405,8 @@ describe('VoiceMirror controls (Phase 3)', () => {
     const f = renderRoom({ consent: true, deps: { voiceTap: new FakeVoiceTap() } });
     await connect(f);
     await act(async () => f.call.receive({ t: 'voice', descriptor: { v: 1, pitchStep: 20, pitchRange: 'normal', tempoPct: 100 } }));
-    expect(screen.getByText('Their voice style matched')).toBeTruthy();
+    expect(screen.getByTestId('call-meta').textContent).toContain('Voice matched');
     await act(async () => f.call.receive({ t: 'voice', revoked: true }));
-    expect(screen.queryByText('Their voice style matched')).toBeNull();
+    expect(screen.getByTestId('call-meta').textContent).not.toContain('Voice matched');
   });
 });

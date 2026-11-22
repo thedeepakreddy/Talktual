@@ -217,14 +217,11 @@ export async function pairPeers(browser, web, initOpts = {}) {
   const guest = await mk('es-ES', initOpts.guest || {});
   await host.page.goto(initOpts.debug ? `${web}/?debug=1` : web);
   await host.page.getByLabel('Your name').fill('Ana');
-  await host.page.getByRole('button', { name: /start a channel/i }).click();
-  await host.page.waitForFunction(
-    () => document.querySelectorAll('span.tnum').length === 6 && !document.body.innerText.includes('······')
-  );
-  const code = (await host.page.locator('span.tnum').allTextContents()).join('');
+  await host.page.getByRole('button', { name: /^start a call$/i }).click();
+  const code = await readCallCode(host.page);
+  // Invite link: the guest lands on Join with the code filled in.
   await guest.page.goto(`${web}/?join=${code}`);
   await guest.page.getByLabel('Your name').fill('Luis');
-  await guest.page.getByRole('button', { name: /join a channel/i }).click();
   await guest.page.getByRole('button', { name: /^join$/i }).click();
   await Promise.all([
     host.page.getByRole('button', { name: 'Push to talk' }).waitFor({ timeout: 15000 }),
@@ -232,4 +229,39 @@ export async function pairPeers(browser, web, initOpts = {}) {
   ]);
   await host.page.getByText('Español').first().waitFor({ timeout: 5000 });
   return { host, guest, code };
+}
+
+/** The 6-character code on the "Invite someone" screen, once the lobby has issued it. */
+export async function readCallCode(page) {
+  const el = page.locator('[data-call-code]');
+  await page.waitForFunction(() => /^[A-Z0-9]{6}$/.test(document.querySelector('[data-call-code]')?.textContent?.trim() ?? ''));
+  return (await el.textContent()).trim();
+}
+
+/** Opens the single "Call settings" sheet and returns it. */
+export async function openSettings(page) {
+  await page.getByRole('button', { name: 'Call settings' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Call settings' });
+  await sheet.waitFor();
+  return sheet;
+}
+
+export async function closeSettings(page) {
+  await page.getByRole('button', { name: 'Close settings' }).click();
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+}
+
+/** Text of the conversation (the feed replaces the old transcript sheet). */
+export async function feedText(page) {
+  return page.getByRole('log', { name: 'Conversation' }).innerText();
+}
+
+/** "Direct" or "Relayed", read from Call settings → This call. */
+export async function readTransport(page) {
+  const sheet = await openSettings(page);
+  const row = sheet.getByText(/^(Direct|Relayed)$/).first();
+  await row.waitFor();
+  const v = await row.textContent();
+  await closeSettings(page);
+  return v;
 }
