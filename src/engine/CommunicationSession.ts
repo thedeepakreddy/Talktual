@@ -751,10 +751,10 @@ export class CommunicationSession {
         this.toPhase('ended', 'expired');
         break;
       case 'session-full':
-        this.fail('session-full', 'That channel is already full.');
+        this.fail('session-full', 'That call already has two people.');
         break;
       case 'invalid-session':
-        this.fail('session-invalid', 'That channel code isn’t valid.');
+        this.fail('session-invalid', 'That call code isn’t valid.');
         break;
       case 'resume-failed':
         this.emit({ type: 'recovery', kind: 'gave-up' });
@@ -762,7 +762,7 @@ export class CommunicationSession {
         break;
       case 'disconnected':
         this.emit({ type: 'recovery', kind: 'gave-up' });
-        this.fail('connection-lost', 'Disconnected. Leave and start a new channel to continue.');
+        this.fail('connection-lost', 'Disconnected. End the call and start a new one to continue.');
         break;
       case 'error':
         this.fail('server-error', 'Couldn’t reach the server.');

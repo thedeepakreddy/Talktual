@@ -82,7 +82,7 @@ export function StartCall({ language, onBack, onJoined }: StartCallProps) {
   const share = async () => {
     if (!navigator.share) return copy('link');
     try {
-      await navigator.share({ title: 'Talktual', text: `Join my channel: ${roomCode}`, url: joinUrl });
+      await navigator.share({ title: 'Talktual', text: `Join my Talktual call: ${roomCode}`, url: joinUrl });
     } catch {
       /* dismissed */
     }

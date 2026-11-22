@@ -22,7 +22,7 @@ describe('App entry flows', () => {
     expect(screen.getByLabelText('Your name')).toBeTruthy();
     expect(screen.getByRole('button', { name: /You speak and hear/ })).toBeTruthy();
     // No code entry needed on this path.
-    expect(screen.queryByLabelText('Channel code')).toBeNull();
+    expect(screen.queryByLabelText('Call code')).toBeNull();
   });
 
   it('invite join without a name shows an inline error instead of a dead button (F11)', () => {
@@ -48,7 +48,7 @@ describe('App entry flows', () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Ana' } });
     fireEvent.click(screen.getByRole('button', { name: 'Join with a code' }));
-    expect(screen.getByLabelText('Channel code')).toBeTruthy();
+    expect(screen.getByLabelText('Call code')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByRole('heading', { name: 'Talk across languages' })).toBeTruthy();
   });

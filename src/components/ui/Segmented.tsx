@@ -41,8 +41,8 @@ export function Segmented<T extends string>({ label, options, value, onChange }:
             disabled={o.disabled}
             onClick={() => onChange(o.value)}
             className={cn(
-              'h-10 flex-1 rounded-sm px-2 text-label font-semibold transition-colors duration-150 disabled:opacity-40',
-              selected ? 'bg-raised text-fg shadow-[0_1px_2px_rgb(0_0_0/0.25)]' : 'text-fg-muted hover:text-fg'
+              'h-11 flex-1 rounded-sm px-2 text-label font-semibold transition-colors duration-150 disabled:opacity-40',
+              selected ? 'bg-selected text-fg shadow-[0_1px_2px_rgb(0_0_0/0.25)]' : 'text-fg-muted hover:text-fg'
             )}
           >
             {o.label}

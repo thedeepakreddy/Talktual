@@ -70,7 +70,7 @@ describe('JoinCall', () => {
     fireEvent.click(joinButton());
     act(() => FakeWebSocket.instances[0].open());
     act(() => FakeWebSocket.instances[0].receive({ type: 'error', code: 'session_full' }));
-    expect(screen.getByRole('alert').textContent).toMatch(/already full/i);
+    expect(screen.getByRole('alert').textContent).toMatch(/already has two people/i);
 
     fireEvent.click(joinButton());
     act(() => FakeWebSocket.instances[1].open());
@@ -88,7 +88,7 @@ describe('JoinCall', () => {
 
   it('the code input is labelled for assistive tech (not aria-hidden) and normalizes input', () => {
     renderJoin('');
-    const input = screen.getByLabelText('Channel code') as HTMLInputElement;
+    const input = screen.getByLabelText('Call code') as HTMLInputElement;
     expect(input.getAttribute('aria-hidden')).toBeNull();
     fireEvent.change(input, { target: { value: 'ab-1' } });
     expect(input.value).toBe('AB1');
@@ -96,6 +96,6 @@ describe('JoinCall', () => {
 
   it('sanitizes a junk ?join= value', () => {
     renderJoin('<img src=x>');
-    expect((screen.getByLabelText('Channel code') as HTMLInputElement).value).toBe('IMGSRC');
+    expect((screen.getByLabelText('Call code') as HTMLInputElement).value).toBe('IMGSRC');
   });
 });

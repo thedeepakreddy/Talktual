@@ -12,7 +12,7 @@ import { Banner, Button, IconButton } from './ui';
 import { ConversationFeed } from './call/ConversationFeed';
 import { TalkDock } from './call/TalkDock';
 import { SettingsSheet } from './call/SettingsSheet';
-import { connectionLabel, deriveStatus } from './call/status';
+import { deriveStatus, headerState } from './call/status';
 
 interface CallRoomProps {
   roomCode: string;
@@ -92,7 +92,8 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
   }, [session]);
 
   useEffect(() => {
-    const isTypingTarget = (el: EventTarget | null) => el instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName) && el.getAttribute('aria-label') !== 'Push to talk';
+    const isTypingTarget = (el: EventTarget | null) =>
+      el instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName) && el.getAttribute('aria-label') !== 'Push to talk';
     const sheetOpen = () => document.querySelector('[role="dialog"]') !== null;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat || isTypingTarget(e.target) || sheetOpen()) return;
@@ -126,153 +127,178 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
   const dot = connected ? 'bg-success' : phase === 'failed' || phase === 'ended' ? 'bg-danger' : 'bg-accent pulse-dot';
 
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-[760px] flex-col">
-      {/* ---- Header: who, connection, settings, end ---- */}
-      <header className="safe-t flex min-h-16 items-center gap-2 border-b border-line px-4 sm:px-6">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-heading font-semibold">{peerName ?? (connected ? 'Connected' : 'Waiting for them')}</p>
-          <p className="flex items-center gap-1.5 text-label text-fg-muted" data-testid="call-meta">
-            <span className={cn('h-2 w-2 shrink-0 rounded-full', dot)} aria-hidden="true" />
-            <span className="truncate">
-              {connected
-                ? [`${language.native} ⇄ ${peerLanguage?.native ?? '…'}`, mode === 'local-only' ? 'On-device only' : mode === 'hybrid' ? 'Hybrid' : null, s?.voice.peerActive ? 'Voice matched' : null, mmss].filter(Boolean).join(' · ')
-                : connectionLabel(s, peerLabel)}
-            </span>
-          </p>
-        </div>
-        <IconButton label="Call settings" onClick={() => setSettingsOpen(true)}>
-          <SlidersHorizontal className="h-5 w-5" />
-        </IconButton>
-        <Button variant="danger" size="sm" onClick={leave} aria-label="End call" icon={<PhoneOff className="h-4 w-4" />}>
-          End
-        </Button>
-      </header>
-
-      {/* ---- Persistent hands-free indicator (privacy: always visible while on) + one banner ---- */}
-      {(continuous || status.banner) && (
-        <div className="space-y-2 px-4 pt-3 sm:px-6">
-          {continuous && (
-            <Banner tone="info" action={<button className="text-label font-semibold text-accent-text" onClick={() => session?.setListeningMode('push-to-talk')}>Stop</button>}>
-              {s?.capturing ? 'Hands-free: listening continuously' : 'Hands-free on (paused)'}
-            </Banner>
-          )}
-          {status.banner && (
-            <Banner
-              tone={status.banner.tone}
-              action={
-                status.banner.action === 'leave' ? (
-                  <button className="text-label font-semibold text-danger" onClick={leave}>
-                    Leave
-                  </button>
-                ) : status.banner.action === 'type' && !typing ? (
-                  <button className="text-label font-semibold text-accent-text" onClick={() => setTyping(true)}>
-                    Type
-                  </button>
-                ) : undefined
-              }
-            >
-              {status.banner.text}
-            </Banner>
-          )}
-        </div>
-      )}
-
-      {/* ---- The conversation ---- */}
-      <ConversationFeed snapshot={s} peerName={peerLabel} peerLanguage={peerLanguage?.native ?? null} />
-
-      {/* ---- Phase 5 suggestion: one at a time, dismissible, never acts on its own ---- */}
-      {suggestion && (
-        <div role="note" aria-label="Suggestion" className="mx-4 mb-2 flex items-start gap-2 rounded-md bg-surface px-3.5 py-2.5 sm:mx-6">
-          <p className="flex-1 text-label text-fg-muted">{suggestion.text}</p>
-          <button onClick={() => session?.dismissSuggestion(suggestion.id)} aria-label="Dismiss suggestion" className="-m-1 rounded-sm p-1 text-fg-subtle hover:text-fg">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* ---- Typed input (always offered when speech recognition is unavailable) ---- */}
-      {showComposer && (
-        <form
-          className="flex gap-2 px-4 pb-1 sm:px-6"
-          onSubmit={(e) => {
-            e.preventDefault();
-            session?.sendText(draft);
-            setDraft('');
-            composerRef.current?.focus();
-          }}
-        >
-          <input
-            ref={composerRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            maxLength={500}
-            aria-label="Type a message"
-            placeholder="Type a message"
-            className="h-11 min-w-0 flex-1 rounded-md border border-line bg-surface px-3.5 text-body text-fg outline-none placeholder:text-fg-subtle focus:border-focus"
-          />
-          <Button type="submit" variant="primary" size="sm" className="h-11" disabled={!draft.trim()}>
-            Send
+    // On desktop, sheets are a 400 px side panel: the call column moves aside so
+    // the conversation stays readable while settings are open.
+    <div className={cn('transition-[padding] duration-200', (settingsOpen || pickerOpen) && 'lg:pr-[400px]')}>
+      <div className="mx-auto flex h-dvh w-full max-w-[760px] flex-col">
+        {/* ---- Header: who, connection, settings, end ---- */}
+        <header className="safe-t flex min-h-16 items-center gap-2 border-b border-line px-4 sm:px-6">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-heading font-semibold">{peerName ?? (connected ? 'Connected' : 'Waiting for them')}</p>
+            <p className="flex items-center gap-1.5 text-label text-fg-muted" data-testid="call-meta">
+              <span className={cn('h-2 w-2 shrink-0 rounded-full', dot)} aria-hidden="true" />
+              <span className="truncate">
+                {connected
+                  ? [
+                      `${language.native} ⇄ ${peerLanguage?.native ?? '…'}`,
+                      mode === 'local-only' ? 'On-device only' : mode === 'hybrid' ? 'Hybrid' : null,
+                      s?.voice.peerActive ? 'Voice matched' : null,
+                      mmss,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  : headerState(s, peerLabel)}
+              </span>
+            </p>
+          </div>
+          <IconButton label="Call settings" onClick={() => setSettingsOpen(true)}>
+            <SlidersHorizontal className="h-5 w-5" />
+          </IconButton>
+          <Button variant="danger" size="sm" onClick={leave} aria-label="End call" icon={<PhoneOff className="h-4 w-4" />}>
+            End
           </Button>
-        </form>
-      )}
+        </header>
 
-      <TalkDock
-        hint={status.hint}
-        tone={status.tone}
-        canPress={canPress && !continuous}
-        holding={Boolean(s?.holding)}
-        continuous={continuous}
-        capturing={Boolean(s?.capturing)}
-        hearingVoice={Boolean(s?.hearingVoice)}
-        playing={Boolean(s?.playing)}
-        micOff={micOff}
-        typing={typing}
-        showTypeToggle={Boolean(s?.processing.available) && connected && !speechUnavailable}
-        onPressStart={startTalking}
-        onPressEnd={stopTalking}
-        onStopHandsFree={() => session?.setListeningMode('push-to-talk')}
-        onToggleMic={() => session?.setMicEnabled(micOff)}
-        onToggleTyping={() => {
-          setTyping((v) => !v);
-          setTimeout(() => composerRef.current?.focus(), 30);
-        }}
-      />
+        {/* ---- Persistent hands-free indicator (privacy: always visible while on) + one banner ---- */}
+        {(continuous || status.banner) && (
+          <div className="space-y-2 px-4 pt-3 sm:px-6">
+            {continuous && (
+              <Banner
+                tone="info"
+                action={
+                  <button
+                    className="-my-3 -mr-2 min-h-11 px-2 text-label font-semibold text-accent-text"
+                    onClick={() => session?.setListeningMode('push-to-talk')}
+                  >
+                    Stop
+                  </button>
+                }
+              >
+                {s?.capturing ? 'Hands-free: listening continuously' : 'Hands-free on (paused)'}
+              </Banner>
+            )}
+            {status.banner && (
+              <Banner
+                tone={status.banner.tone}
+                action={
+                  status.banner.action === 'leave' ? (
+                    <button className="-my-3 -mr-2 min-h-11 px-2 text-label font-semibold text-danger" onClick={leave}>
+                      Leave
+                    </button>
+                  ) : status.banner.action === 'type' && !typing ? (
+                    <button className="-my-3 -mr-2 min-h-11 px-2 text-label font-semibold text-accent-text" onClick={() => setTyping(true)}>
+                      Type
+                    </button>
+                  ) : undefined
+                }
+              >
+                {status.banner.text}
+              </Banner>
+            )}
+          </div>
+        )}
 
-      <SettingsSheet
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        session={session}
-        snapshot={s}
-        roomCode={roomCode}
-        language={language}
-        onChangeLanguage={() => {
-          setSettingsOpen(false);
-          setPickerOpen(true);
-        }}
-        onShowDisclosure={() => {
-          setSettingsOpen(false);
-          session?.showDisclosure();
-        }}
-      />
+        {/* ---- The conversation ---- */}
+        <ConversationFeed snapshot={s} peerName={peerLabel} peerLanguage={peerLanguage?.native ?? null} />
 
-      <LanguagePicker open={pickerOpen} selected={language} title="You speak" onSelect={onLanguageChange} onClose={() => setPickerOpen(false)} />
+        {/* ---- Phase 5 suggestion: one at a time, dismissible, never acts on its own ---- */}
+        {suggestion && (
+          <div role="note" aria-label="Suggestion" className="mx-4 mb-2 flex items-start gap-2 rounded-md bg-surface px-3.5 py-2.5 sm:mx-6">
+            <p className="flex-1 text-label text-fg-muted">{suggestion.text}</p>
+            <button
+              onClick={() => session?.dismissSuggestion(suggestion.id)}
+              aria-label="Dismiss suggestion"
+              className="-my-3 -mr-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-sm text-fg-subtle hover:text-fg"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
-      <ConsentSheet
-        open={Boolean(s?.voice.prompt)}
-        disclosure={VOICEMIRROR_DISCLOSURE}
-        granted={false}
-        allowLabel="Share voice style"
-        onAllow={() => session?.acceptVoiceMirror()}
-        onDecline={() => session?.declineVoiceMirror()}
-      />
+        {/* ---- Typed input (always offered when speech recognition is unavailable) ---- */}
+        {showComposer && (
+          <form
+            className="flex gap-2 px-4 pb-1 sm:px-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              session?.sendText(draft);
+              setDraft('');
+              composerRef.current?.focus();
+            }}
+          >
+            <input
+              ref={composerRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              maxLength={500}
+              aria-label="Type a message"
+              placeholder="Type a message"
+              className="h-11 min-w-0 flex-1 rounded-md border border-line bg-surface px-3.5 text-body text-fg outline-none placeholder:text-fg-subtle focus:border-focus"
+            />
+            <Button type="submit" variant="primary" size="sm" className="h-11" disabled={!draft.trim()}>
+              Send
+            </Button>
+          </form>
+        )}
 
-      <ConsentSheet
-        open={Boolean(s?.consent.prompt)}
-        disclosure={s?.consent.disclosure ?? null}
-        granted={Boolean(s?.consent.granted)}
-        onAllow={() => session?.grantConsent()}
-        onDecline={() => session?.declineConsent()}
-      />
+        <TalkDock
+          hint={status.hint}
+          tone={status.tone}
+          canPress={canPress && !continuous}
+          holding={Boolean(s?.holding)}
+          continuous={continuous}
+          capturing={Boolean(s?.capturing)}
+          hearingVoice={Boolean(s?.hearingVoice)}
+          playing={Boolean(s?.playing)}
+          micOff={micOff}
+          typing={typing}
+          showTypeToggle={Boolean(s?.processing.available) && connected && !speechUnavailable}
+          onPressStart={startTalking}
+          onPressEnd={stopTalking}
+          onStopHandsFree={() => session?.setListeningMode('push-to-talk')}
+          onToggleMic={() => session?.setMicEnabled(micOff)}
+          onToggleTyping={() => {
+            setTyping((v) => !v);
+            setTimeout(() => composerRef.current?.focus(), 30);
+          }}
+        />
+
+        <SettingsSheet
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          session={session}
+          snapshot={s}
+          roomCode={roomCode}
+          language={language}
+          onChangeLanguage={() => {
+            setSettingsOpen(false);
+            setPickerOpen(true);
+          }}
+          onShowDisclosure={() => {
+            setSettingsOpen(false);
+            session?.showDisclosure();
+          }}
+        />
+
+        <LanguagePicker open={pickerOpen} selected={language} title="You speak" onSelect={onLanguageChange} onClose={() => setPickerOpen(false)} />
+
+        <ConsentSheet
+          open={Boolean(s?.voice.prompt)}
+          disclosure={VOICEMIRROR_DISCLOSURE}
+          granted={false}
+          allowLabel="Share voice style"
+          onAllow={() => session?.acceptVoiceMirror()}
+          onDecline={() => session?.declineVoiceMirror()}
+        />
+
+        <ConsentSheet
+          open={Boolean(s?.consent.prompt)}
+          disclosure={s?.consent.disclosure ?? null}
+          granted={Boolean(s?.consent.granted)}
+          onAllow={() => session?.grantConsent()}
+          onDecline={() => session?.declineConsent()}
+        />
+      </div>
     </div>
   );
 }

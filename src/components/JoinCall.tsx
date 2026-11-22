@@ -119,7 +119,7 @@ export function JoinCall({
     };
 
     timeoutRef.current = setTimeout(
-      () => fail('No one is waiting on that channel. Check the code and try again.'),
+      () => fail('No one is waiting with that code. Check it and try again.'),
       JOIN_TIMEOUT_MS
     );
 
@@ -143,7 +143,7 @@ export function JoinCall({
       } else if (msg?.type === 'error') {
         fail(
           msg.code === 'session_full'
-            ? 'That channel is already full.'
+            ? 'That call already has two people.'
             : 'That code isn’t valid. Check it and try again.'
         );
       }
@@ -239,7 +239,7 @@ export function JoinCall({
                     autoCorrect="off"
                     spellCheck={false}
                     maxLength={CODE_LENGTH}
-                    aria-label="Channel code"
+                    aria-label="Call code"
                     className="absolute inset-0 h-full w-full cursor-text opacity-0"
                   />
                 </div>
