@@ -1,0 +1,913 @@
+{
+ "generatedAt": "2026-11-22T00:21:49.017Z",
+ "node": "v22.23.5",
+ "threshold": 0.5,
+ "summary": {
+  "dev": {
+   "off": {
+    "cases": 43,
+    "senses": {
+     "total": 11,
+     "correct": 0,
+     "flaggedSafe": 0,
+     "overconfident": 0,
+     "missed": 11,
+     "expectAmbiguous": 3,
+     "ambiguousSurfaced": 0
+    },
+    "references": {
+     "total": 7,
+     "correct": 4,
+     "unresolvedSafe": 0,
+     "wrongGuess": 0,
+     "missed": 3,
+     "expectNull": 4,
+     "nullRespected": 4
+    },
+    "entities": {
+     "total": 5,
+     "preserved": 0
+    },
+    "idioms": {
+     "total": 3,
+     "found": 0,
+     "falsePositives": 0
+    },
+    "signals": {
+     "clarification-request": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": null,
+      "recall": 0
+     },
+     "confirmation": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "precision": null,
+      "recall": 0
+     },
+     "correction": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "precision": null,
+      "recall": 0
+     },
+     "misunderstanding": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": null,
+      "recall": 0
+     },
+     "offer": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": null,
+      "recall": 0
+     },
+     "question": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 9,
+      "precision": null,
+      "recall": 0
+     },
+     "refusal": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": null,
+      "recall": 0
+     },
+     "request": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 7,
+      "precision": null,
+      "recall": 0
+     },
+     "topic-change": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": null,
+      "recall": 0
+     },
+     "urgency": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": null,
+      "recall": 0
+     }
+    },
+    "calibration": {},
+    "neutral": {
+     "cases": 4,
+     "withNotes": 0
+    },
+    "sensitive": {
+     "strings": 2,
+     "leaked": 0
+    },
+    "meaning": {
+     "targets": 43,
+     "mtInputChanged": 0,
+     "addedWords": 0,
+     "originalAltered": 0
+    },
+    "failures": [],
+    "ms": {
+     "n": 126,
+     "p50": 0.001,
+     "p95": 0.005,
+     "max": 0.205
+    },
+    "signalsMicro": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 28,
+     "precision": null,
+     "recall": 0
+    }
+   },
+   "nocontext": {
+    "cases": 43,
+    "senses": {
+     "total": 11,
+     "correct": 10,
+     "flaggedSafe": 1,
+     "overconfident": 0,
+     "missed": 0,
+     "expectAmbiguous": 3,
+     "ambiguousSurfaced": 3
+    },
+    "references": {
+     "total": 7,
+     "correct": 4,
+     "unresolvedSafe": 3,
+     "wrongGuess": 0,
+     "missed": 0,
+     "expectNull": 4,
+     "nullRespected": 4
+    },
+    "entities": {
+     "total": 5,
+     "preserved": 5
+    },
+    "idioms": {
+     "total": 3,
+     "found": 3,
+     "falsePositives": 0
+    },
+    "signals": {
+     "clarification-request": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "confirmation": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "correction": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "misunderstanding": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "offer": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "question": {
+      "tp": 9,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "refusal": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": null,
+      "recall": 0
+     },
+     "request": {
+      "tp": 7,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "topic-change": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "urgency": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     }
+    },
+    "calibration": {
+     "0.85-1.0": {
+      "n": 12,
+      "correct": 12
+     },
+     "0.70-0.84": {
+      "n": 10,
+      "correct": 10
+     },
+     "0.50-0.69": {
+      "n": 5,
+      "correct": 5
+     }
+    },
+    "neutral": {
+     "cases": 4,
+     "withNotes": 0
+    },
+    "sensitive": {
+     "strings": 2,
+     "leaked": 0
+    },
+    "meaning": {
+     "targets": 43,
+     "mtInputChanged": 10,
+     "addedWords": 0,
+     "originalAltered": 0
+    },
+    "failures": [],
+    "ms": {
+     "n": 126,
+     "p50": 0.108,
+     "p95": 1.4,
+     "max": 23.234
+    },
+    "signalsMicro": {
+     "tp": 27,
+     "fp": 0,
+     "fn": 1,
+     "precision": 1,
+     "recall": 0.96
+    }
+   },
+   "full": {
+    "cases": 43,
+    "senses": {
+     "total": 11,
+     "correct": 11,
+     "flaggedSafe": 0,
+     "overconfident": 0,
+     "missed": 0,
+     "expectAmbiguous": 3,
+     "ambiguousSurfaced": 3
+    },
+    "references": {
+     "total": 7,
+     "correct": 7,
+     "unresolvedSafe": 0,
+     "wrongGuess": 0,
+     "missed": 0,
+     "expectNull": 4,
+     "nullRespected": 4
+    },
+    "entities": {
+     "total": 5,
+     "preserved": 5
+    },
+    "idioms": {
+     "total": 3,
+     "found": 3,
+     "falsePositives": 0
+    },
+    "signals": {
+     "clarification-request": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "confirmation": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "correction": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "misunderstanding": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "offer": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "question": {
+      "tp": 9,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "refusal": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "request": {
+      "tp": 7,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "topic-change": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "urgency": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     }
+    },
+    "calibration": {
+     "0.85-1.0": {
+      "n": 12,
+      "correct": 12
+     },
+     "0.70-0.84": {
+      "n": 11,
+      "correct": 11
+     },
+     "0.50-0.69": {
+      "n": 5,
+      "correct": 5
+     }
+    },
+    "neutral": {
+     "cases": 4,
+     "withNotes": 0
+    },
+    "sensitive": {
+     "strings": 2,
+     "leaked": 0
+    },
+    "meaning": {
+     "targets": 43,
+     "mtInputChanged": 10,
+     "addedWords": 0,
+     "originalAltered": 0
+    },
+    "failures": [],
+    "ms": {
+     "n": 126,
+     "p50": 0.093,
+     "p95": 0.193,
+     "max": 1.999
+    },
+    "signalsMicro": {
+     "tp": 28,
+     "fp": 0,
+     "fn": 0,
+     "precision": 1,
+     "recall": 1
+    }
+   }
+  },
+  "independent": {
+   "off": {
+    "cases": 59,
+    "senses": {
+     "total": 12,
+     "correct": 0,
+     "flaggedSafe": 0,
+     "overconfident": 0,
+     "missed": 12,
+     "expectAmbiguous": 4,
+     "ambiguousSurfaced": 0
+    },
+    "references": {
+     "total": 13,
+     "correct": 5,
+     "unresolvedSafe": 0,
+     "wrongGuess": 0,
+     "missed": 8,
+     "expectNull": 5,
+     "nullRespected": 5
+    },
+    "entities": {
+     "total": 13,
+     "preserved": 6
+    },
+    "idioms": {
+     "total": 6,
+     "found": 0,
+     "falsePositives": 0
+    },
+    "signals": {
+     "clarification-request": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "precision": null,
+      "recall": 0
+     },
+     "confirmation": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": null,
+      "recall": 0
+     },
+     "correction": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "precision": null,
+      "recall": 0
+     },
+     "misunderstanding": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "precision": null,
+      "recall": 0
+     },
+     "offer": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "precision": null,
+      "recall": 0
+     },
+     "question": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 12,
+      "precision": null,
+      "recall": 0
+     },
+     "refusal": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": null,
+      "recall": 0
+     },
+     "request": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 13,
+      "precision": null,
+      "recall": 0
+     },
+     "topic-change": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": null,
+      "recall": 0
+     },
+     "urgency": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "precision": null,
+      "recall": 0
+     }
+    },
+    "calibration": {},
+    "neutral": {
+     "cases": 5,
+     "withNotes": 0
+    },
+    "sensitive": {
+     "strings": 4,
+     "leaked": 0
+    },
+    "meaning": {
+     "targets": 59,
+     "mtInputChanged": 0,
+     "addedWords": 0,
+     "originalAltered": 0
+    },
+    "failures": [],
+    "ms": {
+     "n": 236,
+     "p50": 0.001,
+     "p95": 0.001,
+     "max": 0.027
+    },
+    "signalsMicro": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 46,
+     "precision": null,
+     "recall": 0
+    }
+   },
+   "nocontext": {
+    "cases": 59,
+    "senses": {
+     "total": 12,
+     "correct": 4,
+     "flaggedSafe": 5,
+     "overconfident": 0,
+     "missed": 3,
+     "expectAmbiguous": 4,
+     "ambiguousSurfaced": 4
+    },
+    "references": {
+     "total": 13,
+     "correct": 5,
+     "unresolvedSafe": 5,
+     "wrongGuess": 0,
+     "missed": 3,
+     "expectNull": 5,
+     "nullRespected": 5
+    },
+    "entities": {
+     "total": 13,
+     "preserved": 10
+    },
+    "idioms": {
+     "total": 6,
+     "found": 3,
+     "falsePositives": 0
+    },
+    "signals": {
+     "clarification-request": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1,
+      "recall": 0.5
+     },
+     "confirmation": {
+      "tp": 3,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.6,
+      "recall": 1
+     },
+     "correction": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1,
+      "recall": 0.2
+     },
+     "misunderstanding": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "offer": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "precision": 1,
+      "recall": 0.4
+     },
+     "question": {
+      "tp": 10,
+      "fp": 2,
+      "fn": 2,
+      "precision": 0.83,
+      "recall": 0.83
+     },
+     "refusal": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": null,
+      "recall": 0
+     },
+     "request": {
+      "tp": 6,
+      "fp": 2,
+      "fn": 7,
+      "precision": 0.75,
+      "recall": 0.46
+     },
+     "topic-change": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "urgency": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     }
+    },
+    "calibration": {
+     "0.85-1.0": {
+      "n": 16,
+      "correct": 14
+     },
+     "0.70-0.84": {
+      "n": 14,
+      "correct": 12
+     },
+     "0.50-0.69": {
+      "n": 4,
+      "correct": 2
+     }
+    },
+    "neutral": {
+     "cases": 5,
+     "withNotes": 0
+    },
+    "sensitive": {
+     "strings": 4,
+     "leaked": 0
+    },
+    "meaning": {
+     "targets": 59,
+     "mtInputChanged": 8,
+     "addedWords": 0,
+     "originalAltered": 0
+    },
+    "failures": [],
+    "ms": {
+     "n": 236,
+     "p50": 0.095,
+     "p95": 0.658,
+     "max": 1.274
+    },
+    "signalsMicro": {
+     "tp": 28,
+     "fp": 6,
+     "fn": 18,
+     "precision": 0.82,
+     "recall": 0.61
+    }
+   },
+   "full": {
+    "cases": 59,
+    "senses": {
+     "total": 12,
+     "correct": 5,
+     "flaggedSafe": 4,
+     "overconfident": 0,
+     "missed": 3,
+     "expectAmbiguous": 4,
+     "ambiguousSurfaced": 4
+    },
+    "references": {
+     "total": 13,
+     "correct": 7,
+     "unresolvedSafe": 3,
+     "wrongGuess": 0,
+     "missed": 3,
+     "expectNull": 5,
+     "nullRespected": 5
+    },
+    "entities": {
+     "total": 13,
+     "preserved": 10
+    },
+    "idioms": {
+     "total": 6,
+     "found": 3,
+     "falsePositives": 0
+    },
+    "signals": {
+     "clarification-request": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1,
+      "recall": 0.5
+     },
+     "confirmation": {
+      "tp": 3,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.6,
+      "recall": 1
+     },
+     "correction": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1,
+      "recall": 0.2
+     },
+     "misunderstanding": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "offer": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "precision": 1,
+      "recall": 0.4
+     },
+     "question": {
+      "tp": 10,
+      "fp": 2,
+      "fn": 2,
+      "precision": 0.83,
+      "recall": 0.83
+     },
+     "refusal": {
+      "tp": 1,
+      "fp": 4,
+      "fn": 0,
+      "precision": 0.2,
+      "recall": 1
+     },
+     "request": {
+      "tp": 6,
+      "fp": 2,
+      "fn": 7,
+      "precision": 0.75,
+      "recall": 0.46
+     },
+     "topic-change": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     },
+     "urgency": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+     }
+    },
+    "calibration": {
+     "0.85-1.0": {
+      "n": 16,
+      "correct": 14
+     },
+     "0.70-0.84": {
+      "n": 19,
+      "correct": 13
+     },
+     "0.50-0.69": {
+      "n": 4,
+      "correct": 2
+     }
+    },
+    "neutral": {
+     "cases": 5,
+     "withNotes": 0
+    },
+    "sensitive": {
+     "strings": 4,
+     "leaked": 0
+    },
+    "meaning": {
+     "targets": 59,
+     "mtInputChanged": 10,
+     "addedWords": 0,
+     "originalAltered": 0
+    },
+    "failures": [
+     "ind-002: signal question: missed",
+     "ind-002: signal confirmation: false positive",
+     "ind-005: ref there: unresolved, expected una farmacia",
+     "ind-005: signal confirmation: false positive",
+     "ind-007: ref la: not detected",
+     "ind-007: signal offer: missed",
+     "ind-007: signal refusal: false positive",
+     "ind-008: ref She: unresolved, expected Karen",
+     "ind-008: signal request: missed",
+     "ind-009: signal request: missed",
+     "ind-011: sense banco: left ambiguous, expected financial institution",
+     "ind-011: signal refusal: false positive",
+     "ind-013: sense carta: left ambiguous, expected menu",
+     "ind-015: sense change: left ambiguous, expected coins",
+     "ind-015: signal request: missed",
+     "ind-016: signal request: false positive",
+     "ind-017: sense ring: left ambiguous, expected jewelry",
+     "ind-017: ref he: unresolved, expected Mi hermano",
+     "ind-018: sense sobre: not detected",
+     "ind-018: signal request: missed",
+     "ind-019: entity Rose not preserved",
+     "ind-020: entity Bill not preserved",
+     "ind-024: signal request: missed",
+     "ind-026: ref it: not detected",
+     "ind-030: signal clarification-request: missed",
+     "ind-030: signal question: false positive",
+     "ind-035: signal question: missed",
+     "ind-037: signal correction: missed",
+     "ind-038: signal correction: missed",
+     "ind-038: signal request: false positive",
+     "ind-039: signal correction: missed",
+     "ind-041: signal offer: missed",
+     "ind-042: signal refusal: false positive",
+     "ind-043: idiom \"me tomó el pelo\" missed",
+     "ind-051: signal request: missed",
+     "ind-055: signal correction: missed",
+     "ind-055: signal refusal: false positive",
+     "ind-056: sense sick: not detected",
+     "ind-056: idiom \"killed it\" missed",
+     "ind-057: signal offer: missed",
+     "ind-058: sense bill: not detected",
+     "ind-058: entity Bill not preserved",
+     "ind-058: signal request: missed",
+     "ind-058: signal question: false positive",
+     "ind-059: ref it: not detected",
+     "ind-059: idiom \"dying to\" missed"
+    ],
+    "ms": {
+     "n": 236,
+     "p50": 0.087,
+     "p95": 0.149,
+     "max": 0.614
+    },
+    "signalsMicro": {
+     "tp": 29,
+     "fp": 10,
+     "fn": 17,
+     "precision": 0.74,
+     "recall": 0.63
+    }
+   }
+  }
+ },
+ "stress": {
+  "turns": 600,
+  "p50ms": 0.122,
+  "p95ms": 0.196,
+  "maxms": 0.652,
+  "observedMax": {
+   "turns": 8,
+   "chars": 413,
+   "entities": 8
+  },
+  "budget": {
+   "turns": 8,
+   "chars": 1600,
+   "entities": 48
+  },
+  "storedPhone": false
+ }
+}
