@@ -15,3 +15,5 @@ e2e/.dist-conv/
 e2e/.dist-conv-off/
 e2e/.dist-aci/
 e2e/.dist-aci-off/
+e2e/.dist-proc/
+e2e/.dist-proc-off/

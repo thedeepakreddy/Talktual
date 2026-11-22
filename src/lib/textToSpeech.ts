@@ -441,7 +441,12 @@ function browserSpeak(text: string, lang: string, state: PlaybackState, hints?: 
 
     const pool = window.speechSynthesis.getVoices().filter((v) => !localOnly || v.localService);
     const voice = pool.find((v) => v.lang === lang) ?? pool.find((v) => v.lang.startsWith(lang.split("-")[0]));
-    if (voice) utterance.voice = voice;
+    try {
+      if (voice) utterance.voice = voice;
+    } catch {
+      // Not a native SpeechSynthesisVoice (e.g. a polyfill): fall back to lang selection.
+      if (localOnly) return finish(false);
+    }
 
     utterance.onend = () => finish(true);
     utterance.onerror = () => finish(false);
