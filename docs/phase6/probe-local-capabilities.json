@@ -1,0 +1,36 @@
+{
+ "at": "2026-11-22T01:08:40.751Z",
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpus": 4,
+  "cpuModel": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "memGB": 16
+ },
+ "chromium": "157.0.8103.78",
+ "results": {
+  "apis": {
+   "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.8103.78 Safari/537.36",
+   "secure": true,
+   "webSpeech": true,
+   "srAvailableFn": true,
+   "srInstallFn": true,
+   "translatorApi": "function",
+   "languageDetectorApi": "function",
+   "webgpuApi": true,
+   "wasm": true,
+   "cores": 4,
+   "deviceMemoryGB": 16,
+   "batteryApi": true
+  },
+  "speechCloudAvailable": "available",
+  "speechOnDeviceAvailable": "RENDERER-CRASH",
+  "translatorEnEs": "no-answer-3s",
+  "languageDetector": "unavailable",
+  "voices": {
+   "total": 0,
+   "localService": 0
+  },
+  "webgpuAdapter": null
+ }
+}
