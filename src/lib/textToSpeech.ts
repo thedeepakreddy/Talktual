@@ -233,6 +233,23 @@ function safeHints(resolve?: () => RenderHints | undefined): RenderHints | undef
   }
 }
 
+/** How long to wait for a suspended AudioContext to resume before using the browser voice. */
+export const AUDIO_RESUME_WAIT_MS = 250;
+
+/** True if the shared AudioContext is (or within `waitMs` becomes) running. Never throws. */
+async function audioContextRunning(waitMs: number): Promise<boolean> {
+  let ac: AudioContext;
+  try {
+    ac = audioContext();
+  } catch {
+    return false;
+  }
+  if (ac.state === "running") return true;
+  // resume() without a user gesture can stay pending forever: bound the wait.
+  await Promise.race([ac.resume().catch(() => {}), new Promise((r) => setTimeout(r, waitMs))]);
+  return (ac.state as AudioContextState) === "running";
+}
+
 function safeRoute(resolve?: () => TtsRoute): TtsRoute {
   try {
     return resolve?.() ?? "cloud-first";
@@ -267,6 +284,14 @@ async function playOne(
 
     const format = res.headers.get("X-Audio-Format") || "";
     if (format === "pcm") {
+      // Reliability fix: streamed PCM plays through the AudioContext. If the
+      // browser keeps it suspended (no user gesture yet, tab backgrounded, iOS
+      // interruption), scheduled audio is SILENT and its clock never advances.
+      // Don't play into it: fall back to the browser voice (catch below).
+      if (!(await audioContextRunning(AUDIO_RESUME_WAIT_MS))) {
+        res.body?.cancel().catch(() => {});
+        throw new Error("audio context not running");
+      }
       const rate = Number(res.headers.get("X-Sample-Rate")) || 24000;
       await playPcmStream(res, rate, state);
     } else {
@@ -338,10 +363,14 @@ async function playPcmStream(res: Response, sampleRate: number, state: PlaybackS
       source.buffer = buffer;
       source.connect(gain);
 
+      // A context that stopped running mid-stream would never advance its
+      // clock: stop scheduling (caller falls back to the browser voice).
+      if ((ac.state as AudioContextState) !== "running") throw new Error("audio context not running");
       // Backpressure: don't schedule more than PCM_MAX_AHEAD_S into the future.
       // The reader (and so the network stream) waits instead of buffering
       // the whole clip in audio nodes.
       while (!state.aborted && playhead - ac.currentTime > PCM_MAX_AHEAD_S) {
+        if ((ac.state as AudioContextState) !== "running") throw new Error("audio context not running");
         await new Promise((r) => setTimeout(r, Math.min(1000, (playhead - ac.currentTime - PCM_MAX_AHEAD_S) * 1000 + 50)));
       }
       if (state.aborted) break;
