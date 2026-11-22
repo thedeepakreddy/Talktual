@@ -5,7 +5,7 @@
 // Usage: npm run test:e2e
 
 import assert from 'node:assert/strict';
-import { loadChromium, startStack, pairPeers, talk, openSettings, closeSettings, feedText, readTransport } from './harness.mjs';
+import { loadChromium, startStack, pairPeers, talk, openSettings, closeSettings, feedText, readTransport, endCall } from './harness.mjs';
 
 const results = [];
 async function step(name, fn) {
@@ -152,7 +152,7 @@ try {
   });
 
   await step('host leaves → guest is told immediately and returned home', async () => {
-    await host.page.getByRole('button', { name: 'End call' }).click();
+    assert.equal(await endCall(host.page), true, 'a live call asks before ending');
     await host.page.getByRole('button', { name: /^start a call$/i }).waitFor();
     await guest.page.getByText(/left the call/i).first().waitFor({ timeout: 5000 });
     await guest.page.getByRole('button', { name: /^start a call$/i }).waitFor({ timeout: 10000 });

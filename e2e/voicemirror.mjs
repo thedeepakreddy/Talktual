@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { loadChromium, startStack, pairPeers, talk, root, openSettings, closeSettings } from './harness.mjs';
+import { loadChromium, startStack, pairPeers, talk, root, openSettings, closeSettings, endCall } from './harness.mjs';
 
 const results = [];
 async function step(name, fn) {
@@ -118,7 +118,7 @@ try {
   });
 
   await step('leave → server holds no sessions', async () => {
-    await host.page.getByRole('button', { name: 'End call' }).click();
+    await endCall(host.page);
     await new Promise((r) => setTimeout(r, 500));
     assert.equal(stack.api.sessions.size, 0);
   });

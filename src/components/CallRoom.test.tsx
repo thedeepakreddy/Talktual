@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, act, fireEvent, waitFor, within } from '@testing-library/react';
 import { findLanguage } from '../types';
 import { makeDeps, settle, FakeAsr } from '../test/engineFakes';
 import { CallRoom } from './CallRoom';
@@ -138,6 +138,15 @@ describe('CallRoom view over the engine', () => {
     const f = renderRoom({ consent: true });
     await connect(f);
     fireEvent.click(screen.getByRole('button', { name: 'End call' }));
+    // A live call asks first; "Keep talking" changes nothing.
+    const confirm = screen.getByRole('dialog', { name: 'End this call?' });
+    expect(confirm.textContent).toContain('Luis will be disconnected');
+    fireEvent.click(screen.getByRole('button', { name: 'Keep talking' }));
+    expect(f.onEndCall).not.toHaveBeenCalled();
+    expect(f.call.closed).toBe(0);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'End call' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'End this call?' })).getByRole('button', { name: 'End call' }));
     expect(f.onEndCall).toHaveBeenCalled();
     expect(f.call.closed).toBe(1);
     f.unmount();
@@ -160,6 +169,15 @@ describe('CallRoom view over the engine', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('once the call is over, End leaves without asking', async () => {
+    const f = renderRoom({ consent: true });
+    await connect(f);
+    await act(async () => f.call.status('peer-left'));
+    fireEvent.click(screen.getByRole('button', { name: 'End call' }));
+    expect(screen.queryByRole('dialog', { name: 'End this call?' })).toBeNull();
+    expect(f.onEndCall).toHaveBeenCalled();
   });
 
   it('reconnecting is shown, then cleared', async () => {
@@ -395,7 +413,7 @@ describe('VoiceMirror controls (Phase 3)', () => {
     expect(dialog.textContent).toMatch(/does not copy or clone your voice/);
     expect(dialog.textContent).toMatch(/Nothing is stored/);
     // Settings closed so the disclosure is the only dialog.
-    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(1));
     fireEvent.click(screen.getByRole('button', { name: 'Share voice style' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     openSettings();
