@@ -20,6 +20,12 @@ export const VOICEMIRROR_FLAG = import.meta.env.VITE_VOICEMIRROR === '1';
  */
 export const CONVERSATION_FLAG = !['0', 'off', 'false'].includes(String(import.meta.env.VITE_CONVERSATION_LAYER ?? '').toLowerCase());
 
+/**
+ * Phase 5 communication intelligence: ON by default (on-device rules, no extra
+ * provider calls). VITE_COMMUNICATION_INTELLIGENCE=0 rolls back to Phase 4.
+ */
+export const INTELLIGENCE_FLAG = !['0', 'off', 'false'].includes(String(import.meta.env.VITE_COMMUNICATION_INTELLIGENCE ?? '').toLowerCase());
+
 function browserStorage(): StorageLike | null {
   try {
     const s = window.localStorage;
@@ -46,6 +52,7 @@ export function createDefaultDeps(): SessionDeps {
     storage: browserStorage(),
     onUserGesture: () => void unlockAudio(),
     conversation: CONVERSATION_FLAG,
+    intelligence: INTELLIGENCE_FLAG,
     voiceTap: VOICEMIRROR_FLAG && Boolean(navigator.mediaDevices?.getUserMedia) ? createBrowserVoiceTap() : undefined,
   };
 }

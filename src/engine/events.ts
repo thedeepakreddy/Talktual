@@ -74,6 +74,15 @@ export interface SegmentRecord {
   repaired?: boolean;
   /** Arrived while the local user was talking; played afterwards (or dropped if too old). */
   overlapHeld?: boolean;
+  // --- Phase 5 communication intelligence (all optional, advisory) ---
+  /** Transcript notes (never spoken): ambiguity, references, idioms, corrections, assistance. */
+  notes?: Array<{ kind: string; text: string }>;
+  /** Conversational signals (category + confidence), ≥ 0.5 only. */
+  signals?: Array<{ category: string; confidence: number }>;
+  /** The translation was context-assisted (explained in notes). */
+  assisted?: boolean;
+  /** A later turn corrected this one (id of the correcting segment). */
+  correctedBy?: string;
   createdAt: number;
 }
 
@@ -129,6 +138,8 @@ export type PeerMessage =
       turn?: string;
       uncertain?: boolean;
       repaired?: boolean;
+      /** Phase 5 (sent only to 'aci1' peers): how the sender's translation was context-assisted. */
+      assist?: string[];
     }
   /** Phase 4: the sender opened/closed its speaking turn ("floor"). */
   | { v?: 1; t: 'floor'; turn: string; open: boolean }
@@ -181,7 +192,9 @@ export function isPeerMessage(value: unknown): value is PeerMessage {
         (m.rev === undefined || (Number.isInteger(m.rev) && (m.rev as number) >= 0 && (m.rev as number) < 1000)) &&
         (m.turn === undefined || isId(m.turn)) &&
         (m.uncertain === undefined || typeof m.uncertain === 'boolean') &&
-        (m.repaired === undefined || typeof m.repaired === 'boolean')
+        (m.repaired === undefined || typeof m.repaired === 'boolean') &&
+        (m.assist === undefined ||
+          (Array.isArray(m.assist) && m.assist.length <= 8 && m.assist.every((a) => typeof a === 'string' && /^(sense:[\p{L}'-]{1,30}:[a-z-]{1,20}|protect:\d{1,2})$/u.test(a))))
       );
     case 'voice':
       // Phase 3 VoiceMirror (additive; Phase 2 peers drop it as unknown).

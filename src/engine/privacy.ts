@@ -21,7 +21,14 @@ export interface Disclosure {
   points: string[];
 }
 
-export function disclosureFor(route: ProcessingRoute, translator: string | null): Disclosure {
+export interface DisclosureExtras {
+  /** Phase 4: draft translations can be sent before a phrase is complete. */
+  drafts?: boolean;
+  /** Phase 5: on-device conversation assistance with call-scoped context. */
+  intelligence?: boolean;
+}
+
+export function disclosureFor(route: ProcessingRoute, translator: string | null, extras: DisclosureExtras = {}): Disclosure {
   const translation =
     translator === 'gemini'
       ? 'Google Gemini'
@@ -41,6 +48,12 @@ export function disclosureFor(route: ProcessingRoute, translator: string | null)
       speech,
       `The text is translated by ${translation} and spoken to the other person.`,
       'Talktual doesn’t store your audio or transcripts. Push-to-talk is the default; hands-free listening is optional and always shown on screen.',
+      ...(extras.drafts
+        ? ['If you pause mid-sentence, a draft translation of what you’ve said so far may be sent and shown (not spoken) to the other person. You can turn drafts off during the call.']
+        : []),
+      ...(extras.intelligence
+        ? ['Conversation assistance runs on your device: it remembers names and topics from this call only, to keep translations consistent and add notes. It’s cleared when the call ends, and you can reset or turn it off at any time.']
+        : []),
     ],
   };
 }

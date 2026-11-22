@@ -11,6 +11,8 @@ interface ImportMetaEnv {
   readonly VITE_VOICEMIRROR?: string;
   /** Phase 4: "0"/"off" disables the conversation layer (rollback). */
   readonly VITE_CONVERSATION_LAYER?: string;
+  /** Phase 5: "0"/"off" disables communication intelligence (rollback). */
+  readonly VITE_COMMUNICATION_INTELLIGENCE?: string;
 }
 
 interface ImportMeta {

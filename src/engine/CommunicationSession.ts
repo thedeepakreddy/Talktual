@@ -51,8 +51,18 @@ import {
   type Unit,
 } from '../conversation';
 import type { PlaybackItem, TranslationResult } from './ports';
+import {
+  ACI_CAP,
+  IntelligenceController,
+  type AciLimits,
+  type AciPrefs,
+  type ContextSummary,
+  type OutboundDecision,
+  type Suggestion,
+} from '../intelligence';
 
 export const PARTIAL_SEND_INTERVAL_MS = 180;
+const perfNow = () => globalThis.performance?.now?.() ?? Date.now();
 export const PARTIAL_TRANSLATE_DEBOUNCE_MS = 400;
 export const NOTICE_MS = 5000;
 export const MAX_TRANSCRIPT = 500;
@@ -87,6 +97,13 @@ export interface SessionDeps {
    * on unless VITE_CONVERSATION_LAYER=0.
    */
   conversation?: boolean | Partial<ConversationConfig>;
+  /**
+   * Phase 5 Autonomous Communication Intelligence (session-scoped context,
+   * context-aware translation, notes, signals, suggestions). Off when absent —
+   * exact Phase 4 behaviour. Production turns it on unless
+   * VITE_COMMUNICATION_INTELLIGENCE=0.
+   */
+  intelligence?: boolean | { prefs?: Partial<AciPrefs>; limits?: Partial<AciLimits> };
   now?: () => number;
   setTimeout?: typeof setTimeout;
   clearTimeout?: typeof clearTimeout;
@@ -143,6 +160,18 @@ export interface SessionSnapshot {
     overlapHeld: number;
     /** The peer currently holds the floor. */
     peerTalking: boolean;
+    /** Phase 4 drafts (provisional translations) are sent; user-controllable (disclosed). */
+    drafts: boolean;
+  };
+  /** Phase 5 communication intelligence. */
+  intelligence: {
+    available: boolean;
+    prefs: AciPrefs | null;
+    suggestions: Suggestion[];
+    /** Inspectable, correctable context summary (no raw turns). */
+    context: ContextSummary | null;
+    /** The peer's app explains its context-assisted translations to us. */
+    peerCapable: boolean;
   };
 }
 
@@ -193,6 +222,12 @@ export class CommunicationSession {
   private provSent = new Set<string>();
   private peerCaps = false;
   private wasTalking = false;
+  private drafts = true;
+
+  // --- Phase 5 communication intelligence (null when disabled) ---
+  private aci: IntelligenceController | null = null;
+  private peerAci = false;
+  private aciTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private config: SessionConfig,
@@ -257,8 +292,15 @@ export class CommunicationSession {
       connectedAt: null,
       reconnectAttempt: 0,
       voice: { available: Boolean(deps.voiceTap), prompt: false, sharing: false, descriptorSent: false, peerActive: false },
-      conversation: { enabled: Boolean(deps.conversation), peerCapable: false, degraded: false, held: null, overlapHeld: 0, peerTalking: false },
+      conversation: { enabled: Boolean(deps.conversation), peerCapable: false, degraded: false, held: null, overlapHeld: 0, peerTalking: false, drafts: true },
+      intelligence: { available: Boolean(deps.intelligence), prefs: null, suggestions: [], context: null, peerCapable: false },
     };
+    if (deps.intelligence) {
+      const opts = typeof deps.intelligence === 'object' ? deps.intelligence : {};
+      this.aci = new IntelligenceController(this.now, opts);
+      this.aci.setLangs(config.lang, null);
+      this.snap = { ...this.snap, intelligence: { ...this.snap.intelligence, prefs: this.aci.getPrefs(), context: this.aci.summary() } };
+    }
     this.conv = deps.conversation ? { ...DEFAULT_CONVERSATION_CONFIG, ...(typeof deps.conversation === 'object' ? deps.conversation : {}) } : null;
     if (this.conv) {
       const cfg = this.conv;
@@ -413,6 +455,11 @@ export class CommunicationSession {
   /** User dismissed the disclosure. Listening to the peer continues. */
   declineConsent(): void {
     this.consentDeclined = true;
+    // Declining processing also withdraws any conversation context gathered so far.
+    if (this.aci) {
+      this.aci.reset();
+      this.refreshAci();
+    }
     this.diag.record('consent', { route: this.snap.features.route ?? 'none', status: 'declined' });
     this.commit({ consent: { ...this.snap.consent, prompt: false } });
   }
@@ -521,6 +568,7 @@ export class CommunicationSession {
     this.stopAsr('abort', 'language-change');
     this.config = { ...this.config, lang };
     this.seg?.setLang(lang);
+    this.aci?.setLangs(lang, this.snap.peer.lang);
     this.commit({ lang, holding: false });
     this.sendHello();
     if (wasContinuous) this.startAsr('continuous');
@@ -645,6 +693,10 @@ export class CommunicationSession {
     this.outq?.clear();
     this.lat?.reset();
     this.provSent.clear();
+    // Phase 5: session context is ephemeral — gone at session end.
+    this.aci?.reset();
+    if (this.aciTimer) this.clearT(this.aciTimer);
+    this.aciTimer = null;
     if (this.floorTimer) this.clearT(this.floorTimer);
     this.floorTimer = null;
     this.floorOpen = false;
@@ -667,6 +719,7 @@ export class CommunicationSession {
       translating: 0,
       partial: { local: '', peer: '' },
       conversation: { ...this.snap.conversation, held: null, overlapHeld: 0, peerTalking: false },
+      ...(this.aci ? { intelligence: { ...this.snap.intelligence, suggestions: [], context: this.aci.summary() } } : {}),
     });
     this.emitPrivacy();
   }
@@ -854,9 +907,9 @@ export class CommunicationSession {
     this.sendChain = this.sendChain
       .then(async () => {
         if (signal.aborted) return;
-        const result = await this.deps.translate({ segmentId: id, text: record.original, from: sourceLang, to: targetLang, signal });
+        const { result, assist } = await this.translateLocal(id, record.original, sourceLang, targetLang, signal);
         if (signal.aborted || this.isTerminal || result.status === 'cancelled') return;
-        this.finishOutbound(id, seq, record.original, sourceLang, targetLang, result, finalAt, {});
+        this.finishOutbound(id, seq, record.original, sourceLang, targetLang, result, finalAt, assist ? { assist } : {});
       })
       .catch((err) => {
         this.diag.count('pipeline_errors');
@@ -919,6 +972,175 @@ export class CommunicationSession {
   }
 
   // ==========================================================================
+  // Phase 5 communication intelligence — controls
+  // ==========================================================================
+
+  /** Immediate off switch: context is cleared and translation is context-free from the next phrase. */
+  setIntelligenceEnabled(on: boolean): void {
+    if (!this.aci) return;
+    this.aci.setPrefs({ enabled: on });
+    this.diag.record('aci_prefs', { status: on ? 'on' : 'off' });
+    this.refreshAci();
+  }
+
+  setIntelligencePrefs(patch: Partial<Omit<AciPrefs, 'enabled'>>): void {
+    if (!this.aci) return;
+    const clean: Partial<AciPrefs> = {};
+    if (patch.mode === 'faithful' || patch.mode === 'concise') clean.mode = patch.mode;
+    for (const k of ['assist', 'notes', 'suggestions'] as const) if (typeof patch[k] === 'boolean') clean[k] = patch[k];
+    this.aci.setPrefs(clean);
+    this.diag.record('aci_prefs', { mode: this.aci.getPrefs().mode });
+    this.refreshAci();
+  }
+
+  /** Forget everything learned in this call so far. */
+  resetIntelligenceContext(): void {
+    if (!this.aci) return;
+    this.aci.reset();
+    this.diag.count('aci_context_reset');
+    this.refreshAci();
+  }
+
+  /** User correction of the context summary: drop one item (not re-learned this call). */
+  removeContextItem(id: string): void {
+    if (this.aci?.removeEntity(id)) this.refreshAci();
+  }
+
+  /** Keep a name/term exactly as spoken in my translations this call. */
+  pinContextTerm(text: string): void {
+    if (this.aci?.pinTerm(text)) this.refreshAci();
+  }
+
+  dismissSuggestion(id: string): void {
+    if (!this.aci) return;
+    this.aci.dismiss(id);
+    this.diag.count('suggestions_dismissed');
+    this.refreshAci();
+  }
+
+  /** Phase 4 drafts (provisional translations before a phrase is complete): user can turn them off. */
+  setDraftsEnabled(on: boolean): void {
+    if (this.drafts === on) return;
+    this.drafts = on;
+    if (!on) this.abortProvisional();
+    this.diag.record('drafts', { status: on ? 'on' : 'off' });
+    this.commit({ conversation: { ...this.snap.conversation, drafts: on } });
+  }
+
+  // ==========================================================================
+  // Phase 5 communication intelligence — pipeline hooks
+  // ==========================================================================
+
+  /**
+   * Translates one of MY phrases, letting ACI propose a context-assisted MT
+   * input. The original is always what is shown and sent as `original`; the
+   * translator's raw input never leaks (failure → original; malformed
+   * protected names → one context-free retry).
+   */
+  private async translateLocal(id: string, text: string, from: string, to: string, signal: AbortSignal): Promise<{ result: TranslationResult; assist?: string[] }> {
+    const req = { segmentId: id, text, from, to, signal };
+    const aci = this.aci;
+    if (!aci) return { result: await this.deps.translate(req) };
+    let d: OutboundDecision | null = null;
+    const t0 = perfNow();
+    try {
+      d = aci.outbound({ segmentId: id, text, lang: from, targetLang: to });
+    } catch (err) {
+      this.diag.count('aci_errors');
+      console.error('intelligence failed (faithful fallback):', err);
+    }
+    this.diag.sample('aci_ms', Math.round((perfNow() - t0) * 100) / 100);
+    if (d) this.applyOutbound(d);
+    const same = from.split('-')[0] === to.split('-')[0];
+    if (!d || same || d.mtInput === text) return { result: await this.deps.translate(req) };
+    const r = await this.deps.translate({ ...req, text: d.mtInput });
+    if (r.status === 'cancelled') return { result: { ...r, text } };
+    if (r.status === 'failed') return { result: { ...r, text } };
+    const restored = aci.restoreTranslation(d, r.text);
+    if (restored.ok) return { result: { ...r, text: restored.text }, assist: this.peerAci && d.assist.length ? d.assist : undefined };
+    // Malformed provider output for protected names → context-free path (bounded: one retry).
+    this.diag.count('aci_restore_fallback');
+    this.updateSegment(id, { assisted: undefined, notes: [{ kind: 'assisted', text: 'Context assistance skipped for this phrase (translation changed protected names).' }] });
+    if (signal.aborted) return { result: { ...r, status: 'cancelled', text } };
+    return { result: await this.deps.translate(req) };
+  }
+
+  private applyOutbound(d: OutboundDecision): void {
+    const notes = [...d.notes];
+    if (d.correction) notes.unshift({ kind: 'correction', text: `Corrects earlier: ${d.correction.from} → ${d.correction.to}` });
+    const assisted = d.protections.length > 0 || d.edits.length > 0;
+    this.updateSegment(d.segmentId, {
+      ...(notes.length ? { notes: notes.slice(0, 3) } : {}),
+      ...(d.signals.length ? { signals: d.signals.filter((s) => s.confidence >= 0.5) } : {}),
+      ...(assisted ? { assisted: true } : {}),
+    });
+    if (d.correction) this.updateSegment(d.correction.segmentId, { correctedBy: d.segmentId });
+    this.recordAci(d.segmentId, 'outbound', d.fallback, assisted, d.notes.length, d.suggestions.length, d.signals);
+    this.refreshAci();
+  }
+
+  private aciInbound(
+    id: string,
+    original: string,
+    sourceLang: string,
+    translated: string,
+    untranslated: boolean,
+    assist: string[] | undefined
+  ): { record: Partial<SegmentRecord>; speak?: string; correctsId?: string } {
+    const aci = this.aci;
+    if (!aci) return { record: {} };
+    const t0 = perfNow();
+    try {
+      const d = aci.inbound({ segmentId: id, original, sourceLang, translated, listenerLang: this.config.lang, assist: this.peerAci ? assist : undefined });
+      this.diag.sample('aci_ms', Math.round((perfNow() - t0) * 100) / 100);
+      this.recordAci(id, 'inbound', d.fallback, Boolean(assist?.length), d.notes.length, d.suggestions.length, d.signals);
+      this.refreshAci();
+      return {
+        record: {
+          ...(d.notes.length ? { notes: d.notes } : {}),
+          ...(d.signals.length ? { signals: d.signals.filter((s) => s.confidence >= 0.5) } : {}),
+          ...(this.peerAci && assist?.length ? { assisted: true } : {}),
+        },
+        // Concise applies to translated speech in MY language only.
+        speak: !untranslated && d.speak ? d.speak.text : undefined,
+        correctsId: d.correction?.segmentId,
+      };
+    } catch (err) {
+      this.diag.count('aci_errors');
+      console.error('intelligence failed (faithful fallback):', err);
+      return { record: {} };
+    }
+  }
+
+  /** Diagnostics: categories, counts and timings only — never text. */
+  private recordAci(segmentId: string, kind: 'inbound' | 'outbound', fallback: string | undefined, assisted: boolean, notes: number, suggestions: number, signals: { category: string; confidence: number }[]): void {
+    this.diag.record('aci', { segmentId, kind, ...(fallback ? { reason: fallback } : {}), assisted, notes, suggestions });
+    if (fallback) this.diag.count(`aci_fallback_${fallback}`);
+    for (const s of signals) {
+      if (s.confidence < 0.5) continue;
+      this.diag.count(`signal_${s.category}`);
+      this.diag.record('aci_signal', { segmentId, kind: s.category, confidence: s.confidence });
+    }
+  }
+
+  /** Publishes prefs/suggestions/context summary; re-runs when the next suggestion expires. */
+  private refreshAci(): void {
+    const aci = this.aci;
+    if (!aci || this.disposed) return;
+    const suggestions = aci.activeSuggestions();
+    this.commit({ intelligence: { ...this.snap.intelligence, prefs: aci.getPrefs(), suggestions, context: aci.summary() } });
+    if (this.aciTimer) this.clearT(this.aciTimer);
+    this.aciTimer = null;
+    if (suggestions.length && !this.isTerminal) {
+      const next = Math.min(...suggestions.map((s) => s.expiresAt)) - this.now();
+      this.aciTimer = this.setT(() => {
+        this.aciTimer = null;
+        this.refreshAci();
+      }, Math.max(0, next) + 5);
+    }
+  }
+
+  // ==========================================================================
   // Phase 4 conversation layer — local speaker side
   // ==========================================================================
 
@@ -968,7 +1190,7 @@ export class CommunicationSession {
   }
 
   private maybeSendProvisional(u: Unit): void {
-    if (!this.conv || !this.peerCaps || !this.call || this.lat?.degraded || this.prov) return;
+    if (!this.conv || !this.drafts || !this.peerCaps || !this.call || this.lat?.degraded || this.prov) return;
     const now = this.now();
     if (now - this.lastProvAt < this.conv.provisionalMinIntervalMs) return;
     this.lastProvAt = now;
@@ -1087,9 +1309,8 @@ export class CommunicationSession {
     const sourceLang = rec?.sourceLang ?? this.config.lang;
     const targetLang = this.snap.peer.lang ?? sourceLang;
     const started = this.now();
-    this.deps
-      .translate({ segmentId: unit.id, text: unit.text, from: sourceLang, to: targetLang, signal })
-      .then((result) => {
+    this.translateLocal(unit.id, unit.text, sourceLang, targetLang, signal)
+      .then(({ result, assist }) => {
         if (signal.aborted || this.isTerminal || result.status === 'cancelled') return;
         if (this.lat?.observe(this.now() - started)) {
           const degraded = this.lat.degraded;
@@ -1097,9 +1318,12 @@ export class CommunicationSession {
           this.commit({ conversation: { ...this.snap.conversation, degraded } });
           if (degraded) this.setNotice({ code: 'slow', message: 'Translation is slow — combining phrases to keep up.', sticky: false });
         }
-        const extra = this.peerCaps
-          ? { state: 'final' as const, rev: unit.rev, turn: unit.turn, ...(unit.uncertain ? { uncertain: true } : {}), ...(unit.repaired ? { repaired: true } : {}) }
-          : {};
+        const extra = {
+          ...(this.peerCaps
+            ? { state: 'final' as const, rev: unit.rev, turn: unit.turn, ...(unit.uncertain ? { uncertain: true } : {}), ...(unit.repaired ? { repaired: true } : {}) }
+            : {}),
+          ...(assist ? { assist } : {}),
+        };
         this.finishOutbound(unit.id, seq, unit.text, sourceLang, targetLang, result, p.committedAt, extra);
       })
       .catch((err) => {
@@ -1164,6 +1388,10 @@ export class CommunicationSession {
       if (!this.listen) return true;
       this.diag.count('interrupted_by_peer');
       this.markTurns('local', [msg.turn]);
+      if (this.aci) {
+        for (const r of this.ledger.list()) if (r.speaker === 'local' && r.turn === msg.turn) this.aci.dropSegment(r.id);
+        this.refreshAci();
+      }
       return true;
     }
     if (msg.t === 'retract') {
@@ -1229,6 +1457,9 @@ export class CommunicationSession {
 
     if (msg.t === 'hello') {
       this.peerCaps = Boolean(this.conv && Array.isArray(msg.caps) && msg.caps.includes(CONVERSATION_CAP));
+      this.peerAci = Boolean(this.aci && Array.isArray(msg.caps) && msg.caps.includes(ACI_CAP));
+      this.aci?.setLangs(this.config.lang, msg.lang);
+      if (this.aci && this.snap.intelligence.peerCapable !== this.peerAci) this.commit({ intelligence: { ...this.snap.intelligence, peerCapable: this.peerAci } });
       if (this.snap.conversation.peerCapable !== this.peerCaps) {
         this.commit({ conversation: { ...this.snap.conversation, peerCapable: this.peerCaps } });
       }
@@ -1311,6 +1542,8 @@ export class CommunicationSession {
       // Phase 4: the listener cut into this turn — keep it readable, don't speak it.
       const interrupted = Boolean(this.listen?.isInterrupted(msg.turn));
       const held = !interrupted && Boolean(this.listen) && this.isLocalTalking();
+      // Phase 5: notes/signals/concise delivery for what we hear (advisory, validated).
+      const aci = this.aciInbound(msg.id, msg.original, msg.sourceLang, text, untranslated, msg.assist);
       const record: SegmentRecord = {
         ...base,
         translated: text,
@@ -1318,8 +1551,10 @@ export class CommunicationSession {
         untranslated: untranslated || undefined,
         ...(interrupted ? { interrupted: true } : {}),
         ...(held ? { overlapHeld: true } : {}),
+        ...aci.record,
       };
       this.addSegment(record);
+      if (aci.correctsId) this.updateSegment(aci.correctsId, { correctedBy: msg.id });
       if (interrupted) {
         this.diag.count('interrupted_suppressed');
         this.diag.record('conv_suppressed', { segmentId: msg.id, reason: 'interrupted' });
@@ -1333,7 +1568,8 @@ export class CommunicationSession {
       this.receivedAt.set(msg.id, receivedAt);
       const item: PlaybackItem = {
         segmentId: msg.id,
-        text,
+        // Concise mode (my choice): fillers not spoken; the transcript keeps everything.
+        text: aci.speak ?? text,
         lang: untranslated ? msg.sourceLang : myLang,
         // Resolved at playback start → a revocation applies to queued segments too.
         voice: this.voice ? () => this.voice?.peerHints() : undefined,
@@ -1422,7 +1658,8 @@ export class CommunicationSession {
   // ==========================================================================
 
   private sendHello(): void {
-    this.call?.send({ t: 'hello', lang: this.config.lang, name: this.config.userName, ...(this.conv ? { caps: [CONVERSATION_CAP] } : {}) });
+    const caps = [...(this.conv ? [CONVERSATION_CAP] : []), ...(this.aci ? [ACI_CAP] : [])];
+    this.call?.send({ t: 'hello', lang: this.config.lang, name: this.config.userName, ...(caps.length ? { caps } : {}) });
   }
 
   private refreshFeatures(): void {
@@ -1435,7 +1672,7 @@ export class CommunicationSession {
         ...this.snap.consent,
         route,
         granted,
-        disclosure: route ? disclosureFor(route, this.server?.translator ?? null) : null,
+        disclosure: route ? disclosureFor(route, this.server?.translator ?? null, { drafts: Boolean(this.conv), intelligence: Boolean(this.aci) }) : null,
       },
     });
     const degraded = degradationMessage(features);
@@ -1454,7 +1691,7 @@ export class CommunicationSession {
     const route = this.snap.features.route;
     if (!route || this.isTerminal) return;
     this.commit({
-      consent: { route, granted: this.privacy.hasConsent(route), prompt: true, disclosure: disclosureFor(route, this.server?.translator ?? null) },
+      consent: { route, granted: this.privacy.hasConsent(route), prompt: true, disclosure: disclosureFor(route, this.server?.translator ?? null, { drafts: Boolean(this.conv), intelligence: Boolean(this.aci) }) },
     });
   }
 
