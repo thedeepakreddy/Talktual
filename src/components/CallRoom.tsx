@@ -9,6 +9,7 @@ import type { SessionDeps, SessionSnapshot } from '../engine/CommunicationSessio
 import type { SegmentRecord } from '../engine/events';
 import { LanguagePicker } from './LanguagePicker';
 import { ConsentSheet } from './ConsentSheet';
+import { AssistPanel } from './AssistPanel';
 import { VOICEMIRROR_DISCLOSURE } from '../voicemirror/disclosure';
 
 interface CallRoomProps {
@@ -39,6 +40,7 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
   );
 
   const [showTranscript, setShowTranscript] = useState(false);
+  const [showAssist, setShowAssist] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -300,6 +302,20 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
         </div>
       )}
 
+      {/* ---- Phase 5 suggestion (one at a time, dismissible, never acts on its own) ---- */}
+      {s?.intelligence.suggestions.length ? (
+        <div className="mt-2 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3.5 py-2.5" role="note" aria-label="Suggestion">
+          <p className="flex-1 text-[13px] leading-snug text-[var(--text-2)]">{s.intelligence.suggestions.at(-1)!.text}</p>
+          <button
+            onClick={() => session?.dismissSuggestion(s.intelligence.suggestions.at(-1)!.id)}
+            aria-label="Dismiss suggestion"
+            className="shrink-0 text-[12px] font-medium text-[var(--text-3)] hover:text-[var(--text-1)]"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+
       {/* ---- Speaker panel: grille + live caption readout ---- */}
       <div
         className={cn(
@@ -467,6 +483,15 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
               {continuous ? 'Hands-free: on' : 'Hands-free: off'}
             </button>
           )}
+          {s?.intelligence.available && (
+            <button
+              onClick={() => setShowAssist(true)}
+              aria-label="Conversation assistance"
+              className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 font-medium text-[var(--text-2)] transition-colors hover:bg-white/[0.1]"
+            >
+              {s.intelligence.prefs?.enabled ? 'Assist: on' : 'Assist: off'}
+            </button>
+          )}
           {s?.voice.available && (
             <button
               onClick={() => session?.toggleVoiceMirror()}
@@ -534,6 +559,8 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
         )}
       </AnimatePresence>
 
+      <AssistPanel open={showAssist} onClose={() => setShowAssist(false)} session={session} snapshot={s ?? null} />
+
       <LanguagePicker
         open={pickerOpen}
         selected={language}
@@ -573,8 +600,21 @@ function markersFor(seg: SegmentRecord): string[] {
   } else if (seg.playback === 'dropped') m.push('Skipped — arrived too late');
   if (seg.uncertain) m.push('Unclear audio — may be inaccurate');
   if (seg.repaired && seg.speaker === 'local') m.push('Tidied repeats');
+  if (seg.assisted) m.push('Context-assisted');
+  if (seg.correctedBy) m.push('Corrected later');
   return m;
 }
+
+/** Phase 5 signal tags worth showing (others stay in diagnostics). */
+const SIGNAL_TAG: Record<string, string> = {
+  question: 'Question',
+  request: 'Request',
+  offer: 'Offer',
+  correction: 'Correction',
+  urgency: 'Urgent',
+  'clarification-request': 'Asks to clarify',
+  misunderstanding: 'Possible misunderstanding',
+};
 
 function TranscriptBubble({ seg }: { seg: SegmentRecord; key?: string }) {
   const isMe = seg.speaker === 'local';
@@ -603,6 +643,18 @@ function TranscriptBubble({ seg }: { seg: SegmentRecord; key?: string }) {
         <p className={cn('mt-1.5 text-[13px] leading-snug', isMe ? 'text-white/65' : 'text-[var(--text-3)]')}>{secondary}</p>
         {markers.length > 0 && (
           <p className={cn('mt-1.5 text-[11px] font-medium tracking-wide', isMe ? 'text-white/70' : 'text-[var(--text-3)]')}>{markers.join(' · ')}</p>
+        )}
+        {(seg.signals?.some((x) => SIGNAL_TAG[x.category]) || seg.notes?.length) && (
+          <div className={cn('mt-1.5 space-y-0.5 text-[12px] leading-snug', isMe ? 'text-white/75' : 'text-[var(--text-2)]')} data-testid="aci-notes">
+            {seg.signals?.some((x) => SIGNAL_TAG[x.category]) && (
+              <p className="text-[11px] uppercase tracking-wide opacity-70">
+                {seg.signals.filter((x) => SIGNAL_TAG[x.category]).map((x) => SIGNAL_TAG[x.category]).join(' · ')}
+              </p>
+            )}
+            {seg.notes?.map((n, i) => (
+              <p key={i}>ⓘ {n.text}</p>
+            ))}
+          </div>
         )}
       </div>
     </div>

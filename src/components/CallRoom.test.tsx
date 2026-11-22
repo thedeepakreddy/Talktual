@@ -257,6 +257,69 @@ describe('Phase 4 conversation affordances', () => {
   });
 });
 
+describe('Phase 5 assistance UI', () => {
+  async function connectAci(f: ReturnType<typeof renderRoom>) {
+    await act(async () => {
+      f.call.status('waiting-for-peer');
+      f.call.status('connected');
+      f.call.receive({ t: 'hello', lang: 'es-ES', name: 'Luis', caps: ['aci1'] });
+      await settle();
+    });
+  }
+  const seg = { sourceLang: 'es-ES', targetLang: 'en-US', sentAt: 1 } as const;
+
+  it('notes and tags appear under the line; the assist sheet shows, corrects and resets context; off switch', async () => {
+    const f = renderRoom({ consent: true, deps: { intelligence: true } });
+    await connectAci(f);
+    await act(async () => {
+      f.call.receive({ t: 'segment', id: 'a', original: 'Nos vemos en la Plaza Mayor', translated: 'See you at Plaza Mayor', ...seg });
+      f.call.receive({ t: 'segment', id: 'b', original: '¿Llegas allí a las cinco?', translated: 'Do you get there at five?', ...seg });
+      await settle();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Show transcript' }));
+    const dialog = screen.getByRole('dialog', { name: 'Transcript' });
+    expect(dialog.textContent).toContain('“allí” → Plaza Mayor (mentioned earlier)');
+    expect(dialog.textContent).toContain('Question');
+    fireEvent.click(screen.getByRole('button', { name: 'Close transcript' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Conversation assistance' }));
+    const sheet = screen.getByRole('dialog', { name: 'Conversation assistance' });
+    expect(sheet.textContent).toMatch(/this call only/);
+    expect(sheet.textContent).toContain('Plaza Mayor');
+    fireEvent.click(screen.getByRole('button', { name: 'Forget Plaza Mayor' }));
+    expect(screen.getByRole('dialog', { name: 'Conversation assistance' }).textContent).not.toContain('Plaza Mayor');
+    fireEvent.click(screen.getByRole('switch', { name: 'Concise speech' }));
+    expect(f.deps.intelligence).toBeTruthy();
+    fireEvent.click(screen.getByRole('switch', { name: 'Assistance' }));
+    expect((screen.getByRole('switch', { name: 'Concise speech' }) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText('Nothing yet.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close assistance' }));
+    expect(screen.getByRole('button', { name: 'Conversation assistance' }).textContent).toBe('Assist: off');
+  });
+
+  it('a suggestion is a dismissible note, not a popup', async () => {
+    const f = renderRoom({ consent: true, deps: { intelligence: true } });
+    await connectAci(f);
+    await act(async () => {
+      fireEvent.pointerDown(ptt());
+      await settle();
+      f.asr()!.say('Meet me at the bank');
+      fireEvent.pointerUp(ptt());
+      await settle(40);
+    });
+    const note = screen.getByRole('note', { name: 'Suggestion' });
+    expect(note.textContent).toMatch(/“bank” can mean/);
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss suggestion' }));
+    expect(screen.queryByRole('note', { name: 'Suggestion' })).toBeNull();
+  });
+
+  it('hidden when the feature is off (default engine deps)', async () => {
+    const f = renderRoom({ consent: true });
+    await connect(f);
+    expect(screen.queryByRole('button', { name: 'Conversation assistance' })).toBeNull();
+  });
+});
+
 describe('VoiceMirror controls (Phase 3)', () => {
   it('hidden when the feature is off (default build)', async () => {
     const f = renderRoom({ consent: true });

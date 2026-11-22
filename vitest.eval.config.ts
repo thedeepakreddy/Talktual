@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'jsdom',
-    include: ['eval/conversation/**/*.eval.ts'],
+    include: ['eval/conversation/**/*.eval.ts', 'eval/intelligence/**/*.eval.ts'],
     setupFiles: ['src/test/setup.ts'],
     testTimeout: 60000,
   },

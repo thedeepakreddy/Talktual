@@ -125,6 +125,17 @@ export interface SenseEdit {
   replacement: string;
 }
 
+/** Structured, explainable findings behind a decision (no extra text beyond what was said). */
+export interface Findings {
+  /** Ambiguous words: chosen sense id, or null = left ambiguous (no evidence). */
+  senses: Array<{ word: string; sense: string | null; gloss: string | null }>;
+  /** References: the single antecedent, or null = unresolved (0 or 2+ candidates). */
+  references: Array<{ word: string; antecedent: string | null; candidates: number }>;
+  idioms: string[];
+  /** Entities found in this utterance (kinds only for sensitive-safe display). */
+  entities: Array<{ text: string; kind: string }>;
+}
+
 export interface OutboundDecision {
   v: typeof ACI_VERSION;
   type: 'outbound';
@@ -139,6 +150,7 @@ export interface OutboundDecision {
   /** Notes for my own transcript line (what was assisted and why). */
   notes: Note[];
   suggestions: Suggestion[];
+  findings?: Findings;
   /** My turn corrects an earlier one of mine (annotated, never rewritten). */
   correction?: { segmentId: string; from: string; to: string };
   /** Set when ACI declined to act (e.g. input too long) — faithful context-free path. */
@@ -156,6 +168,7 @@ export interface InboundDecision {
   /** This turn corrects an earlier one (cross-turn): the earlier segment is annotated, never rewritten. */
   correction?: { segmentId: string; from: string; to: string };
   suggestions: Suggestion[];
+  findings?: Findings;
   fallback?: 'too-long' | 'disabled' | 'invalid';
 }
 

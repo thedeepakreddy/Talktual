@@ -104,7 +104,7 @@ describe('signals (categories + confidence only)', () => {
     ['Yes, that works for me', 'en', ['confirmation']],
     ["No, I can't make it", 'en', ['refusal']],
     ['No, I meant Tuesday', 'en', ['correction']],
-    ['Sorry?', 'en', ['clarification-request']],
+    ['Sorry?', 'en', ['clarification-request', 'misunderstanding']],
     ['Hurry, the train leaves right now', 'en', ['urgency']],
     ['By the way, did you book the hotel?', 'en', ['question', 'topic-change']],
     ['¿Dónde está el hotel?', 'es', ['question']],
@@ -114,7 +114,12 @@ describe('signals (categories + confidence only)', () => {
     ['Perdón, quise decir el jueves', 'es', ['correction']],
     ['Es urgente, llama a una ambulancia', 'es', ['request', 'urgency']],
   ])('%s → %j', (text, lang, want) => {
-    expect(cats(detectSignals(text, lang as 'en', noCtx))).toEqual([...want].sort());
+    // (signals are evaluated as a reply to the other person's previous turn)
+    expect(cats(detectSignals(text, lang as 'en', { ...noCtx, previousByOther: true }))).toEqual([...want].sort());
+  });
+
+  it('a refusal needs something to refuse (no preceding turn → not a refusal)', () => {
+    expect(cats(detectSignals("I can't read without my glasses", 'en', noCtx))).toEqual([]);
   });
 
   it('misunderstanding needs observable evidence; urgency only when explicit', () => {
