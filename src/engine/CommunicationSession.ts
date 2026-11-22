@@ -246,6 +246,8 @@ export class CommunicationSession {
   private consentDeclined = false;
   private micEnabled = true;
   private pausedForPlayback = false;
+  /** Finals received since capture started (count only — for loop diagnostics). */
+  private finalsThisTurn = 0;
 
   private sendChain: Promise<void> = Promise.resolve();
   /** Aborts in-flight translations on leave/teardown. */
@@ -948,6 +950,12 @@ export class CommunicationSession {
 
   private onAsrEnd(): void {
     if (this.isTerminal) return;
+    // Sanitized loop diagnostic: a push-to-talk turn that produced no text at all.
+    if (this.privacy.mode === 'push-to-talk') {
+      if (this.finalsThisTurn === 0) this.diag.count('asr_release_no_text');
+      this.diag.record('asr_turn', { kind: this.finalsThisTurn ? 'text' : 'no-text', n: this.finalsThisTurn });
+    }
+    this.finalsThisTurn = 0;
     this.voice?.onCaptureStop();
     this.seg?.endOfInput();
     if (this.privacy.mode === 'continuous') this.closeFloor();
@@ -1010,6 +1018,7 @@ export class CommunicationSession {
   private onLocalFinal(seg: RecognizedSegment): void {
     if (this.isTerminal || !seg.text.trim()) return;
     if (seg.promoted) this.diag.count('asr_interim_promoted');
+    this.finalsThisTurn++;
     if (this.seg) {
       this.touchContinuousFloor();
       this.commit({ partial: { ...this.snap.partial, local: '' } });

@@ -13,9 +13,10 @@
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { loadChromium, startStack, pairPeers, root } from './harness.mjs';
+import { loadChromium, startStack, pairPeers, root, makeFakeFetch } from './harness.mjs';
 
 const tree = path.resolve(process.argv[2] || root);
+// REPRO_ASSERT=1: exit non-zero unless every scenario delivered text and audio both ways (regression mode).
 const label = process.argv[3] || 'current';
 
 /** Patch the fake recognizer: stop() delivers the final after `finalDelayMs` (or never), then ends. */
@@ -87,7 +88,26 @@ if (process.env.REPRO_SERVER_DIR) {
   for (let i = 0; i < 100; i++) { try { if ((await fetch('http://127.0.0.1:4251')).ok) break; } catch {} await new Promise((r) => setTimeout(r, 200)); }
   stack = { web: 'http://127.0.0.1:4251', providerCalls: [], stop: async () => { preview.kill(); srv.kill(); } };
 } else {
-  stack = await startStack({ apiPort: 8951, webPort: 4251, cwd: tree, outDir: path.join(tree, 'e2e/.dist-repro') });
+  // REPRO_SERVER_TTS=1: the server's REAL /api/tts path with a STUBBED ElevenLabs
+  // that streams synthetic PCM (a 440 Hz tone) — the listener's browser then
+  // plays it through its real Web Audio (no speech synthesis involved).
+  const serverOverrides = {};
+  if (process.env.REPRO_SERVER_TTS) {
+    const base = makeFakeFetch({});
+    serverOverrides.elevenLabsApiKey = 'stub-not-a-real-key';
+    serverOverrides.fetch = async (url, init) => {
+      const u = new URL(String(url));
+      if (u.hostname === 'api.elevenlabs.io' && u.pathname.includes('/text-to-speech/')) {
+        const rate = Number((u.searchParams.get('output_format') || 'pcm_24000').split('_')[1]) || 24000;
+        const samples = Math.round(rate * 0.6);
+        const buf = Buffer.alloc(samples * 2);
+        for (let i = 0; i < samples; i++) buf.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / rate) * 8000), i * 2);
+        return new Response(buf, { status: 200, headers: { 'content-type': 'audio/pcm' } });
+      }
+      return base(url, init);
+    };
+  }
+  stack = await startStack({ apiPort: 8951, webPort: 4251, cwd: tree, outDir: path.join(tree, 'e2e/.dist-repro'), serverOverrides });
 }
 const chromium = await loadChromium();
 const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
@@ -97,6 +117,15 @@ try {
     const { host, guest } = await pairPeers(browser, stack.web);
     for (const p of [host, guest]) {
       await p.page.evaluate(realisticRecognizer);
+      await p.page.evaluate(() => {
+        // Observation only: count real AudioBufferSourceNode starts (Web Audio playback).
+        window.__webAudioStarts = 0;
+        const orig = AudioBufferSourceNode.prototype.start;
+        AudioBufferSourceNode.prototype.start = function (...a) {
+          if (this.buffer && this.buffer.length > 1) window.__webAudioStarts++;
+          return orig.apply(this, a);
+        };
+      });
       const allow = p.page.getByRole('button', { name: /allow microphone/i });
       if (await allow.count()) await allow.click();
     }
@@ -106,12 +135,14 @@ try {
     ]) {
       const calls0 = stack.providerCalls.filter((c) => c.kind === 'translate').length;
       const heard0 = await listener.page.evaluate(() => window.__spoken.length);
+      const wa0 = await listener.page.evaluate(() => window.__webAudioStarts);
       await talkRealistic(speaker.page, phrase, sc.behavior);
       await listener.page.waitForTimeout(3500);
       const translateCalls = process.env.REPRO_SERVER_DIR ? null : stack.providerCalls.filter((c) => c.kind === 'translate').length - calls0;
       const peerHeard = (await listener.page.evaluate(() => window.__spoken.length)) - heard0;
       const peerText = await listener.page.evaluate((p) => document.body.innerText.includes(p), phrase.split(' ').slice(-2).join(' '));
-      rows.push({ tree: label, scenario: sc.id, direction: dir, translateCalls, peerTextShown: peerText, peerAudioUtterances: peerHeard, errors: speaker.errors.length + listener.errors.length });
+      const webAudio = (await listener.page.evaluate(() => window.__webAudioStarts)) - wa0;
+      rows.push({ tree: label, scenario: sc.id, direction: dir, translateCalls, peerTextShown: peerText, peerAudioUtterances: peerHeard, peerWebAudioChunks: webAudio, errors: speaker.errors.length + listener.errors.length });
     }
     await host.context.close();
     await guest.context.close();
@@ -121,5 +152,12 @@ try {
   await stack.stop();
 }
 console.table(rows);
+if (process.env.REPRO_ASSERT) {
+  const bad = rows.filter((r) => !r.peerTextShown || (r.peerAudioUtterances + (r.peerWebAudioChunks ?? 0)) < 1 || r.errors);
+  if (bad.length) {
+    console.error(`${bad.length} scenario(s) failed`);
+    process.exitCode = 1;
+  } else console.log(`${rows.length}/${rows.length} loop checks passed`);
+}
 mkdirSync(path.join(root, 'docs/reliability'), { recursive: true });
 writeFileSync(path.join(root, `docs/reliability/repro-${label}.json`), JSON.stringify({ at: new Date().toISOString(), tree, label, rows }, null, 1));

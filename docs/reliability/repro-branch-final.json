@@ -1,0 +1,107 @@
+{
+ "at": "2026-11-22T03:29:10.560Z",
+ "tree": "/home/user/Talktual",
+ "label": "branch-final",
+ "rows": [
+  {
+   "tree": "branch-final",
+   "scenario": "final-before-release",
+   "direction": "A→B (en→es)",
+   "translateCalls": 1,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "peerWebAudioChunks": 0,
+   "errors": 0
+  },
+  {
+   "tree": "branch-final",
+   "scenario": "final-before-release",
+   "direction": "B→A (es→en)",
+   "translateCalls": 1,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "peerWebAudioChunks": 0,
+   "errors": 0
+  },
+  {
+   "tree": "branch-final",
+   "scenario": "final-300ms-after-stop",
+   "direction": "A→B (en→es)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "peerWebAudioChunks": 0,
+   "errors": 0
+  },
+  {
+   "tree": "branch-final",
+   "scenario": "final-300ms-after-stop",
+   "direction": "B→A (es→en)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "peerWebAudioChunks": 0,
+   "errors": 0
+  },
+  {
+   "tree": "branch-final",
+   "scenario": "final-900ms-after-stop",
+   "direction": "A→B (en→es)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "peerWebAudioChunks": 0,
+   "errors": 0
+  },
+  {
+   "tree": "branch-final",
+   "scenario": "final-900ms-after-stop",
+   "direction": "B→A (es→en)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "peerWebAudioChunks": 0,
+   "errors": 0
+  },
+  {
+   "tree": "branch-final",
+   "scenario": "final-1600ms-after-stop",
+   "direction": "A→B (en→es)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "peerWebAudioChunks": 0,
+   "errors": 0
+  },
+  {
+   "tree": "branch-final",
+   "scenario": "final-1600ms-after-stop",
+   "direction": "B→A (es→en)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "peerWebAudioChunks": 0,
+   "errors": 0
+  },
+  {
+   "tree": "branch-final",
+   "scenario": "no-final-onend-only",
+   "direction": "A→B (en→es)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "peerWebAudioChunks": 0,
+   "errors": 0
+  },
+  {
+   "tree": "branch-final",
+   "scenario": "no-final-onend-only",
+   "direction": "B→A (es→en)",
+   "translateCalls": 0,
+   "peerTextShown": true,
+   "peerAudioUtterances": 1,
+   "peerWebAudioChunks": 0,
+   "errors": 0
+  }
+ ]
+}
