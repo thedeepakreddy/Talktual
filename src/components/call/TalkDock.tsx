@@ -1,4 +1,4 @@
-import { Keyboard, Mic, MicOff, Square } from 'lucide-react';
+import { AudioLines, Keyboard, Mic, MicOff, Square } from 'lucide-react';
 import { IconButton } from '../ui';
 import { cn } from '../../utils';
 import type { StatusTone } from './status';
@@ -106,13 +106,7 @@ export function TalkDock(p: TalkDockProps) {
   );
 }
 
-/** Voice-activity bars (decorative; the status line says "Listening…"). */
+/** Speech detected (static glyph: the recognizer reports speech on/off, not a level). */
 function Bars() {
-  return (
-    <span className="flex h-8 items-center gap-1" aria-hidden="true">
-      {[0, 160, 320, 80].map((d) => (
-        <span key={d} className="level-bar h-7 w-1.5 rounded-full bg-current" style={{ animationDelay: `${d}ms` }} />
-      ))}
-    </span>
-  );
+  return <AudioLines className="h-8 w-8" aria-hidden="true" />;
 }
