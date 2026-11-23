@@ -519,8 +519,8 @@ export class AmbientSession {
   private begin(): void {
     if (this.disposed) return;
     const b = this.deps.browser;
-    if (!b.secureContext) return this.unavailable('insecure', 'Live translate needs a secure (https) connection.');
-    if (!b.webSpeech) return this.unavailable('no-speech-recognition', 'This browser can’t recognise speech. Use Chrome, Edge or Safari for live translate.');
+    if (!b.secureContext) return this.unavailable('insecure', 'AIR needs a secure (https) connection.');
+    if (!b.webSpeech) return this.unavailable('no-speech-recognition', 'This browser can’t recognise speech. Use Chrome, Edge or Safari for AIR.');
     if (this.policy?.network === 'offline') {
       this.commit({ phase: 'paused', pauseReason: 'offline', notice: { code: 'offline', message: 'You’re offline. Listening resumes when you’re back online.', tone: 'warning' } });
       return;

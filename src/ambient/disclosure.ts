@@ -33,7 +33,7 @@ export function ambientDisclosure(translator: string | null, mode: ProcessingMod
     route: 'browser-speech',
     title: 'Listening to the room',
     points: [
-      'Live translate listens to people near you, not just to you. It only listens after you press Start, shows that it is listening the whole time, and stops the moment you press Pause or leave the screen.',
+      'AIR listens to people near you, not just to you. It only listens after you press Start, shows that it is listening the whole time, and stops the moment you press Pause or leave the screen.',
       recognizer,
       text,
       speech,
