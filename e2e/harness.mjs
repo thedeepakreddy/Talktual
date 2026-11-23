@@ -215,7 +215,7 @@ export async function pairPeers(browser, web, initOpts = {}) {
   };
   const host = await mk('en-US', initOpts.host || {});
   const guest = await mk('es-ES', initOpts.guest || {});
-  await host.page.goto(initOpts.debug ? `${web}/?debug=1` : web);
+  await host.page.goto(initOpts.debug ? `${web}/?debug=1#/connect` : `${web}/#/connect`);
   await host.page.getByLabel('Your name').fill('Ana');
   await host.page.getByRole('button', { name: /^start a call$/i }).click();
   const code = await readCallCode(host.page);

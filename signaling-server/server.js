@@ -74,6 +74,13 @@ function loadConfig(env = process.env) {
     maxWsPayloadBytes: toInt(env.MAX_WS_PAYLOAD_BYTES, 64 * 1024),
     /** Upstream provider budgets. Without these a stalled provider hangs the turn. */
     translateTimeoutMs: toInt(env.TRANSLATE_TIMEOUT_MS, 8000),
+    /**
+     * Phase 8.5 privacy: the translation cache holds source text in memory.
+     * Entries expire after this long (default 2 min: absorbs retries and
+     * duplicates, nothing more); TRANSLATION_CACHE_MAX=0 disables it.
+     */
+    translationCacheTtlMs: toInt(env.TRANSLATION_CACHE_TTL_MS, 2 * 60 * 1000),
+    translationCacheMax: toInt(env.TRANSLATION_CACHE_MAX, 2000),
     ttsTimeoutMs: toInt(env.TTS_TIMEOUT_MS, 10000),
     sttTimeoutMs: toInt(env.STT_TIMEOUT_MS, 30000),
     /** Comma-separated browser origins allowed to use the API and signaling. Unset = any. */
@@ -323,14 +330,38 @@ function createServer(overrides = {}) {
   // TRANSLATION
   // ==========================================
 
+  // Bounded in size AND time. Insertion order is time order, so expired
+  // entries are always at the front.
   const translationCache = new Map();
-  const MAX_TRANSLATION_CACHE = 2000;
 
-  function cacheSet(key, value) {
-    if (translationCache.size >= MAX_TRANSLATION_CACHE) {
+  function cacheSweep(now) {
+    for (const [k, v] of translationCache) {
+      if (now - v.at < cfg.translationCacheTtlMs) break;
+      translationCache.delete(k);
+    }
+  }
+
+  function cacheGet(key) {
+    if (cfg.translationCacheMax <= 0) return undefined;
+    cacheSweep(Date.now());
+    return translationCache.get(key);
+  }
+
+  function cacheSet(key, text, provider) {
+    if (cfg.translationCacheMax <= 0 || cfg.translationCacheTtlMs <= 0) return;
+    cacheSweep(Date.now());
+    translationCache.delete(key);
+    while (translationCache.size >= cfg.translationCacheMax) {
       translationCache.delete(translationCache.keys().next().value);
     }
-    translationCache.set(key, value);
+    translationCache.set(key, { text, provider, at: Date.now() });
+  }
+
+  /** Provider errors are logged by kind/status only — upstream bodies could echo the user's text. */
+  function errKind(err) {
+    if (err?.name === "TimeoutError" || err?.name === "AbortError") return "timeout";
+    const m = /^(\w+) (\d{3})/.exec(String(err?.message || ""));
+    return m ? `${m[1]} ${m[2]}` : "error";
   }
 
   const timeoutSignal = (ms) => AbortSignal.timeout(ms);
@@ -435,11 +466,12 @@ function createServer(overrides = {}) {
     if (iso2(from) === iso2(to)) return res.json({ text, provider: "passthrough" });
 
     const key = `${iso2(from)}>${iso2(to)}:${text}`;
-    const hit = translationCache.get(key);
+    const hit = cacheGet(key);
     if (hit) {
-      res.set("X-Latency-Ms", "0");
-      res.set("X-Provider", "cache");
-      return res.json({ text: hit, provider: "cache" });
+      // Not advertised as a cache hit: that would tell any caller that
+      // someone else recently translated the same words.
+      res.set("X-Provider", hit.provider);
+      return res.json({ text: hit.text, provider: hit.provider });
     }
 
     const started = Date.now();
@@ -451,23 +483,23 @@ function createServer(overrides = {}) {
       else if (provider === "deepl") translated = await translateWithDeepL(text, from, to);
       else translated = await translateWithMyMemory(text, from, to);
 
-      cacheSet(key, translated);
+      cacheSet(key, translated, provider);
       const ms = Date.now() - started;
       res.set("X-Latency-Ms", String(ms));
       res.set("X-Provider", provider);
       log(`translate ${iso2(from)}>${iso2(to)} via ${provider} ${ms}ms`);
       res.json({ text: translated, provider, latencyMs: ms });
     } catch (err) {
-      log("translate failed via", provider, "-", err.message);
+      log("translate failed via", provider, "-", errKind(err));
       // Try the keyless provider before giving up, unless that's what just failed.
       if (provider !== "mymemory") {
         try {
           const translated = await translateWithMyMemory(text, from, to);
-          cacheSet(key, translated);
+          cacheSet(key, translated, "mymemory");
           res.set("X-Provider", "mymemory");
           return res.json({ text: translated, provider: "mymemory", degraded: true });
         } catch (fallbackErr) {
-          log("mymemory fallback failed:", fallbackErr.message);
+          log("mymemory fallback failed:", errKind(fallbackErr));
         }
       }
       // Fail explicitly. The client decides how to keep the call alive (it
@@ -550,16 +582,16 @@ function createServer(overrides = {}) {
       let format = "pcm";
 
       if (!upstream.ok && upstream.status >= 400 && upstream.status < 500) {
-        const detail = await upstream.text();
-        log(`TTS pcm rejected (${upstream.status}), retrying as mp3:`, detail.slice(0, 200));
+        await upstream.text().catch(() => ""); // drain; the body is not logged (it could echo the text)
+        log(`TTS pcm rejected (${upstream.status}), retrying as mp3`);
         upstream = await requestElevenTts(text, lang, "mp3_44100_128", upstreamAbort.signal, hint);
         format = "mp3";
       }
       clearTimeout(headerTimer);
 
       if (!upstream.ok || !upstream.body) {
-        const detail = await upstream.text().catch(() => "");
-        log("ElevenLabs TTS error:", upstream.status, detail.slice(0, 300));
+        await upstream.text().catch(() => "");
+        log("ElevenLabs TTS error:", upstream.status);
         return res.status(502).json({ error: "TTS failed", fallback: "browser" });
       }
 
@@ -575,14 +607,14 @@ function createServer(overrides = {}) {
 
       const stream = Readable.fromWeb(upstream.body);
       stream.on("error", (err) => {
-        log("TTS stream error:", err.message);
+        log("TTS stream error:", errKind(err));
         res.destroy(err);
       });
       res.on("close", () => stream.destroy());
       stream.pipe(res);
     } catch (err) {
       clearTimeout(headerTimer);
-      log("TTS proxy error:", err.message);
+      log("TTS proxy error:", errKind(err));
       if (!res.headersSent && !res.destroyed) {
         res.status(504).json({ error: "TTS proxy error", fallback: "browser" });
       }
@@ -617,8 +649,8 @@ function createServer(overrides = {}) {
       });
 
       if (!upstream.ok) {
-        const detail = await upstream.text();
-        log("ElevenLabs STT error:", upstream.status, detail.slice(0, 300));
+        await upstream.text().catch(() => "");
+        log("ElevenLabs STT error:", upstream.status);
         return res.status(502).json({ error: "Transcription failed" });
       }
 
@@ -629,7 +661,7 @@ function createServer(overrides = {}) {
       // Only the transcript is needed; don't forward provider internals.
       res.json({ text: typeof data?.text === "string" ? data.text : "", language_code: data?.language_code });
     } catch (err) {
-      log("STT proxy error:", err.message);
+      log("STT proxy error:", errKind(err));
       res.status(502).json({ error: "STT proxy error" });
     }
   });

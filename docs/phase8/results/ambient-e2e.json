@@ -5,21 +5,21 @@
     "label": "SIMULATED — scripted recognizer final → UI/speech; real server, stubbed provider, loopback network",
     "final_to_text_ms": {
       "n": 8,
-      "p50": 8,
-      "p95": 19,
-      "max": 19
+      "p50": 6,
+      "p95": 22,
+      "max": 22
     },
     "final_to_speech_start_ms": {
       "n": 8,
       "p50": 8,
-      "p95": 20,
-      "max": 20
+      "p95": 24,
+      "max": 24
     },
     "excludes": "microphone capture, real recognizer latency (cloud ASR typically adds hundreds of ms to seconds), real provider latency, Bluetooth output latency"
   },
   "steps": [
     {
-      "name": "Home → \"Translate what’s around you\" opens setup; nothing is listening yet",
+      "name": "Home shows AIR first; AIR opens ready with nothing listening yet",
       "ok": true
     },
     {

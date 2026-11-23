@@ -125,7 +125,7 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
   const mode = s?.processing.available ? s.processing.mode : 'cloud';
   const suggestion = s?.intelligence.suggestions.at(-1);
 
-  const dot = connected ? 'bg-success' : phase === 'failed' || phase === 'ended' ? 'bg-danger' : 'bg-accent pulse-dot';
+  const dot = connected ? 'bg-success' : phase === 'failed' || phase === 'ended' ? 'bg-danger' : 'bg-accent';
 
   return (
     // On desktop, sheets are a 400 px side panel: the call column moves aside so

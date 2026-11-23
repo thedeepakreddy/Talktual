@@ -114,7 +114,7 @@ const launch = () => chromium.launch({ args: ['--use-fake-ui-for-media-stream', 
         const { sw, cw } = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
         assert.ok(sw <= cw, `${label}: scrollWidth ${sw} > clientWidth ${cw}`);
       };
-      await page.goto(stack.web);
+      await page.goto(`${stack.web}/#/connect`);
       await noHScroll('home');
       await page.getByLabel('Your name').fill('Ana');
       await page.getByRole('button', { name: /^start a call$/i }).tap();

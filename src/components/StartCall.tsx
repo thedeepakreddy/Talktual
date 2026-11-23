@@ -114,7 +114,7 @@ export function StartCall({ language, onBack, onJoined }: StartCallProps) {
           {roomCode || '······'}
         </p>
         <p role="status" className="mt-6 flex items-center gap-2 text-label text-fg-muted">
-          <span className="pulse-dot h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
+          <span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
           Waiting for them to join…
         </p>
       </div>

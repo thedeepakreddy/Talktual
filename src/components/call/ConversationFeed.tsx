@@ -78,18 +78,18 @@ export function ConversationFeed({ snapshot: s, peerName, peerLanguage }: FeedPr
           </p>
         </div>
       ) : (
-        <ol className="flex min-h-full flex-col justify-end gap-5 py-6">
+        <ol className="flex min-h-full flex-col justify-end py-4">
           {segments.map((seg, i) => {
             const prev = segments[i - 1];
             const showName = !prev || prev.speaker !== seg.speaker;
             return (
               <Fragment key={seg.id}>
-                <Turn seg={seg} showName={showName} peerName={peerName} />
+                <Turn seg={seg} showName={showName} peerName={peerName} latest={i === segments.length - 1} />
               </Fragment>
             );
           })}
           {peerLive && (
-            <li className="max-w-[85%]" aria-label={`${peerName}, speaking`}>
+            <li className="border-t border-line py-3" aria-label={`${peerName}, speaking`}>
               <p className="text-body-lg italic text-fg-muted">
                 {peerLive}
                 <span aria-hidden="true">…</span>
@@ -97,7 +97,7 @@ export function ConversationFeed({ snapshot: s, peerName, peerLanguage }: FeedPr
             </li>
           )}
           {live && (
-            <li className="ml-auto max-w-[85%] text-right" aria-label="You, speaking">
+            <li className="border-t border-line py-3" aria-label="You, speaking">
               <p className="text-body-lg text-accent-text">
                 {live}
                 <span aria-hidden="true">…</span>
@@ -111,7 +111,7 @@ export function ConversationFeed({ snapshot: s, peerName, peerLanguage }: FeedPr
   );
 }
 
-function Turn({ seg, showName, peerName }: { seg: SegmentRecord; showName: boolean; peerName: string }) {
+function Turn({ seg, showName, peerName, latest }: { seg: SegmentRecord; showName: boolean; peerName: string; latest: boolean }) {
   const mine = seg.speaker === 'local';
   const markers = markersFor(seg);
   // Signals help the listener read intent; on your own lines they're noise.
@@ -132,18 +132,16 @@ function Turn({ seg, showName, peerName }: { seg: SegmentRecord; showName: boole
         : '';
 
   return (
-    <li className={cn('flex flex-col', mine ? 'items-end' : 'items-start')}>
-      {showName && <span className="mb-1 text-meta font-medium text-fg-subtle">{mine ? 'You' : seg.speakerName || peerName}</span>}
+    <li className={cn('flex flex-col py-3', showName ? 'border-t border-line' : 'pt-0')}>
+      {showName && <span className={cn('mb-1 text-meta font-semibold', mine ? 'text-fg-subtle' : 'text-fg-muted')}>{mine ? 'You' : seg.speakerName || peerName}</span>}
       <div
         className={cn(
-          'max-w-[85%] sm:max-w-[75%]',
-          mine ? 'rounded-lg rounded-br-sm bg-surface px-3.5 py-2.5' : 'border-l-2 pl-3',
-          !mine && (playing ? 'border-incoming' : 'border-line'),
+          'max-w-[40rem]',
           (provisional || seg.interrupted) && 'opacity-70'
         )}
         data-state={seg.state ?? 'final'}
       >
-        <p className={cn('text-body-lg text-fg', provisional && 'italic')}>
+        <p className={cn('text-fg', !mine && latest ? 'text-translation font-medium tracking-[-0.005em]' : 'text-body-lg', provisional && 'italic')}>
           {playing && <Volume2 className="mr-1.5 inline h-4 w-4 align-[-2px] text-incoming" aria-label="Playing" />}
           {primary}
         </p>
