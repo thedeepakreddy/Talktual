@@ -240,6 +240,10 @@ export class ValidationRecorder {
     // Counts of device KINDS only — never labels or ids.
     this.ev('route_change', undefined, `in${Math.min(inputs, 9)}_out${Math.min(outputs, 9)}`);
   }
+  /** Safety mechanisms that fired (enum only). */
+  note(what: 'echo_dropped' | 'half_duplex_hold' | 'speech_deferred'): void {
+    this.counters[what] = (this.counters[what] ?? 0) + 1;
+  }
   cancel(n: number): void {
     this.ev('cancel', undefined, undefined, n);
   }
@@ -311,6 +315,8 @@ export class ValidationRecorder {
         interruptions: Object.fromEntries(Object.entries(c).filter(([k]) => k.startsWith('interruption:')).map(([k, v]) => [k.slice(13), v])),
         route_changes: c.route_change ?? 0,
         cancels: c.cancel ?? 0,
+        echo_dropped: c.echo_dropped ?? 0,
+        half_duplex_holds: c.half_duplex_hold ?? 0,
       },
       counters: { ...c },
       events: this.events.map((e) => ({ ...e })),

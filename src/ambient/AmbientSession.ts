@@ -513,7 +513,7 @@ export class AmbientSession {
   }
 
   private disclosure(): Disclosure {
-    return ambientDisclosure(this.translatorName, this.policy?.mode ?? 'cloud');
+    return ambientDisclosure(this.translatorName, this.policy?.mode ?? 'cloud', this.serverTts);
   }
 
   private begin(): void {
@@ -737,6 +737,7 @@ export class AmbientSession {
       this.spoken = this.spoken.filter((s) => t - s.t <= this.limits.echoWindowMs);
       if (this.spoken.some((s) => overlap(s.text, u.text) >= 0.6)) {
         this.diag.count('echo_dropped');
+        this.rec?.note('echo_dropped');
         return;
       }
     }
@@ -947,6 +948,7 @@ export class AmbientSession {
         this.stopCapture('half-duplex');
         this.commit({ heldForSpeech: true });
         this.diag.count('half_duplex_holds');
+        this.rec?.note('half_duplex_hold');
       }
       return;
     }
