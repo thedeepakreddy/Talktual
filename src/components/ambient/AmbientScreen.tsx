@@ -151,10 +151,10 @@ function AmbientBanner({ s, session, onSettings }: { s: AmbientSnapshot | null; 
             <Banner
               tone={s.notice.tone === 'error' ? 'error' : s.notice.code === 'offline' ? 'offline' : s.notice.tone}
               action={
-                s.phase === 'stalled' || (s.phase === 'paused' && s.pauseReason !== 'offline')
-                  ? action('Resume', () => session?.resume())
-                  : s.notice.code.startsWith('asr-') || s.pauseReason === 'policy'
-                    ? action('Settings', onSettings)
+                s.notice.code.startsWith('asr-') || s.pauseReason === 'policy'
+                  ? action('Settings', onSettings)
+                  : s.phase === 'stalled' || (s.phase === 'paused' && s.pauseReason !== 'offline')
+                    ? action('Resume', () => session?.resume())
                     : undefined
               }
             >
@@ -217,6 +217,7 @@ function Feed({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [lines, s?.partial]);
   const empty = lines.length === 0 && !s?.partial;
+  const lastTranslated = [...lines].reverse().find((l) => l.state === 'translated')?.id;
   return (
     <div
       ref={ref}
@@ -236,7 +237,8 @@ function Feed({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
         <ol className="flex min-h-full flex-col justify-end gap-4 py-6">
           {lines.map((l) => (
             <Fragment key={l.id}>
-              <Line line={l} playing={s?.playingId === l.id} canReplay={Boolean(s?.speak)} onReplay={() => session?.replay(l.id)} />
+              {/* "Play again" only on the latest translated line: one replay control, where it's wanted. */}
+              <Line line={l} playing={s?.playingId === l.id} canReplay={Boolean(s?.speak) && l.id === lastTranslated} onReplay={() => session?.replay(l.id)} />
             </Fragment>
           ))}
           {s?.partial && (
@@ -322,7 +324,10 @@ function Dock({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
             {s?.speak ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
           </IconButton>
         </div>
-        {listening ? (
+        {s?.phase === 'unavailable' && s.notice?.code !== 'permission-denied' ? (
+          // Nothing to start until something changes (browser, settings): no dead button.
+          <span className="h-[88px] w-[88px]" aria-hidden="true" />
+        ) : listening ? (
           <button
             type="button"
             onClick={() => session?.pause()}

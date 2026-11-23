@@ -141,6 +141,8 @@ try {
   const kg = await ctx('es-ES', { viewport: { width: 1280, height: 800 } });
   await step('keyboard: Home tab order is name → language → Start → Join', async () => {
     await kb.page.goto(stack.web);
+    // Tab only once the app has rendered (otherwise the first Tab lands on <body>).
+    await kb.page.getByLabel('Your name').waitFor();
     const order = [];
     for (let i = 0; i < 4; i++) {
       await kb.page.keyboard.press('Tab');
@@ -214,6 +216,62 @@ try {
     );
     await rm.context.close();
     assert.deepEqual(long, []);
+  });
+
+  // ---------------------------------------------------------------- Phase 8: Live translate
+  await step('Live translate: touch targets ≥ 44 px (setup, consent, listening with lines, settings)', async () => {
+    const a = await ctx('en-US', PHONE);
+    const p = a.page;
+    const r = {};
+    await p.goto(stack.web);
+    await p.getByRole('button', { name: /translate what’s around you/i }).click();
+    r.setup = await smallTargets(p);
+    await p.getByRole('button', { name: 'Start listening' }).click();
+    await p.getByRole('dialog', { name: 'Listening to the room' }).waitFor();
+    await p.waitForTimeout(350);
+    r.consent = await smallTargets(p);
+    await p.getByRole('dialog').getByRole('button', { name: 'Start listening' }).click();
+    await p.waitForFunction(() => window.__srRunning());
+    await p.evaluate(() => window.__say('Jó napot kívánok', true));
+    await p.waitForTimeout(600);
+    r.listening = await smallTargets(p);
+    await p.getByRole('button', { name: 'Live translate settings' }).click();
+    await p.waitForTimeout(400);
+    r.settings = await smallTargets(p);
+    await a.context.close();
+    assert.deepEqual(Object.entries(r).flatMap(([k, l]) => l.map((x) => `${k}: "${x.label}" ${x.w}×${x.h}`)), []);
+  });
+
+  await step('Live translate by keyboard: Start, consent focus, Pause, settings focus trap and return', async () => {
+    const a = await ctx('en-US', { viewport: { width: 1280, height: 800 } });
+    const p = a.page;
+    await p.goto(stack.web);
+    await p.getByRole('button', { name: /translate what’s around you/i }).focus();
+    await p.keyboard.press('Enter');
+    await p.getByRole('button', { name: 'Start listening' }).focus();
+    await p.keyboard.press('Enter');
+    const d = p.getByRole('dialog', { name: 'Listening to the room' });
+    await d.waitFor();
+    await p.waitForTimeout(100);
+    assert.equal(await p.evaluate(() => document.activeElement.textContent.trim()), 'Start listening', 'focus on the consent action');
+    await p.keyboard.press('Enter');
+    await p.waitForFunction(() => window.__srRunning());
+    await p.getByRole('button', { name: 'Pause listening' }).focus();
+    await p.keyboard.press('Enter');
+    await p.waitForFunction(() => !window.__srRunning(), null, { timeout: 2000 });
+    const btn = p.getByRole('button', { name: 'Live translate settings' });
+    await btn.focus();
+    await p.keyboard.press('Enter');
+    const sheet = p.getByRole('dialog', { name: 'Live translate settings' });
+    await sheet.waitFor();
+    for (let i = 0; i < 30; i++) {
+      await p.keyboard.press('Tab');
+      assert.equal(await sheet.evaluate((x) => x.contains(document.activeElement)), true, `focus escaped after ${i + 1} tabs`);
+    }
+    await p.keyboard.press('Escape');
+    await sheet.waitFor({ state: 'detached' });
+    assert.equal(await p.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Live translate settings');
+    await a.context.close();
   });
 } finally {
   await browser.close();
