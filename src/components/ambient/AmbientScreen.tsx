@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, Ear, Pause, RotateCcw, SlidersHorizontal, Trash2, Volume2, VolumeX, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, AudioLines, ChevronLeft, Ear, Pause, Square, RotateCcw, SlidersHorizontal, Trash2, Volume2, VolumeX, X } from 'lucide-react';
 import { findLanguage, type Language } from '../../types';
 import { cn } from '../../utils';
 import { useAmbientSession, createAmbientDeps } from '../../ambient/useAmbientSession';
@@ -7,33 +7,48 @@ import type { AmbientDeps, AmbientLine, AmbientSession, AmbientSnapshot, CapStat
 import type { ProcessingMode } from '../../privacy/policy';
 import { Banner, Button, IconButton, Row, Section, Segmented, Sheet, Switch } from '../ui';
 import { LanguagePicker } from '../LanguagePicker';
+import { coarseBrowser, type ValidationRecorder } from '../../ambient/validation';
 import { ConsentSheet } from '../ConsentSheet';
+import { ActivityTrace } from './ActivityTrace';
+import { getVoicePrefs } from '../../app/prefs';
 
 interface AmbientScreenProps {
   /** The user's language: what they read and hear. */
   language: Language;
   onLanguageChange: (l: Language) => void;
+  /** What the room speaks (chosen on Home or here). */
+  from: Language;
+  onFromChange: (l: Language) => void;
+  /** Start listening as soon as the session is ready (came from Home's Start listening). */
+  autostart?: boolean;
   onExit: () => void;
   depsFactory?: () => AmbientDeps;
 }
 
-const DEFAULT_FROM = 'hu-HU';
 const VOLUMES = { quiet: 0.4, medium: 0.7, full: 1 } as const;
 type VolumeKey = keyof typeof VOLUMES;
 const volumeKey = (v: number): VolumeKey => (v <= 0.5 ? 'quiet' : v < 0.9 ? 'medium' : 'full');
 const CAP_LABEL: Record<CapState, string> = { device: 'On this device', cloud: 'Cloud', 'device+cloud': 'Device, then cloud', unavailable: 'Unavailable' };
 
-export function AmbientScreen({ language, onLanguageChange, onExit, depsFactory = createAmbientDeps }: AmbientScreenProps) {
-  const initialFrom = language.bcp47.startsWith('hu') ? 'en-US' : DEFAULT_FROM;
-  const { session, snapshot: s } = useAmbientSession({ from: initialFrom, to: language.bcp47, speak: true, headphones: false, volume: VOLUMES.medium }, depsFactory);
+export function AmbientScreen({ language, onLanguageChange, from: fromProp, onFromChange, autostart, onExit, depsFactory = createAmbientDeps }: AmbientScreenProps) {
+  const [voice] = useState(() => getVoicePrefs());
+  const { session, snapshot: s, recorder } = useAmbientSession({ from: fromProp.bcp47, to: language.bcp47, speak: voice.speak, headphones: false, volume: voice.volume }, depsFactory);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [picker, setPicker] = useState<'from' | 'to' | null>(null);
 
-  // Keep "You read and hear" in sync with the app language.
+  // Languages are app state (shared with Home); the session follows them.
   useEffect(() => {
-    if (session && s && s.to !== language.bcp47) session.setLanguages(s.from === language.bcp47 ? initialFrom : s.from, language.bcp47);
+    if (session && s && (s.to !== language.bcp47 || s.from !== fromProp.bcp47)) session.setLanguages(fromProp.bcp47, language.bcp47);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, language.bcp47]);
+  }, [session, language.bcp47, fromProp.bcp47]);
+
+  // Came from Home's "Start listening": start once (consent is still asked first if needed).
+  const autostarted = useRef(false);
+  useEffect(() => {
+    if (!autostart || autostarted.current || !session || s?.phase !== 'idle') return;
+    autostarted.current = true;
+    session.start();
+  }, [autostart, session, s?.phase]);
 
   // A consent prompt always takes over (never stacked on settings).
   useEffect(() => {
@@ -50,7 +65,7 @@ export function AmbientScreen({ language, onLanguageChange, onExit, depsFactory 
     };
   }, [listening]);
 
-  const from = findLanguage(s?.from) ?? findLanguage(initialFrom)!;
+  const from = findLanguage(s?.from) ?? fromProp;
   const to = findLanguage(s?.to) ?? language;
   const exit = () => {
     session?.stop();
@@ -65,28 +80,36 @@ export function AmbientScreen({ language, onLanguageChange, onExit, depsFactory 
             <ChevronLeft className="h-5 w-5" />
           </IconButton>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-heading font-semibold">Live translate</h1>
+            <h1 className="truncate text-heading font-semibold">AIR</h1>
             <p className="flex items-center gap-1.5 text-label text-fg-muted" data-testid="ambient-meta">
-              <span className={cn('h-2 w-2 shrink-0 rounded-full', listening ? (s?.capturing ? 'bg-danger pulse-dot' : 'bg-accent') : 'bg-fg-subtle')} aria-hidden="true" />
+              <span className={cn('h-2 w-2 shrink-0 rounded-full', listening ? (s?.capturing ? 'bg-danger' : 'bg-accent') : s?.phase === 'paused' ? 'bg-warning' : 'bg-fg-subtle')} aria-hidden="true" />
               <span className="truncate">
-                {[phaseLabel(s), `${from.native} → ${to.native}`, s?.processing.available && s.processing.mode !== 'cloud' ? (s.processing.mode === 'local-only' ? 'On-device only' : 'Hybrid') : null]
+                {[phaseLabel(s), s?.processing.available && s.processing.mode !== 'cloud' ? (s.processing.mode === 'local-only' ? 'On-device only' : 'Hybrid') : null]
                   .filter(Boolean)
                   .join(' · ')}
               </span>
             </p>
           </div>
-          <IconButton label="Live translate settings" onClick={() => setSettingsOpen(true)}>
+          <IconButton label="AIR settings" onClick={() => setSettingsOpen(true)}>
             <SlidersHorizontal className="h-5 w-5" />
           </IconButton>
         </header>
 
+        <LanguagePair from={from} to={to} onPick={setPicker} />
+
         <AmbientBanner s={s} session={session} onSettings={() => setSettingsOpen(true)} />
 
+        {recorder && <TestModeStrip recorder={recorder} />}
+
         {s && s.lines.length === 0 && !listening && s.phase !== 'paused' ? (
-          <Setup s={s} session={session} from={from} to={to} onPick={setPicker} />
+          <Setup s={s} session={session} to={to} />
         ) : (
           <Feed s={s} session={session} />
         )}
+
+        <div className="px-4 pt-3 sm:px-6">
+          <ActivityTrace capturing={Boolean(s?.capturing)} hearing={Boolean(s?.hearing)} partial={s?.partial ?? ''} settled={!listening} />
+        </div>
 
         <Dock s={s} session={session} />
       </div>
@@ -98,7 +121,7 @@ export function AmbientScreen({ language, onLanguageChange, onExit, depsFactory 
         title={picker === 'from' ? 'They speak' : 'You read and hear'}
         selected={picker === 'from' ? from : to}
         onSelect={(l) => {
-          if (picker === 'from') session?.setLanguages(l.bcp47, s?.to ?? language.bcp47);
+          if (picker === 'from') onFromChange(l);
           else onLanguageChange(l);
         }}
         onClose={() => setPicker(null)}
@@ -116,6 +139,23 @@ export function AmbientScreen({ language, onLanguageChange, onExit, depsFactory 
   );
 }
 
+/** They speak → You hear, borderless and tappable (the concept-B channel strip without the box). */
+function LanguagePair({ from, to, onPick }: { from: Language; to: Language; onPick: (w: 'from' | 'to') => void }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center border-b border-line px-4 sm:px-6" role="group" aria-label="Language pair">
+      <button type="button" onClick={() => onPick('from')} className="min-w-0 py-2.5 text-left" aria-label={`They speak: ${from.native}. Change`}>
+        <span className="block text-meta text-fg-subtle">They speak</span>
+        <span className="block truncate text-body font-semibold">{from.native}</span>
+      </button>
+      <ArrowRight className="mx-3 h-4 w-4 text-fg-subtle" aria-hidden="true" />
+      <button type="button" onClick={() => onPick('to')} className="min-w-0 py-2.5 text-right" aria-label={`You hear: ${to.native}. Change`}>
+        <span className="block text-meta text-fg-subtle">You hear</span>
+        <span className="block truncate text-body font-semibold">{to.native}</span>
+      </button>
+    </div>
+  );
+}
+
 function phaseLabel(s: AmbientSnapshot | null): string {
   switch (s?.phase) {
     case 'listening':
@@ -128,6 +168,8 @@ function phaseLabel(s: AmbientSnapshot | null): string {
       return 'Stopped responding';
     case 'unavailable':
       return 'Unavailable';
+    case 'stopped':
+      return 'Stopped';
     default:
       return 'Not listening';
   }
@@ -184,14 +226,69 @@ function AmbientBanner({ s, session, onSettings }: { s: AmbientSnapshot | null; 
 
 // ---------------------------------------------------------------------------
 
-function Setup({ s, session, from, to, onPick }: { s: AmbientSnapshot; session: AmbientSession | null; from: Language; to: Language; onPick: (w: 'from' | 'to') => void }) {
+/**
+ * Phase 8.5 test mode (only with ?validate=1 or ?debug=1): the device owner marks
+ * the end of each spoken test phrase and exports content-free timings.
+ */
+function TestModeStrip({ recorder }: { recorder: ValidationRecorder }) {
+  const [marks, setMarks] = useState(0);
+  const [msg, setMsg] = useState<string | null>(null);
+  const exportSummary = async () => {
+    const json = JSON.stringify(recorder.summary(coarseBrowser(navigator.userAgent)), null, 2);
+    try {
+      const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `talktual-validation-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setMsg('Exported');
+    } catch {
+      try {
+        await navigator.clipboard.writeText(json);
+        setMsg('Copied');
+      } catch {
+        setMsg('Export failed');
+      }
+    }
+  };
+  return (
+    <div className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-line-strong px-3 py-1.5 sm:mx-6" aria-label="Test mode">
+      <span className="mr-auto text-label font-semibold text-fg-muted">Test mode{msg ? ` · ${msg}` : ''}</span>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => {
+          recorder.marker();
+          setMarks((m) => m + 1);
+        }}
+      >
+        Mark end of speech{marks ? ` (${marks})` : ''}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={exportSummary}>
+        Export
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => {
+          recorder.clear();
+          setMarks(0);
+          setMsg('Cleared');
+        }}
+      >
+        Clear
+      </Button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function Setup({ s, session, to }: { s: AmbientSnapshot; session: AmbientSession | null; to: Language }) {
   return (
     <div className="scroll-area flex-1 overflow-y-auto px-4 pb-4 pt-6 sm:px-6">
       <p className="max-w-[32rem] text-body text-fg-muted">Hear what people around you are saying, translated into {to.name}. It listens only while you want it to.</p>
-      <Section title="Languages">
-        <Row label="They speak" value={`${from.flag} ${from.native}`} onClick={() => onPick('from')} ariaLabel={`They speak: ${from.native}. Change`} />
-        <Row label="You read and hear" value={`${to.flag} ${to.native}`} onClick={() => onPick('to')} ariaLabel={`You read and hear: ${to.native}. Change`} />
-      </Section>
       <Section title="Listening">
         <Switch label="Speak translations" description="Off: text only." checked={s.speak} onChange={(v) => session?.setSpeak(v)} />
         <Switch
@@ -234,15 +331,13 @@ function Feed({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
           <p className="max-w-[18rem] text-center text-body text-fg-muted">{s?.phase === 'listening' ? 'Listening. Translations appear here as people speak.' : 'Nothing yet.'}</p>
         </div>
       ) : (
-        <ol className="flex min-h-full flex-col justify-end gap-4 py-6">
-          {lines.map((l) => (
-            <Fragment key={l.id}>
-              {/* "Play again" only on the latest translated line: one replay control, where it's wanted. */}
-              <Line line={l} playing={s?.playingId === l.id} canReplay={Boolean(s?.speak) && l.id === lastTranslated} onReplay={() => session?.replay(l.id)} />
-            </Fragment>
+        <ol className="flex min-h-full flex-col justify-end py-4">
+          {lines.map((l, i) => (
+            // "Play again" only on the latest translated line: one replay control, where it's wanted.
+            <Line key={l.id} line={l} latest={i === lines.length - 1} playing={s?.playingId === l.id} canReplay={Boolean(s?.speak) && l.id === lastTranslated} onReplay={() => session?.replay(l.id)} />
           ))}
           {s?.partial && (
-            <li className="max-w-[85%]" aria-label="Hearing">
+            <li className="border-t border-line py-3" aria-label="Hearing">
               <p className="text-body italic text-fg-muted">
                 {s.partial}
                 <span aria-hidden="true">…</span>
@@ -255,7 +350,7 @@ function Feed({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
   );
 }
 
-function Line({ line: l, playing, canReplay, onReplay }: { line: AmbientLine; playing: boolean; canReplay: boolean; onReplay: () => void }) {
+function Line({ line: l, latest, playing, canReplay, onReplay }: { line: AmbientLine; latest: boolean; playing: boolean; canReplay: boolean; onReplay: () => void }) {
   const markers = [
     l.uncertain ? 'Unclear audio — may be inaccurate' : null,
     l.revised ? 'Corrected by the recognizer' : null,
@@ -264,20 +359,23 @@ function Line({ line: l, playing, canReplay, onReplay }: { line: AmbientLine; pl
   ].filter(Boolean);
   const translated = l.state === 'translated' && l.translation;
   return (
-    <li className="flex items-start gap-2">
-      <div className={cn('min-w-0 flex-1 border-l-2 pl-3', playing ? 'border-incoming' : 'border-line', l.state === 'skipped' && 'opacity-60')}>
-        {translated ? (
-          <p className="text-body-lg text-fg">
-            {playing && <Volume2 className="mr-1.5 inline h-4 w-4 align-[-2px] text-incoming" aria-label="Playing" />}
-            {l.translation}
+    <li className="flex items-start gap-2 border-t border-line py-3.5 first:border-t-0">
+      <div className={cn('min-w-0 flex-1', l.state === 'skipped' && 'opacity-60')}>
+        {playing && (
+          <p className="mb-1 flex items-center gap-1.5 text-meta font-semibold text-accent-text">
+            <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
+            Playing
           </p>
+        )}
+        {translated ? (
+          <p className={cn('text-fg', latest ? 'text-translation font-medium tracking-[-0.005em]' : 'text-body-lg')}>{l.translation}</p>
         ) : (
-          <p data-original className={cn('text-body-lg', l.state === 'translating' ? 'italic text-fg-muted' : 'text-fg')}>
+          <p data-original className={cn(latest ? 'text-translation' : 'text-body-lg', l.state === 'translating' ? 'italic text-fg-muted' : 'text-fg')}>
             {l.original}
           </p>
         )}
         {translated ? (
-          <p data-original className="mt-0.5 text-label text-fg-muted">
+          <p data-original className="mt-1 text-label text-fg-muted">
             {l.original}
           </p>
         ) : l.state === 'translating' ? (
@@ -298,76 +396,84 @@ function Line({ line: l, playing, canReplay, onReplay }: { line: AmbientLine; pl
 
 function Dock({ s, session }: { s: AmbientSnapshot | null; session: AmbientSession | null }) {
   const listening = s?.phase === 'listening' || s?.phase === 'starting';
+  const paused = s?.phase === 'paused' || s?.phase === 'stalled';
+  const live = listening || paused;
   const hint = !s
     ? ''
     : s.phase === 'listening'
       ? s.heldForSpeech
         ? 'Listening resumes after the translation'
         : s.hearing
-          ? 'Hearing speech…'
+          ? 'Hearing speech'
           : 'Listening to the room'
       : s.phase === 'starting'
         ? 'Starting…'
         : s.phase === 'paused'
           ? 'Paused — not listening'
-          : s.phase === 'stalled' || s.phase === 'unavailable'
-            ? ''
-            : 'Press Start to listen';
+          : s.phase === 'stopped'
+            ? 'Stopped. Nothing is listening.'
+            : s.phase === 'stalled' || s.phase === 'unavailable'
+              ? ''
+              : 'Not listening yet';
+  const canStart = !(s?.phase === 'unavailable' && s.notice?.code !== 'permission-denied');
   return (
-    <div className="safe-b px-4 pt-2 sm:px-6">
-      <p aria-live="polite" className={cn('mb-3 min-h-5 text-center text-label font-medium', listening ? 'text-accent-text' : 'text-fg-muted')}>
+    <div className="safe-b px-4 pt-3 sm:px-6">
+      <p aria-live="polite" className={cn('mb-3 min-h-5 text-center text-label font-medium', listening ? 'text-accent-text' : paused ? 'text-warning' : 'text-fg-muted')}>
         {hint}
       </p>
-      <div className="mx-auto grid max-w-[360px] grid-cols-[1fr_auto_1fr] items-center">
-        <div className="flex justify-start">
-          <IconButton label="Speak translations" aria-pressed={Boolean(s?.speak)} tone={s?.speak ? 'default' : 'active'} onClick={() => session?.setSpeak(!s?.speak)}>
-            {s?.speak ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-          </IconButton>
+      <div className="mx-auto grid max-w-[420px] grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <div className="flex flex-col items-start">
+          <span className="flex flex-col items-center">
+            <IconButton label="Speak translations" aria-pressed={Boolean(s?.speak)} tone={s?.speak ? 'default' : 'active'} onClick={() => session?.setSpeak(!s?.speak)}>
+              {s?.speak ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+            </IconButton>
+            <span className="text-meta text-fg-subtle" aria-hidden="true">
+              {s?.speak ? 'Speech on' : 'Text only'}
+            </span>
+          </span>
         </div>
-        {s?.phase === 'unavailable' && s.notice?.code !== 'permission-denied' ? (
+        {!canStart ? (
           // Nothing to start until something changes (browser, settings): no dead button.
-          <span className="h-[88px] w-[88px]" aria-hidden="true" />
+          <span className="h-12 w-[164px]" aria-hidden="true" />
         ) : listening ? (
-          <button
-            type="button"
-            onClick={() => session?.pause()}
-            aria-label="Pause listening"
-            className="flex h-[88px] w-[88px] flex-col items-center justify-center gap-1 rounded-full bg-accent text-on-accent transition-transform active:scale-95"
-          >
-            {s?.hearing ? <Bars /> : <Pause className="h-6 w-6 fill-current" />}
-            <span className="text-meta font-semibold">Pause</span>
-          </button>
+          <Button variant="primary" className="w-[164px]" onClick={() => session?.pause()} aria-label="Pause listening" icon={s?.hearing ? <AudioLines className="h-5 w-5" /> : <Pause className="h-5 w-5" />}>
+            Pause
+          </Button>
         ) : (
-          <button
-            type="button"
-            onClick={() => (s?.phase === 'idle' || s?.phase === 'stopped' ? session?.start() : session?.resume())}
+          <Button
+            variant="primary"
+            className="w-[164px]"
             disabled={!session}
-            aria-label={s?.phase === 'paused' || s?.phase === 'stalled' ? 'Resume listening' : 'Start listening'}
-            className="flex h-[88px] w-[88px] flex-col items-center justify-center gap-1 rounded-full bg-surface text-fg shadow-[inset_0_0_0_1px_var(--line-strong)] transition-[transform,background-color] hover:bg-surface-hover active:scale-95 disabled:opacity-40"
+            onClick={() => (paused ? session?.resume() : session?.start())}
+            aria-label={paused ? 'Resume listening' : 'Start listening'}
+            icon={<Ear className="h-5 w-5" />}
           >
-            <Ear className="h-7 w-7" />
-            <span className="text-meta font-semibold">{s?.phase === 'paused' || s?.phase === 'stalled' ? 'Resume' : 'Start'}</span>
-          </button>
+            {paused ? 'Resume' : s?.phase === 'stopped' ? 'Start again' : 'Start'}
+          </Button>
         )}
         <div className="flex justify-end">
-          {Boolean(s?.lines.length) && (
-            <IconButton label="Clear translations" onClick={() => session?.clear()}>
-              <Trash2 className="h-5 w-5" />
-            </IconButton>
-          )}
+          {live ? (
+            <span className="flex flex-col items-center">
+              <IconButton label="Stop listening" onClick={() => session?.stop()}>
+                <Square className="h-[18px] w-[18px]" />
+              </IconButton>
+              <span className="text-meta text-fg-subtle" aria-hidden="true">
+                Stop
+              </span>
+            </span>
+          ) : Boolean(s?.lines.length) ? (
+            <span className="flex flex-col items-center">
+              <IconButton label="Clear translations" onClick={() => session?.clear()}>
+                <Trash2 className="h-5 w-5" />
+              </IconButton>
+              <span className="text-meta text-fg-subtle" aria-hidden="true">
+                Clear
+              </span>
+            </span>
+          ) : null}
         </div>
       </div>
     </div>
-  );
-}
-
-function Bars() {
-  return (
-    <span className="flex h-7 items-center gap-1" aria-hidden="true">
-      {[0, 160, 320, 80].map((d) => (
-        <span key={d} className="level-bar h-6 w-1.5 rounded-full bg-current" style={{ animationDelay: `${d}ms` }} />
-      ))}
-    </span>
   );
 }
 
@@ -391,7 +497,7 @@ function AmbientSettings({
   onPick: (w: 'from' | 'to') => void;
 }) {
   return (
-    <Sheet open={open} onClose={onClose} title="Live translate settings" closeLabel="Close settings">
+    <Sheet open={open} onClose={onClose} title="AIR settings" closeLabel="Close settings">
       <Section title="Languages">
         <Row label="They speak" value={`${from.flag} ${from.native}`} onClick={() => onPick('from')} ariaLabel={`They speak: ${from.native}. Change`} />
         <Row label="You read and hear" value={`${to.flag} ${to.native}`} onClick={() => onPick('to')} ariaLabel={`You read and hear: ${to.native}. Change`} />

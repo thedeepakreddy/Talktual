@@ -1,64 +1,101 @@
 @import "tailwindcss";
 
 /* ===========================================================================
-   Talktual design tokens — "Quiet instrument" (see DESIGN.md).
-   Semantic tokens only; components never use raw colors.
+   Talktual design tokens — Phase 7 final, Talktual brand (orange #F59A38 /
+   #FFB45B, charcoal #1F2328, warm white #FAF7F2) on the Constitution structure.
+   Semantic tokens only; components never use raw colors. See DESIGN.md.
+   Theme: system by default; <html data-theme="light|dark"> overrides it.
    =========================================================================== */
 
 :root {
   color-scheme: dark;
-  --bg: #0e0f11;
-  --raised: #16181b;
-  --surface: #1d2024;
-  --surface-hover: #252930;
-  --line: #2b2f35;
-  --line-strong: #3b4048;
-  --fg: #ecedee;
-  --fg-muted: #a3a9b1;
-  --fg-subtle: #878e96;
-  --selected: #383d45;
-  --accent: #f5a524;
-  --on-accent: #1c1305;
-  --accent-text: #f7b24a;
-  --accent-soft: rgb(245 165 36 / 0.14);
-  --incoming: #86bfff;
-  --incoming-soft: rgb(134 191 255 / 0.12);
-  --success: #4cd488;
-  --danger: #ff6b6e;
-  --danger-soft: rgb(255 107 110 / 0.14);
-  --focus: #86bfff;
-  --sheet-shadow: 0 -8px 32px rgb(0 0 0 / 0.45);
-  --scrim: rgb(0 0 0 / 0.55);
+  --bg: #1f2328;
+  --raised: #262b31;
+  --surface: #2e343b;
+  --surface-hover: #363d45;
+  --line: #343b42;
+  --line-strong: #4a525a;
+  --fg: #f2eee7;
+  --fg-muted: #bdb6ac;
+  --fg-subtle: #a49d93;
+  --selected: #434a52;
+  --accent: #f59a38;
+  --on-accent: #1f2328;
+  --accent-text: #ffb45b;
+  --accent-soft: rgb(245 154 56 / 0.16);
+  --incoming: #ffb45b;
+  --incoming-soft: rgb(245 154 56 / 0.12);
+  --success: #63c08f;
+  --warning: #e6c860;
+  --warning-soft: rgb(230 200 96 / 0.14);
+  --danger: #f0766e;
+  --danger-soft: rgb(240 118 110 / 0.14);
+  --focus: #ffb45b;
+  --sheet-shadow: 0 -12px 32px rgb(10 12 14 / 0.45);
+  --scrim: rgb(14 16 18 / 0.6);
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #faf7f2;
+    --raised: #ffffff;
+    --surface: #f0ece5;
+    --surface-hover: #e8e3da;
+    --line: #e5dfd5;
+    --line-strong: #c7bfb2;
+    --fg: #1f2328;
+    --fg-muted: #4a4f55;
+    --fg-subtle: #62676d;
+    --selected: #ffffff;
+    --accent: #f59a38;
+    --on-accent: #1f2328;
+    --accent-text: #a4560b;
+    --accent-soft: rgb(245 154 56 / 0.16);
+    --incoming: #a4560b;
+    --incoming-soft: rgb(245 154 56 / 0.12);
+    --success: #2e7d55;
+    --warning: #6f5a00;
+    --warning-soft: rgb(176 140 20 / 0.14);
+    --danger: #b9423b;
+    --danger-soft: rgb(185 66 59 / 0.1);
+    --focus: #a4560b;
+    --sheet-shadow: 0 -12px 32px rgb(31 35 40 / 0.12);
+    --scrim: rgb(31 35 40 / 0.32);
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --bg: #f6f6f4;
+    --bg: #faf7f2;
     --raised: #ffffff;
-    --surface: #ededea;
-    --surface-hover: #e4e4e0;
-    --line: #dadad5;
-    --line-strong: #c4c4be;
-    --fg: #141517;
-    --fg-muted: #555b63;
-    --fg-subtle: #60666e;
+    --surface: #f0ece5;
+    --surface-hover: #e8e3da;
+    --line: #e5dfd5;
+    --line-strong: #c7bfb2;
+    --fg: #1f2328;
+    --fg-muted: #4a4f55;
+    --fg-subtle: #62676d;
     --selected: #ffffff;
-    --accent-text: #8f5300;
-    --accent-soft: rgb(245 165 36 / 0.18);
-    --incoming: #1f64c0;
-    --incoming-soft: rgb(31 100 192 / 0.1);
-    --success: #1b7f47;
-    --danger: #c42f35;
-    --danger-soft: rgb(196 47 53 / 0.1);
-    --focus: #1f64c0;
-    --sheet-shadow: 0 -8px 32px rgb(0 0 0 / 0.12);
-    --scrim: rgb(20 21 23 / 0.35);
-  }
+    --accent: #f59a38;
+    --on-accent: #1f2328;
+    --accent-text: #a4560b;
+    --accent-soft: rgb(245 154 56 / 0.16);
+    --incoming: #a4560b;
+    --incoming-soft: rgb(245 154 56 / 0.12);
+    --success: #2e7d55;
+    --warning: #6f5a00;
+    --warning-soft: rgb(176 140 20 / 0.14);
+    --danger: #b9423b;
+    --danger-soft: rgb(185 66 59 / 0.1);
+    --focus: #a4560b;
+    --sheet-shadow: 0 -12px 32px rgb(31 35 40 / 0.12);
+    --scrim: rgb(31 35 40 / 0.32);
+}
 }
 
 @theme inline {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
+  /* Brand: Inter / Manrope / SF Pro — used when installed; no web-font download. */
+  --font-sans: Inter, Manrope, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --color-bg: var(--bg);
@@ -78,29 +115,40 @@
   --color-incoming: var(--incoming);
   --color-incoming-soft: var(--incoming-soft);
   --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-focus: var(--focus);
 
-  /* Type scale (rem → respects the user's text-size setting) */
+  /* Type scale (rem → respects the user's text-size setting). Constitution
+     ranges: page 24–28, section 17–20, translation 20–26, body 15–16,
+     supporting 13–14, metadata 12–13. */
   --text-meta: 0.75rem;
   --text-meta--line-height: 1rem;
   --text-label: 0.8125rem;
   --text-label--line-height: 1.125rem;
   --text-body: 0.9375rem;
   --text-body--line-height: 1.375rem;
-  --text-body-lg: 1.0625rem;
-  --text-body-lg--line-height: 1.5625rem;
-  --text-heading: 1.0625rem;
-  --text-heading--line-height: 1.5rem;
-  --text-title: 1.5rem;
-  --text-title--line-height: 1.875rem;
+  --text-body-lg: 1.125rem;
+  --text-body-lg--line-height: 1.625rem;
+  --text-heading: 1.1875rem;
+  --text-heading--line-height: 1.625rem;
+  --text-translation: 1.5rem;
+  --text-translation--line-height: 2rem;
+  --text-title: 1.625rem;
+  --text-title--line-height: 2rem;
 
+  /* Radius: controls 8–10, inputs 8–10, surfaces 12–16, dialogs 14–18. */
   --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-sheet: 20px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-sheet: 16px;
 
+  /* Motion tokens (all disabled under prefers-reduced-motion). */
+  --duration-press: 120ms;
+  --duration-state: 200ms;
+  --duration-sheet: 280ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -178,24 +226,6 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
   }
-}
-
-/* Live-level bars on the talk control (decorative; state is also in text). */
-@keyframes level {
-  0%, 100% { transform: scaleY(0.35); }
-  50% { transform: scaleY(1); }
-}
-.level-bar {
-  transform-origin: center;
-  animation: level 900ms var(--ease-out) infinite;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-.pulse-dot {
-  animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
