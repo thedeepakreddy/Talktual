@@ -422,10 +422,15 @@ function Dock({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
         {hint}
       </p>
       <div className="mx-auto grid max-w-[420px] grid-cols-[1fr_auto_1fr] items-center gap-3">
-        <div className="flex justify-start">
-          <IconButton label="Speak translations" aria-pressed={Boolean(s?.speak)} tone={s?.speak ? 'default' : 'active'} onClick={() => session?.setSpeak(!s?.speak)}>
-            {s?.speak ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-          </IconButton>
+        <div className="flex flex-col items-start">
+          <span className="flex flex-col items-center">
+            <IconButton label="Speak translations" aria-pressed={Boolean(s?.speak)} tone={s?.speak ? 'default' : 'active'} onClick={() => session?.setSpeak(!s?.speak)}>
+              {s?.speak ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+            </IconButton>
+            <span className="text-meta text-fg-subtle" aria-hidden="true">
+              {s?.speak ? 'Speech on' : 'Text only'}
+            </span>
+          </span>
         </div>
         {!canStart ? (
           // Nothing to start until something changes (browser, settings): no dead button.
@@ -448,13 +453,23 @@ function Dock({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
         )}
         <div className="flex justify-end">
           {live ? (
-            <IconButton label="Stop listening" onClick={() => session?.stop()}>
-              <Square className="h-[18px] w-[18px]" />
-            </IconButton>
+            <span className="flex flex-col items-center">
+              <IconButton label="Stop listening" onClick={() => session?.stop()}>
+                <Square className="h-[18px] w-[18px]" />
+              </IconButton>
+              <span className="text-meta text-fg-subtle" aria-hidden="true">
+                Stop
+              </span>
+            </span>
           ) : Boolean(s?.lines.length) ? (
-            <IconButton label="Clear translations" onClick={() => session?.clear()}>
-              <Trash2 className="h-5 w-5" />
-            </IconButton>
+            <span className="flex flex-col items-center">
+              <IconButton label="Clear translations" onClick={() => session?.clear()}>
+                <Trash2 className="h-5 w-5" />
+              </IconButton>
+              <span className="text-meta text-fg-subtle" aria-hidden="true">
+                Clear
+              </span>
+            </span>
           ) : null}
         </div>
       </div>

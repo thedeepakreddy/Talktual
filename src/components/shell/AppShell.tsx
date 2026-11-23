@@ -99,7 +99,7 @@ function MobileBottomNav({ route, go }: { route: Route; go: (r: Route) => void }
 export function Page({ title, description, action, children, wide }: { title: string; description?: ReactNode; action?: ReactNode; children: ReactNode; wide?: boolean }) {
   return (
     <main className={cn('mx-auto w-full px-4 pb-10 sm:px-6 lg:px-10', wide ? 'max-w-[880px]' : 'max-w-[720px]')}>
-      <header className="safe-t flex min-h-16 items-end justify-between gap-3 pb-2 pt-10 lg:pt-14">
+      <header className="flex min-h-16 items-end justify-between gap-3 pb-2 pt-[max(2.5rem,env(safe-area-inset-top))] lg:pt-14">
         <div className="min-w-0">
           <h1 className="text-title font-semibold tracking-[-0.01em]">{title}</h1>
           {description && <p className="mt-1.5 max-w-[34rem] text-body text-fg-muted">{description}</p>}
