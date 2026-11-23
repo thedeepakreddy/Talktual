@@ -23,3 +23,5 @@ e2e/.dist-screens/
 e2e/.dist-a11y/
 e2e/.dist-ambient/
 e2e/.dist-final/
+e2e/.dist-wave/
+e2e/.dist-wave2/

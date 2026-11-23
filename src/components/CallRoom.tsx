@@ -11,6 +11,8 @@ import { VOICEMIRROR_DISCLOSURE } from '../voicemirror/disclosure';
 import { Banner, Button, IconButton, Sheet } from './ui';
 import { ConversationFeed } from './call/ConversationFeed';
 import { TalkDock } from './call/TalkDock';
+import { VoiceWave } from './voice/VoiceWave';
+import { createLevelMeter, liveMicStream } from '../lib/audio';
 import { SettingsSheet } from './call/SettingsSheet';
 import { deriveStatus, headerState } from './call/status';
 
@@ -50,6 +52,11 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
   const connected = phase === 'connected';
   const continuous = s?.mode === 'continuous';
   const micOff = s?.activity === 'stopped';
+  // Real loudness for the voice wave only where the call already holds a mic stream.
+  const micMeter = useCallback((onLevel: (v: number) => void) => {
+    const stream = liveMicStream();
+    return stream ? createLevelMeter(stream, onLevel) : null;
+  }, []);
 
   useEffect(() => {
     if (!connected || !s?.connectedAt) return;
@@ -247,6 +254,17 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
               Send
             </Button>
           </form>
+        )}
+
+        {connected && !speechUnavailable && (
+          <VoiceWave
+            capturing={Boolean(s?.capturing)}
+            hearing={Boolean(s?.hearingVoice)}
+            partial={s?.partial.local ?? ''}
+            settled={micOff}
+            meter={micMeter}
+            className="mx-4 h-16 sm:mx-6"
+          />
         )}
 
         <TalkDock

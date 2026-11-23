@@ -11,12 +11,12 @@ themes: [dark (showcase), light] — system by default, user-selectable (Setting
 
 ## Direction
 Professional audio-instrument and communication design, not an AI product.
-- **Technology shows through precision:** alignment, typography, honest state and the activity trace.
+- **Technology shows through precision:** alignment, typography, honest state and the voice wave.
 - **No ornament:** no AI iconography, gradients, glow, glass, card grids, pills or decorative motion.
 - **Translation text is always the most prominent element on a session screen.**
 - **Every visible state is true:**
   - unavailable capabilities (Lens, Rewind) say so plainly
-  - the listening trace shows only real recognizer events
+  - the voice wave moves only with real recognizer events (or a real mic level)
   - nothing pulses or animates on its own
 
 Concept exploration (A atmospheric / B instrument / C editorial) and the selection rationale are in `docs/phase7_final/PHASE7_FINAL_REPORT.md`. The selection is B's structure (metered activity trace with a time axis, speaker-label rows, borderless language pair) edited with C's typography and honest status copy.
@@ -30,18 +30,18 @@ Brand colours: Primary Orange `#F59A38` · Secondary Orange `#FFB45B` · Charcoa
 | `bg` | `#1F2328` (Charcoal) | `#FAF7F2` (Warm White) | base |
 | `raised` | `#262B31` | `#FFFFFF` | surface level (sheets) |
 | `surface` | `#2E343B` | `#F0ECE5` | elevated (controls, inputs) |
-| `line` / `line-strong` | `#343B42` / `#4A525A` | `#E5DFD5` / `#C7BFB2` | dividers, trace baseline |
+| `line` / `line-strong` | `#343B42` / `#4A525A` | `#E5DFD5` / `#C7BFB2` | dividers |
 | `fg` | `#F2EEE7` | `#1F2328` | primary text |
 | `fg-muted` | `#BDB6AC` | `#4A4F55` | supporting text |
 | `fg-subtle` | `#A49D93` | `#62676D` | metadata |
 | `accent` | `#F59A38` | `#F59A38` | **fills only**: primary buttons, switch on, selection tint |
 | `on-accent` | `#1F2328` | `#1F2328` | text on orange (7.2:1) |
-| `accent-text` | `#FFB45B` | `#A4560B`* | orange as text, icons and the activity trace |
+| `accent-text` | `#FFB45B` | `#A4560B`* | orange as text and icons |
 | `warning` | `#E6C860` | `#6F5A00` | paused (kept distinct from the orange accent) |
 | `danger` | `#F0766E` | `#B9423B` | end, errors, the listening (recording) dot |
 | `success` | `#63C08F` | `#2E7D55` | connected |
 
-\* Orange on Warm White measures 2.06:1, which fails WCAG for text (4.5:1) and for graphics (3:1). In the light theme, orange is therefore used as a fill (with charcoal text), and orange *text* and the activity trace use `#A4560B`, the same hue darkened (≥ 4.56:1). Verified by `e2e/a11y.mjs`: the lowest text pair is 4.68:1 (dark) and 4.85:1 (light).
+\* Orange on Warm White measures 2.06:1, which fails WCAG for text (4.5:1) and for graphics (3:1). In the light theme, orange is therefore used as a fill (with charcoal text), and orange *text* uses `#A4560B`, the same hue darkened (≥ 4.56:1). Verified by `e2e/a11y.mjs`: the lowest text pair is 4.68:1 (dark) and 4.85:1 (light).
 
 ### Logo and icon
 - `BrandMark` (`src/components/Brand.tsx`) is a vector rebuild of the sheet's mark: two mirrored waves split by a line, with a primary→secondary orange gradient. It has a `mono` variant (currentColor). The brand mark is the only place a gradient is used.
@@ -66,7 +66,7 @@ The font is the brand stack: Inter / Manrope / SF Pro. They're used when install
 - **Depth:** three levels — base, surface (sheets), elevated (controls). Shadow only on sheets. Content is separated by whitespace and hairline dividers, not cards.
 - **Spacing:** a 4 px scale (4, 8, 12, 16, 24, 32, 48, 64). Gutters are 16 px on phones, 24 px on tablets and 40 px in desktop pages.
 - **Motion:** `--duration-press` 120 ms, `--duration-state` 200 ms, `--duration-sheet` 280 ms; ease `cubic-bezier(.2,.8,.2,1)`. Motion follows real state:
-  - the trace advances only while capturing
+  - the voice wave moves only while capturing, with real recognizer events
   - pause dims it
   - the sheet slides
   - there is no ambient animation
@@ -81,7 +81,10 @@ The font is the brand stack: Inter / Manrope / SF Pro. They're used when install
 ## Components
 - **Primitives (`src/components/ui`):** `Button` (primary · secondary · ghost · danger; heights 48/44), `IconButton` (44 px, labelled), `Sheet`, `Switch`, `Segmented`, `Row`/`Section`, `Banner`.
 - **Shell (`src/components/shell`):** `AppShell`, `DesktopRail`, `MobileBottomNav`, `Page`.
-- **AIR (`src/components/ambient`):** `AmbientScreen` with `LanguagePair`, `ActivityTrace` (listening canvas), the transcript rows, the dock, the AIR settings sheet and the test-mode strip.
+- **AIR (`src/components/ambient`):** `AmbientScreen` with `LanguagePair`, the voice wave, the transcript rows, the dock, the AIR settings sheet and the test-mode strip.
+- **Voice wave (`src/components/voice`):** `SujitWaveform` (owner-requested, replaces the activity trace). Seven sine curves share one envelope, each in its own plane around a slightly rising time axis, so they form a slowly turning 3D bundle. Strokes use `fg`: warm white with a soft glow on dark, charcoal ink without glow on light. Used in AIR (128 px) and in calls above the talk control (64 px).
+  - **Honest input (`ActivityLevel`):** height comes only from real signals. The recognizer's "speech detected" holds a floor, each new interim word adds a bump that decays, and real loudness is used only where the app already holds a mic stream (the server-recognition fallback in calls). Nothing reported → one calm idle line, and the animation loop stops. Reduced motion: no turning or travel, height still follows the real level.
+  - **Deviation:** the glow and the continuous motion while capturing are an owner-approved exception to "no glow, no decorative motion"; the motion is tied to capture and real events, never ambient.
 - **Connect (`src/components/call`):** `ConversationFeed` (speaker-label rows), `TalkDock`, `SettingsSheet`; plus `StartCall` and `JoinCall`.
 - **Pages (`src/pages`):** `HomePage`, `ConnectPage`, `LensPage`, `RewindPage`, `VoicePage`, `SettingsPage`.
 
