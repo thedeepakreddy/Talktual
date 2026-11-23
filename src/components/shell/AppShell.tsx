@@ -67,7 +67,7 @@ function DesktopRail({ route, go }: { route: Route; go: (r: Route) => void }) {
   return (
     <nav aria-label="Main" className="sticky top-0 hidden h-dvh w-[88px] shrink-0 flex-col items-center border-r border-line py-4 lg:flex">
       <a href="#/" onClick={(e) => (e.preventDefault(), go('home'))} aria-label="Talktual home" className="mb-6 flex h-11 w-11 items-center justify-center rounded-md">
-        <BrandMark size={26} />
+        <BrandMark size={18} />
       </a>
       <div className="flex flex-col gap-1">
         {PRIMARY.map((d) => (

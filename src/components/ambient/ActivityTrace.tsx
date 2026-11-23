@@ -48,7 +48,7 @@ export function ActivityTrace({ capturing, hearing, partial, settled, className 
         {slices.map((v, i) => {
           if (v <= 0) return null;
           const h = Math.max(6, v * H);
-          return <rect key={i} x={i * step + 1} y={(H - h) / 2} width={Math.max(1.5, step - 3)} height={h} rx={1.5} fill="var(--accent)" />;
+          return <rect key={i} x={i * step + 1} y={(H - h) / 2} width={Math.max(1.5, step - 3)} height={h} rx={1.5} fill="var(--accent-text)" />;
         })}
       </svg>
       <figcaption className="mt-1 flex justify-between text-meta text-fg-subtle tnum" aria-hidden="true">

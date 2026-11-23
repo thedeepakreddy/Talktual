@@ -1,100 +1,101 @@
 @import "tailwindcss";
 
 /* ===========================================================================
-   Talktual design tokens — Phase 7 final ("Futuristic Audio", per the binding
-   Design Constitution): graphite surfaces, one restrained teal accent.
+   Talktual design tokens — Phase 7 final, Talktual brand (orange #F59A38 /
+   #FFB45B, charcoal #1F2328, warm white #FAF7F2) on the Constitution structure.
    Semantic tokens only; components never use raw colors. See DESIGN.md.
    Theme: system by default; <html data-theme="light|dark"> overrides it.
    =========================================================================== */
 
 :root {
   color-scheme: dark;
-  --bg: #101317;
-  --raised: #191d22;
-  --surface: #22272d;
-  --surface-hover: #2a3037;
-  --line: #262b31;
-  --line-strong: #363c43;
-  --fg: #d8e0e5;
-  --fg-muted: #a4adb5;
-  --fg-subtle: #89939d;
-  --selected: #363c43;
-  --accent: #4eadb0;
-  --on-accent: #0b1f20;
-  --accent-text: #6cc2c5;
-  --accent-soft: rgb(78 173 176 / 0.16);
-  --incoming: #6cc2c5;
-  --incoming-soft: rgb(78 173 176 / 0.12);
-  --success: #5cb98a;
-  --warning: #d9a441;
-  --warning-soft: rgb(217 164 65 / 0.14);
-  --danger: #e5706a;
-  --danger-soft: rgb(229 112 106 / 0.14);
-  --focus: #6cc2c5;
-  --sheet-shadow: 0 -12px 32px rgb(5 7 9 / 0.5);
-  --scrim: rgb(6 8 10 / 0.6);
+  --bg: #1f2328;
+  --raised: #262b31;
+  --surface: #2e343b;
+  --surface-hover: #363d45;
+  --line: #343b42;
+  --line-strong: #4a525a;
+  --fg: #f2eee7;
+  --fg-muted: #bdb6ac;
+  --fg-subtle: #a49d93;
+  --selected: #434a52;
+  --accent: #f59a38;
+  --on-accent: #1f2328;
+  --accent-text: #ffb45b;
+  --accent-soft: rgb(245 154 56 / 0.16);
+  --incoming: #ffb45b;
+  --incoming-soft: rgb(245 154 56 / 0.12);
+  --success: #63c08f;
+  --warning: #e6c860;
+  --warning-soft: rgb(230 200 96 / 0.14);
+  --danger: #f0766e;
+  --danger-soft: rgb(240 118 110 / 0.14);
+  --focus: #ffb45b;
+  --sheet-shadow: 0 -12px 32px rgb(10 12 14 / 0.45);
+  --scrim: rgb(14 16 18 / 0.6);
 }
 
 :root[data-theme="light"] {
     color-scheme: light;
-    --bg: #f3f4f3;
+    --bg: #faf7f2;
     --raised: #ffffff;
-    --surface: #e8ebec;
-    --surface-hover: #dfe3e5;
-    --line: #dce0e2;
-    --line-strong: #bec4c9;
-    --fg: #20262d;
-    --fg-muted: #4c545c;
-    --fg-subtle: #5f676f;
+    --surface: #f0ece5;
+    --surface-hover: #e8e3da;
+    --line: #e5dfd5;
+    --line-strong: #c7bfb2;
+    --fg: #1f2328;
+    --fg-muted: #4a4f55;
+    --fg-subtle: #62676d;
     --selected: #ffffff;
-    --accent: #2c7479;
-    --on-accent: #ffffff;
-    --accent-text: #2c7479;
-    --accent-soft: rgb(44 116 121 / 0.12);
-    --incoming: #2c7479;
-    --incoming-soft: rgb(44 116 121 / 0.1);
+    --accent: #f59a38;
+    --on-accent: #1f2328;
+    --accent-text: #a4560b;
+    --accent-soft: rgb(245 154 56 / 0.16);
+    --incoming: #a4560b;
+    --incoming-soft: rgb(245 154 56 / 0.12);
     --success: #2e7d55;
-    --warning: #8a5a00;
-    --warning-soft: rgb(176 120 20 / 0.14);
+    --warning: #6f5a00;
+    --warning-soft: rgb(176 140 20 / 0.14);
     --danger: #b9423b;
     --danger-soft: rgb(185 66 59 / 0.1);
-    --focus: #2c7479;
-    --sheet-shadow: 0 -12px 32px rgb(32 38 45 / 0.12);
-    --scrim: rgb(32 38 45 / 0.32);
+    --focus: #a4560b;
+    --sheet-shadow: 0 -12px 32px rgb(31 35 40 / 0.12);
+    --scrim: rgb(31 35 40 / 0.32);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --bg: #f3f4f3;
+    --bg: #faf7f2;
     --raised: #ffffff;
-    --surface: #e8ebec;
-    --surface-hover: #dfe3e5;
-    --line: #dce0e2;
-    --line-strong: #bec4c9;
-    --fg: #20262d;
-    --fg-muted: #4c545c;
-    --fg-subtle: #5f676f;
+    --surface: #f0ece5;
+    --surface-hover: #e8e3da;
+    --line: #e5dfd5;
+    --line-strong: #c7bfb2;
+    --fg: #1f2328;
+    --fg-muted: #4a4f55;
+    --fg-subtle: #62676d;
     --selected: #ffffff;
-    --accent: #2c7479;
-    --on-accent: #ffffff;
-    --accent-text: #2c7479;
-    --accent-soft: rgb(44 116 121 / 0.12);
-    --incoming: #2c7479;
-    --incoming-soft: rgb(44 116 121 / 0.1);
+    --accent: #f59a38;
+    --on-accent: #1f2328;
+    --accent-text: #a4560b;
+    --accent-soft: rgb(245 154 56 / 0.16);
+    --incoming: #a4560b;
+    --incoming-soft: rgb(245 154 56 / 0.12);
     --success: #2e7d55;
-    --warning: #8a5a00;
-    --warning-soft: rgb(176 120 20 / 0.14);
+    --warning: #6f5a00;
+    --warning-soft: rgb(176 140 20 / 0.14);
     --danger: #b9423b;
     --danger-soft: rgb(185 66 59 / 0.1);
-    --focus: #2c7479;
-    --sheet-shadow: 0 -12px 32px rgb(32 38 45 / 0.12);
-    --scrim: rgb(32 38 45 / 0.32);
-  }
+    --focus: #a4560b;
+    --sheet-shadow: 0 -12px 32px rgb(31 35 40 / 0.12);
+    --scrim: rgb(31 35 40 / 0.32);
+}
 }
 
 @theme inline {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
+  /* Brand: Inter / Manrope / SF Pro — used when installed; no web-font download. */
+  --font-sans: Inter, Manrope, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --color-bg: var(--bg);
