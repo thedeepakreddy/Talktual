@@ -84,6 +84,18 @@ export function createAsr(lang: string, mode: ListeningMode, cb: AsrCallbacks, o
   return getSpeechRecognitionCtor() ? createWebSpeechAdapter(lang, mode, cb) : createServerSttAdapter(lang, cb);
 }
 
+/** service-not-allowed is ambiguous in Safari: denied mic, or a language its service can't do. */
+async function classifyServiceRefusal(code: string): Promise<"permission-denied" | "language-unsupported"> {
+  if (code === "language-not-supported") return "language-unsupported";
+  try {
+    const st = await navigator.permissions?.query({ name: "microphone" as PermissionName });
+    if (st?.state === "denied") return "permission-denied";
+  } catch {
+    /* permission name unsupported: fall through */
+  }
+  return "language-unsupported";
+}
+
 // --- Web Speech engine (the fast path) --------------------------------------
 
 function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallbacks, processLocally = false): AsrAdapter {
@@ -191,9 +203,22 @@ function createWebSpeechAdapter(lang: string, mode: ListeningMode, cb: AsrCallba
       const code = (event as Event & { error?: string }).error || "unknown";
       // Routine in continuous recognition: the engine ends and we restart it.
       if (code === "no-speech" || code === "aborted") return;
-      if (code === "not-allowed" || code === "service-not-allowed") {
+      if (code === "not-allowed") {
         cb.onError("permission-denied", "Microphone permission denied for speech recognition.", true);
         abortNow();
+        return;
+      }
+      // "language-not-supported" (Chrome) and "service-not-allowed" (Safari, when
+      // its speech service can't recognise the requested language) are NOT a
+      // microphone problem. Only report a permission problem if the browser
+      // actually says the microphone is denied.
+      if (code === "language-not-supported" || code === "service-not-allowed") {
+        abortNow();
+        void classifyServiceRefusal(code).then((c) =>
+          c === "permission-denied"
+            ? cb.onError("permission-denied", "Microphone permission denied for speech recognition.", true)
+            : cb.onError("language-unsupported", `Speech recognition is not available for ${lang} here.`, true)
+        );
         return;
       }
       if (code === "audio-capture") {

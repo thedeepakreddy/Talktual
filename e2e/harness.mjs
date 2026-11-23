@@ -101,7 +101,7 @@ export function initScript(opts = {}) {
   window.__spoken = [];
   const synth = {
     speak(u) {
-      if (u.text) window.__spoken.push({ text: u.text, lang: u.lang, t: Date.now(), pitch: u.pitch, rate: u.rate });
+      if (u.text && u.text.trim()) window.__spoken.push({ text: u.text, lang: u.lang, t: Date.now(), pitch: u.pitch, rate: u.rate });
       setTimeout(() => u.onend && u.onend(), 30);
     },
     cancel() {},

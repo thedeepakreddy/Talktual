@@ -6,12 +6,12 @@
     "final_to_text_ms": {
       "n": 8,
       "p50": 6,
-      "p95": 22,
-      "max": 22
+      "p95": 23,
+      "max": 23
     },
     "final_to_speech_start_ms": {
       "n": 8,
-      "p50": 8,
+      "p50": 6,
       "p95": 24,
       "max": 24
     },

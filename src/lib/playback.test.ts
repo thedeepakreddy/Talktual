@@ -80,6 +80,7 @@ describe('PlaybackController (M2.2)', () => {
     synth.finishLast();
     await vi.waitFor(() => expect(synth.spoken).toHaveLength(2));
     expect(synth.spoken[1].text).toBe('w3');
+    c.cancelAll(); // don't leave w4 playing into the next test
   });
 
   it('Phase 4 age bound: a waiting item past notAfter is dropped instead of played late', async () => {
@@ -94,6 +95,7 @@ describe('PlaybackController (M2.2)', () => {
     await vi.waitFor(() => expect(synth.spoken).toHaveLength(2));
     expect(synth.spoken[1].text).toBe('fresh');
     expect(log).toContain('old:dropped');
+    c.cancelAll();
   });
 
   it('reports failed (not ended) when neither server audio nor a browser voice could play', async () => {
