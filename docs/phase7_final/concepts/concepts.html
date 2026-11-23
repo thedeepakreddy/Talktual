@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Talktual concepts</title>
+<style>
+  :root { --base:#101317; --surface:#191D22; --elev:#22272D; --fg:#D8E0E5; --fg2:#89939D; --line:#2A3037; --accent:#4EADB0; --accent-ink:#06191A; --danger:#E5706A; }
+  :root.light { --base:#F3F4F3; --surface:#FFFFFF; --elev:#E8EBEC; --fg:#20262D; --fg2:#6B737B; --line:#DCE0E2; --accent:#327F84; --accent-ink:#FFFFFF; --danger:#B9423B; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--base); color: var(--fg); font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .frame { min-height: 100vh; display: flex; flex-direction: column; }
+  .meta { font-size: 12.5px; color: var(--fg2); letter-spacing: 0.01em; }
+  .label { font-size: 13px; color: var(--fg2); }
+  .tnum { font-variant-numeric: tabular-nums; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .btn { height: 48px; padding: 0 20px; border-radius: 10px; font-weight: 600; font-size: 15px; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-secondary { background: var(--elev); color: var(--fg); }
+  .row { display: flex; align-items: center; justify-content: space-between; min-height: 52px; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .chev::after { content: "›"; color: var(--fg2); margin-left: 8px; font-size: 18px; }
+  .nav { display: flex; justify-content: space-around; border-top: 1px solid var(--line); padding: 8px 0 22px; background: var(--base); }
+  .nav span { font-size: 11.5px; color: var(--fg2); text-align: center; width: 64px; }
+  .nav span::before { content: ""; display: block; width: 20px; height: 20px; margin: 0 auto 4px; border: 1.6px solid currentColor; border-radius: 6px; }
+  .nav span.on { color: var(--fg); } .nav span.on::before { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  /* ---------- trace (real-signal activity: one bar per 250 ms, height = speech detected / interim growth) ---------- */
+  .trace { display: flex; align-items: center; gap: 3px; height: 56px; }
+  .trace i { flex: 1; min-width: 2px; border-radius: 1px; background: var(--fg2); opacity: .35; }
+  .trace i.s { background: var(--accent); opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const q = new URLSearchParams(location.search);
+const C = q.get('concept') || 'a', S = q.get('screen') || 'home';
+if (q.get('theme') === 'light') document.documentElement.classList.add('light');
+const desktop = innerWidth >= 1000;
+// Deterministic activity pattern (illustrates the shape of REAL speech-activity data; prototype only).
+const pattern = '0001111111100011111111111100000111111110000011111111111111000011111100'.split('');
+const trace = (n, h = 56) => `<div class="trace" style="height:${h}px">${pattern.slice(-n).map((p, i) => `<i class="${p === '1' ? 's' : ''}" style="height:${p === '1' ? 30 + ((i * 37) % 60) : 8}%"></i>`).join('')}</div>`;
+const lines = [
+  ['Excuse me, is this seat free?', 'Elnézést, szabad ez a hely?'],
+  ['Yes, go ahead. We are leaving soon anyway.', 'Igen, tessék. Úgyis mindjárt megyünk.'],
+  ['Is the train to Vienna on time today?', 'Időben indul ma a bécsi vonat?'],
+];
+const live = 'Szerintem húsz percet késik, mert';
+const nav = (on) => `<nav class="nav">${['Home','Connect','AIR','Lens','Rewind'].map(n => `<span class="${n===on?'on':''}">${n}</span>`).join('')}</nav>`;
+
+const A = {
+  home: () => `<div class="frame" style="padding:0">
+    <div style="padding:20px 20px 0;display:flex;justify-content:space-between" class="meta"><b style="color:var(--fg);font-size:16px">Talktual</b><span>Settings</span></div>
+    <section style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 20px">
+      <p class="label">AIR</p>
+      <h1 style="font-size:26px;font-weight:600;line-height:1.25;margin:6px 0 18px">Hear the room in your language.</h1>
+      ${trace(48, 72)}
+      <p class="meta" style="margin:14px 0 22px">Magyar → English · Phone microphone · Speaker</p>
+      <button class="btn btn-primary" style="width:100%">Start listening</button>
+    </section>
+    <section style="padding:8px 20px 12px">
+      <div class="row chev"><span>Connect<br><span class="meta">Translated call with one person</span></span></div>
+      <div class="row chev"><span>Voice Studio<br><span class="meta">Voices and spoken output</span></span></div>
+    </section>${nav('Home')}</div>`,
+  air: () => `<div class="frame">
+    <header style="display:flex;justify-content:space-between;padding:18px 20px" class="meta"><span>‹ AIR</span><span>Magyar → English</span></header>
+    <section style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 24px;text-align:center">
+      <p style="font-size:26px;line-height:1.3;font-weight:500">${lines[2][0]}</p>
+      <p class="label" style="margin-top:10px">${lines[2][1]}</p>
+      <p class="meta" style="margin-top:28px;font-style:italic">${live}…</p>
+    </section>
+    <div style="padding:0 20px">${trace(60, 64)}</div>
+    <div style="display:flex;justify-content:center;gap:16px;align-items:center;padding:18px 20px 30px">
+      <button class="btn btn-secondary">Transcript</button><button class="btn btn-primary" style="width:120px">Pause</button><button class="btn btn-secondary">Output</button></div></div>`,
+  connect: () => `<div class="frame">
+    <header style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px"><span><b>Luis</b><br><span class="meta">English ⇄ Español · 04:12</span></span><button class="btn btn-secondary" style="height:40px;color:var(--danger)">End</button></header>
+    <section style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;padding:0 24px 20px;text-align:center;gap:22px">
+      <div><p class="meta">You</p><p style="font-size:18px">Where is the station?</p></div>
+      <div><p class="meta">Luis</p><p style="font-size:26px;font-weight:500">It is a ten-minute walk.</p><p class="label">Está a diez minutos andando.</p></div>
+    </section>
+    <div style="padding:0 20px">${trace(50, 40)}</div>
+    <div style="display:flex;justify-content:center;padding:18px 0 30px"><button class="btn btn-primary" style="width:96px;height:96px;border-radius:50%">Hold</button></div></div>`,
+};
+
+const B = {
+  strip: (from, to, state) => `<div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;border:1px solid var(--line);border-radius:12px;background:var(--surface)">
+      <div style="padding:12px 14px"><p class="meta">IN</p><p style="font-size:17px;font-weight:600">${from}</p></div>
+      <div class="meta" style="padding:0 6px">→</div>
+      <div style="padding:12px 14px;text-align:right"><p class="meta">OUT</p><p style="font-size:17px;font-weight:600">${to}</p></div></div>`,
+  scale: () => `<div class="meta tnum" style="display:flex;justify-content:space-between;margin-top:4px"><span>−15 s</span><span>−10</span><span>−5</span><span>now</span></div>`,
+  home: () => `<div class="frame">
+    <div style="padding:20px;display:flex;justify-content:space-between;align-items:baseline"><b style="font-size:17px">Talktual</b><span class="meta">Settings</span></div>
+    <section style="padding:4px 20px 0">
+      <p class="label" style="margin-bottom:8px">AIR · ambient translation</p>
+      ${B.strip('Magyar', 'English')}
+      <div style="margin-top:16px">${trace(56, 48)}${B.scale()}</div>
+      <p class="meta" style="margin:12px 0 18px">Not listening · Phone mic → speaker · Cloud processing</p>
+      <button class="btn btn-primary" style="width:100%">Start listening</button>
+    </section>
+    <section style="padding:28px 20px 0;display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:0">
+      ${[['Connect','Translated call'],['Voice Studio','Voices · output'],['Lens','Not available yet'],['Rewind','Nothing is kept']].map(([t,s],i)=>`<div style="padding:14px 0;border-top:1px solid var(--line);${i%2?'padding-left:14px;border-left:1px solid var(--line)':''}"><p style="font-size:15px;font-weight:600">${t}</p><p class="meta">${s}</p></div>`).join('')}
+    </section><div style="flex:1"></div>${nav('Home')}</div>`,
+  air: () => `<div class="frame">
+    <header style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px"><span class="meta">‹</span><span style="display:flex;gap:8px;align-items:center" class="meta"><i style="width:8px;height:8px;border-radius:50%;background:var(--danger)"></i>Listening · 02:41</span><span class="meta">Output</span></header>
+    <div style="padding:0 20px">${B.strip('Magyar', 'English')}</div>
+    <section style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;padding:20px">
+      ${lines.slice(0,2).map(([t,o])=>`<div style="padding:12px 0;border-top:1px solid var(--line)"><p style="font-size:17px;color:var(--fg2)">${t}</p></div>`).join('')}
+      <div style="padding:14px 0;border-top:1px solid var(--line)"><p style="font-size:24px;line-height:1.3;font-weight:500">${lines[2][0]}</p><p class="label" style="margin-top:6px">${lines[2][1]}</p></div>
+      <p class="meta" style="font-style:italic;margin-top:6px">${live}…</p>
+    </section>
+    <div style="padding:0 20px">${trace(64, 44)}${B.scale()}</div>
+    <div style="display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:10px;padding:16px 20px 30px"><button class="btn btn-secondary">Transcript</button><button class="btn btn-primary">Pause</button><button class="btn btn-secondary">Stop</button></div></div>`,
+  connect: () => `<div class="frame">
+    <header style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px"><span><b>Luis</b> <span class="meta tnum">· 04:12 · Direct</span></span><button class="btn btn-secondary" style="height:40px;color:var(--danger)">End</button></header>
+    <div style="padding:0 20px">${B.strip('English', 'Español')}</div>
+    <section style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;padding:20px;gap:0">
+      ${[['You','Where is the station?','¿Dónde está la estación?'],['Luis','It is a ten-minute walk.','Está a diez minutos andando.']].map(([w,t,o])=>`<div style="display:grid;grid-template-columns:52px 1fr;padding:14px 0;border-top:1px solid var(--line)"><span class="meta">${w}</span><span><p style="font-size:${w==='Luis'?22:17}px;font-weight:${w==='Luis'?500:400}">${t}</p><p class="label">${o}</p></span></div>`).join('')}
+    </section>
+    <div style="padding:0 20px">${trace(50, 36)}</div>
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:16px 20px 30px"><span class="meta">Mic</span><button class="btn btn-primary" style="width:88px;height:88px;border-radius:50%">Hold</button><span class="meta" style="text-align:right">Type</span></div></div>`,
+};
+
+const Cc = {
+  home: () => `<div class="frame">
+    <div style="padding:22px 24px;display:flex;justify-content:space-between" class="meta"><b style="color:var(--fg);font-size:16px">Talktual</b><span>Settings</span></div>
+    <section style="padding:24px 24px 0">
+      <h1 style="font-size:28px;font-weight:600;line-height:1.2">Listen to the room.</h1>
+      <p style="font-size:16px;color:var(--fg2);margin:10px 0 22px;line-height:1.5">AIR translates nearby Hungarian into English as people speak. It listens only while you want it to.</p>
+      <button class="btn btn-primary">Start listening</button>
+      <div style="height:1px;background:var(--line);margin:28px 0 0"></div>
+    </section>
+    <section style="padding:8px 24px">
+      ${[['Connect','Talk with one person in two languages'],['Voice Studio','How translations sound'],['Lens','Camera translation · not available yet'],['Rewind','Talktual keeps nothing after you leave']].map(([t,s])=>`<div style="padding:14px 0;border-bottom:1px solid var(--line)"><p style="font-size:17px;font-weight:600">${t}</p><p class="label">${s}</p></div>`).join('')}
+    </section><div style="flex:1"></div>${nav('Home')}</div>`,
+  air: () => `<div class="frame">
+    <header style="padding:18px 24px;display:flex;justify-content:space-between;align-items:center"><span class="meta">‹ Magyar → English</span><span class="meta">Listening</span></header>
+    <div style="height:2px;margin:0 24px;background:linear-gradient(90deg,var(--accent) 64%, var(--line) 64%)"></div>
+    <section style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;padding:24px;gap:24px">
+      ${lines.map(([t,o],i)=>`<div style="opacity:${i<2?0.55:1}"><p style="font-size:${i===2?24:19}px;line-height:1.35;font-weight:${i===2?500:400}">${t}</p><p class="label" style="margin-top:4px">${o}</p></div>`).join('')}
+      <p class="label" style="font-style:italic">${live}…</p>
+    </section>
+    <div style="display:flex;gap:12px;padding:12px 24px 30px"><button class="btn btn-primary" style="flex:1">Pause</button><button class="btn btn-secondary">Speech on</button></div></div>`,
+  connect: () => `<div class="frame">
+    <header style="padding:18px 24px;display:flex;justify-content:space-between;align-items:center"><span><b style="font-size:17px">Luis</b><br><span class="meta">English ⇄ Español · 04:12</span></span><button class="btn btn-secondary" style="height:40px;color:var(--danger)">End</button></header>
+    <section style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;padding:24px;gap:22px">
+      <div style="padding-left:40%;text-align:right"><p style="font-size:17px">Where is the station?</p><p class="label">¿Dónde está la estación?</p></div>
+      <div><p class="meta">Luis</p><p style="font-size:24px;font-weight:500">It is a ten-minute walk.</p><p class="label">Está a diez minutos andando.</p></div>
+    </section>
+    <div style="display:flex;justify-content:center;padding:12px 0 30px"><button class="btn btn-primary" style="width:100%;margin:0 24px;height:56px">Hold to talk</button></div></div>`,
+};
+const sets = { a: A, b: B, c: Cc };
+document.getElementById('app').innerHTML = sets[C][S]();
+</script>
+</body>
+</html>
