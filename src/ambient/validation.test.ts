@@ -48,7 +48,10 @@ describe('ValidationRecorder', () => {
     rec.queueDrop('a', 'late');
     rec.interruption('hidden');
     rec.routeChange(2, 3);
+    rec.note('echo_dropped');
+    rec.note('half_duplex_hold');
     const s = rec.summary();
+    expect(s.reliability).toMatchObject({ echo_dropped: 1, half_duplex_holds: 1 });
     expect(s.reliability).toMatchObject({ utterances_without_final: 1, finals_without_partials: 1, asr_restarts: 1, queue_drops: 1, interruptions: { hidden: 1 }, route_changes: 1 });
     expect(s.events.find((e) => e.k === 'route_change')?.v).toBe('in2_out3');
   });

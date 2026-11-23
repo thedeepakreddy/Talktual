@@ -24,7 +24,7 @@ try {
   const open = async (query) => {
     const ctx = await browser.newContext({ locale: 'en-US', permissions: ['microphone'], viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     await ctx.addInitScript(initScript, {});
-    await ctx.addInitScript(() => localStorage.setItem('talktual.ambient.consent.v1.browser-speech', 'granted'));
+    await ctx.addInitScript(() => localStorage.setItem('talktual.ambient.consent.v2.browser-speech', 'granted'));
     const page = await ctx.newPage();
     await page.goto(`${stack.web}/${query}`);
     await page.getByRole('button', { name: /translate what’s around you/i }).click();

@@ -82,7 +82,7 @@ try {
     await ctx2.addInitScript(initScript, { noWebSpeech: true });
     const p2 = await ctx2.newPage();
     await p2.goto(stack.web);
-    await p2.evaluate(() => localStorage.setItem('talktual.ambient.consent.v1.browser-speech', 'granted'));
+    await p2.evaluate(() => localStorage.setItem('talktual.ambient.consent.v2.browser-speech', 'granted'));
     await p2.getByRole('button', { name: /translate what’s around you/i }).click();
     await p2.getByRole('button', { name: 'Start listening' }).click();
     await shot(p2, vp, '10-no-speech-recognition');

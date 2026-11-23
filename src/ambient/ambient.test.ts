@@ -188,6 +188,8 @@ describe('AmbientSession', () => {
     h.s.start();
     expect(h.s.getSnapshot().consent.prompt).toBe(true);
     expect(h.s.getSnapshot().consent.disclosure?.points.join(' ')).toMatch(/people near you/);
+    // Phase 8.5: the speech-output processor is named.
+    expect(h.s.getSnapshot().consent.disclosure?.points.join(' ')).toMatch(/spoken by your browser’s voice/);
     expect(FakeAsr.all).toHaveLength(0);
     h.s.declineConsent();
     expect(FakeAsr.all).toHaveLength(0);
@@ -538,5 +540,14 @@ describe('AmbientSession × Phase 6 processing policy', () => {
     await flush();
     expect(h.s.getSnapshot().lines[0].location).toBe('cloud');
     expect(JSON.stringify(h.s.diagnostics())).not.toMatch(/magán/);
+  });
+});
+
+describe('ambient disclosure', () => {
+  it('names the speech processor per mode and server capability; consent re-asked after a disclosure change (v2)', async () => {
+    const { ambientDisclosure, ambientConsentKey: key } = await import('./disclosure');
+    expect(ambientDisclosure('mymemory', 'cloud', true).points.join(' ')).toMatch(/ElevenLabs/);
+    expect(ambientDisclosure('mymemory', 'local-only', true).points.join(' ')).not.toMatch(/ElevenLabs/);
+    expect(key('browser-speech')).toBe('talktual.ambient.consent.v2.browser-speech');
   });
 });
