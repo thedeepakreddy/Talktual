@@ -134,7 +134,16 @@ New tests:
 ## 11. Rollback
 The Phase 7-final commits are view-layer. Revert them (`git revert fa76ae9^..HEAD` on this branch), or check out `src/` from `1249459`. There are no data, engine or server changes, other than the dev-only `@types/react`.
 
-## 12. Next steps
+## 12. Brand application (after the owner shared the brand sheet)
+The owner's brand sheet (`docs/brand/talktual-brand-sheet.png`) supersedes the constitution's provisional palette. Applied:
+- **Palette tokens:** charcoal and Warm White bases, orange accent, Secondary Orange as dark-theme accent text.
+- **Type stack:** Inter / Manrope / SF Pro, with no web-font download.
+- **Mark and wordmark:** a vector rebuild of the logo, plus the wordmark.
+- **App icon:** `favicon.svg` plus a 180 px touch icon.
+
+**Accessibility handling:** orange on Warm White is 2.06:1, so in light mode orange is a fill (with charcoal text). Orange text and the activity trace use a darkened `#A4560B`. The paused state moved to a yellow warning, distinct from the orange accent. a11y 11/11; contrast lowest text pair 4.68 (dark) and 4.85 (light). The `after/` evidence set was re-rendered in the brand.
+
+## 13. Next steps
 1. **Device pass:** iPhone Safari, Android Chrome and VoiceOver, on Home, AIR and Connect, in both themes.
 2. **Mobbin reference review** if the plan is upgraded.
 3. A decision on Lens (on-device OCR approach) and Rewind (opt-in retention, which needs counsel review per Phase 8.5).

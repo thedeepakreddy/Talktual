@@ -1,7 +1,7 @@
 ---
 name: Talktual
-direction: Futuristic Audio — a precise, quiet listening instrument
-version: 2.0.0
+direction: Futuristic Audio — a precise, quiet listening instrument, in the Talktual brand (orange / charcoal / warm white)
+version: 2.1.0
 status: frozen for Phase 7 final (supersedes 1.0.0 "Quiet instrument"); governed by the Phase 7 Design Constitution
 source: src/index.css (tokens), src/components/ui/* (primitives), src/components/shell/* (navigation), src/pages/* (destinations)
 themes: [dark (showcase), light] — system by default, user-selectable (Settings › Appearance)
@@ -22,23 +22,31 @@ Professional audio-instrument and communication design, not an AI product.
 Concept exploration (A atmospheric / B instrument / C editorial) and the selection rationale are in `docs/phase7_final/PHASE7_FINAL_REPORT.md`. The selection is B's structure (metered activity trace with a time axis, speaker-label rows, borderless language pair) edited with C's typography and honest status copy.
 
 ## Tokens (`src/index.css`, exposed to Tailwind via `@theme inline`)
-### Color
+### Color — Talktual brand (brand sheet: `docs/brand/talktual-brand-sheet.png`)
+Brand colours: Primary Orange `#F59A38` · Secondary Orange `#FFB45B` · Charcoal `#1F2328` · Warm White `#FAF7F2`. They supersede the constitution's provisional graphite and teal. The constitution's structure (three depth levels, one accent, semantic tokens) is unchanged.
+
 | Token | Dark | Light | Use |
 | --- | --- | --- | --- |
-| `bg` | `#101317` | `#F3F4F3` | base |
-| `raised` | `#191D22` | `#FFFFFF` | surface level (sheets) |
-| `surface` | `#22272D` | `#E8EBEC` | elevated level (controls, inputs) |
-| `line` / `line-strong` | `#262B31` / `#363C43` | `#DCE0E2` / `#C5CBCF` | dividers, control borders, trace baseline |
-| `fg` | `#D8E0E5` | `#20262D` | primary text |
-| `fg-muted` | `#A4ADB5` | `#4C545C` | supporting text |
-| `fg-subtle` | `#89939D` | `#5F676F`* | metadata |
-| `accent` | `#4EADB0` | `#2C7479`* | primary action, selection, live activity only |
-| `on-accent` | `#0B1F20` | `#FFFFFF` | text on accent |
-| `warning` | `#D9A441` | `#8A5A00` | paused |
-| `danger` | `#E5706A` | `#B9423B` | end, errors, the listening (recording) dot |
-| `success` | `#5CB98A` | `#2E7D55` | connected |
+| `bg` | `#1F2328` (Charcoal) | `#FAF7F2` (Warm White) | base |
+| `raised` | `#262B31` | `#FFFFFF` | surface level (sheets) |
+| `surface` | `#2E343B` | `#F0ECE5` | elevated (controls, inputs) |
+| `line` / `line-strong` | `#343B42` / `#4A525A` | `#E5DFD5` / `#C7BFB2` | dividers, trace baseline |
+| `fg` | `#F2EEE7` | `#1F2328` | primary text |
+| `fg-muted` | `#BDB6AC` | `#4A4F55` | supporting text |
+| `fg-subtle` | `#A49D93` | `#62676D` | metadata |
+| `accent` | `#F59A38` | `#F59A38` | **fills only**: primary buttons, switch on, selection tint |
+| `on-accent` | `#1F2328` | `#1F2328` | text on orange (7.2:1) |
+| `accent-text` | `#FFB45B` | `#A4560B`* | orange as text, icons and the activity trace |
+| `warning` | `#E6C860` | `#6F5A00` | paused (kept distinct from the orange accent) |
+| `danger` | `#F0766E` | `#B9423B` | end, errors, the listening (recording) dot |
+| `success` | `#63C08F` | `#2E7D55` | connected |
 
-\* **Deviation from the constitution's proposed light values,** made after the contrast validation it requires. Light secondary `#6B737B` measured 4.36:1 on base and 4.02:1 on elevated. Light accent `#327F84` measured 4.23:1 on base. Both fail WCAG AA for text. Replaced with `#5F676F` (≥ 4.79:1) and `#2C7479` (≥ 4.52:1; white on it ≥ 5:1). All dark values pass as proposed.
+\* Orange on Warm White measures 2.06:1, which fails WCAG for text (4.5:1) and for graphics (3:1). In the light theme, orange is therefore used as a fill (with charcoal text), and orange *text* and the activity trace use `#A4560B`, the same hue darkened (≥ 4.56:1). Verified by `e2e/a11y.mjs`: the lowest text pair is 4.68:1 (dark) and 4.85:1 (light).
+
+### Logo and icon
+- `BrandMark` (`src/components/Brand.tsx`) is a vector rebuild of the sheet's mark: two mirrored waves split by a line, with a primary→secondary orange gradient. It has a `mono` variant (currentColor). The brand mark is the only place a gradient is used.
+- `Wordmark`: the mark plus "Talktual" in bold, tracking −0.02em.
+- **App icon:** `public/favicon.svg` (charcoal tile plus mark) and `public/apple-touch-icon.png` (180 px render). Theme colour `#1F2328`.
 
 ### Type (rem; follows the browser text size)
 | Role | Size / line | Constitution range |
@@ -51,7 +59,7 @@ Concept exploration (A atmospheric / B instrument / C editorial) and the selecti
 | `label` (supporting) | 13 / 18 | 13–14 |
 | `meta` | 12 / 16 | 12–13 |
 
-The font is the system UI stack (no web font). Tabular numerals for times and codes.
+The font is the brand stack: Inter / Manrope / SF Pro. They're used when installed and fall back to the system UI font. No web-font download (no third-party request). Tabular numerals for times and codes.
 
 ### Shape, depth, spacing, motion
 - **Radius:** controls 10, inputs 10, small 8, surfaces 14, sheets 16. Circles only for the hold-to-talk control (ergonomic) and status dots. **No pills.**
