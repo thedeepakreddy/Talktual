@@ -53,6 +53,7 @@ import {
 import type { PlaybackItem, TranslationRequest, TranslationResult, TtsRoute } from './ports';
 import { anySignal, PolicyBlockedError, ProcessingPolicy, PROCESSING_MODES, type InferenceTask, type NetworkState, type ProcessingMode, type RouteReason } from '../privacy/policy';
 import { browserNetworkSource, NetworkMonitor, type NetworkSource } from '../privacy/network';
+import { routedTranslate } from '../privacy/routing';
 import { RuntimeRegistry, type RegistryLimits } from '../local/registry';
 import { PhrasebookRuntime } from '../local/phrasebook';
 import type { AsrRuntime, RuntimeInfo, TranslateRuntime, VoiceRuntime } from '../local/types';
@@ -1252,55 +1253,12 @@ export class CommunicationSession {
     req: TranslationRequest,
     opts: { cloudText?: string; peerRequestedDevice?: boolean }
   ): Promise<{ result: TranslationResult; location: 'device' | 'cloud' | 'none' }> {
-    const policy = this.policy!;
-    const reg = this.registry!;
-    const plan = policy.plan('translate', { deviceAvailable: reg.canTranslate(req.from, req.to), cloudAvailable: true, peerRequestedDevice: opts.peerRequestedDevice });
-    const cancelled = (): { result: TranslationResult; location: 'none' } => ({ result: { segmentId: req.segmentId, status: 'cancelled', text: req.text, attempts: 0, latencyMs: 0 }, location: 'none' });
-    let last: TranslationResult = { segmentId: req.segmentId, status: 'failed', text: req.text, error: { code: 'unavailable', message: plan.reason }, attempts: 0, latencyMs: 0 };
-    let why: RouteReason | 'not-covered' = plan.reason;
-    for (const step of plan.steps) {
-      if (req.signal?.aborted) return cancelled();
-      if (step === 'device') {
-        const o = await reg.translate({ text: req.text, from: req.from, to: req.to, signal: req.signal });
-        if (o.ok) {
-          policy.noteDevice('translate', plan.reason);
-          this.diag.record('route', { kind: 'translate', status: 'device', reason: plan.reason });
-          return { result: { segmentId: req.segmentId, status: 'translated', text: o.text, attempts: 1, latencyMs: Math.round(o.ms) }, location: 'device' };
-        }
-        const miss = 'reason' in o ? o.reason : 'error';
-        if (miss === 'cancelled') return cancelled();
-        why = 'not-covered';
-        this.diag.count(`local_${miss}`);
-        continue;
-      }
-      let gate: { signal: AbortSignal; end: () => void };
-      try {
-        gate = policy.beginRemote('translate', { peerRequestedDevice: opts.peerRequestedDevice });
-      } catch {
-        continue; // permission changed since planning
-      }
-      try {
-        const r = await this.deps.translate({ ...req, text: opts.cloudText ?? req.text, signal: anySignal(req.signal, gate.signal) });
-        if (r.status === 'cancelled') {
-          if (req.signal?.aborted) return cancelled();
-          this.diag.count('remote_revoked');
-          continue; // revoked mid-flight → next allowed step (never resumes remotely)
-        }
-        if (r.status === 'failed') {
-          if (r.error?.code === 'network' || r.error?.code === 'timeout') this.netmon?.networkFailure();
-          last = { ...r, text: req.text }; // never leak the MT input
-          continue;
-        }
-        this.netmon?.success();
-        this.diag.record('route', { kind: 'translate', status: 'cloud', reason: plan.reason });
-        return { result: r, location: 'cloud' };
-      } finally {
-        gate.end();
-      }
-    }
-    this.diag.record('route', { kind: 'translate', status: 'none', reason: why });
-    if (last.error?.code === 'unavailable') last = { ...last, error: { code: 'unavailable', message: why } };
-    return { result: last, location: 'none' };
+    return routedTranslate(this.policy!, this.registry!, this.deps.translate, req, opts, {
+      record: (type, fields) => this.diag.record(type, fields),
+      count: (name) => this.diag.count(name),
+      networkFailure: () => this.netmon?.networkFailure(),
+      networkSuccess: () => this.netmon?.success(),
+    });
   }
 
   // ==========================================================================

@@ -21,3 +21,4 @@ eval/local/.bundle/
 e2e/.dist-repro/
 e2e/.dist-screens/
 e2e/.dist-a11y/
+e2e/.dist-ambient/
