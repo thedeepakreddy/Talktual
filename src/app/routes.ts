@@ -12,7 +12,11 @@ export function parseRoute(hash: string): Route {
 export function useHashRoute(): [Route, (r: Route) => void] {
   const [route, setRoute] = useState<Route>(() => (typeof window === 'undefined' ? 'home' : parseRoute(window.location.hash)));
   useEffect(() => {
-    const on = () => setRoute(parseRoute(window.location.hash));
+    // Back/forward and plain links change the hash too: each destination starts at its top.
+    const on = () => {
+      setRoute(parseRoute(window.location.hash));
+      window.scrollTo?.(0, 0);
+    };
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);

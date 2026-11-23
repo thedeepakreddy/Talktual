@@ -57,10 +57,11 @@ try {
     if (/\/api\/(translate|tts|stt)/.test(r.url())) inferenceRequests.push(r.url());
   });
 
-  await step('Home → "Translate what’s around you" opens setup; nothing is listening yet', async () => {
+  await step('Home shows AIR first; AIR opens ready with nothing listening yet', async () => {
     await page.goto(stack.web);
-    await page.getByRole('button', { name: /translate what’s around you/i }).click();
-    await page.getByRole('heading', { name: 'Live translate' }).waitFor();
+    await page.getByRole('heading', { name: 'Translate the room around you' }).waitFor();
+    await page.goto(`${stack.web}/#/air`);
+    await page.getByRole('heading', { name: 'AIR' }).waitFor();
     await page.getByRole('button', { name: /They speak: Magyar/ }).waitFor();
     assert.equal(await page.evaluate(() => window.__sr.length), 0);
     assert.equal(await page.getByRole('button', { name: 'Start listening' }).count(), 1);
@@ -160,8 +161,8 @@ try {
   });
 
   await step('settings: processing mode and where each step runs; On-device pauses listening (no on-device Hungarian)', async () => {
-    await page.getByRole('button', { name: 'Live translate settings' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Live translate settings' });
+    await page.getByRole('button', { name: 'AIR settings' }).click();
+    const sheet = page.getByRole('dialog', { name: 'AIR settings' });
     await sheet.waitFor();
     assert.match(await sheet.innerText(), /Speech recognition\s*Cloud/);
     const n0 = inferenceRequests.length;
@@ -171,7 +172,7 @@ try {
     await page.keyboard.press('Escape');
     await page.getByText(/no longer allow this|can’t recognise this language/).first().waitFor();
     assert.equal(inferenceRequests.length, n0, 'no inference request after switching to On-device');
-    await page.getByRole('button', { name: 'Live translate settings' }).click();
+    await page.getByRole('button', { name: 'AIR settings' }).click();
     await page.getByRole('radio', { name: 'Cloud' }).click();
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: /Resume listening|Start listening/ }).click();
@@ -195,7 +196,10 @@ try {
   });
 
   await step('Clear removes every line; nothing from the room is in browser storage', async () => {
-    await page.getByRole('button', { name: 'Clear translations' }).click();
+    // While listening, Clear lives in AIR settings (the dock shows Stop during a live session).
+    await page.getByRole('button', { name: 'AIR settings' }).click();
+    await page.getByRole('dialog', { name: 'AIR settings' }).getByRole('button', { name: 'Clear translations' }).click();
+    await page.keyboard.press('Escape');
     assert.equal(await page.evaluate(() => document.querySelectorAll('[role="log"] li').length), 0);
     const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
     for (const [hu, en] of PHRASES) {
@@ -206,7 +210,7 @@ try {
   await step('Back stops listening and speaking; the tab no longer says Listening', async () => {
     await page.getByRole('button', { name: 'Back' }).click();
     await page.waitForFunction(() => !window.__srRunning(), null, { timeout: 2000 });
-    await page.getByRole('button', { name: 'Start a call' }).waitFor();
+    await page.getByRole('heading', { name: 'Translate the room around you' }).waitFor();
     assert.doesNotMatch(await page.title(), /Listening/);
   });
 

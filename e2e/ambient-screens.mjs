@@ -36,7 +36,7 @@ try {
     const page = await ctx.newPage();
     await page.goto(stack.web);
     await shot(page, vp, '01-home-entry');
-    await page.getByRole('button', { name: /translate what’s around you/i }).click();
+    await page.goto(`${stack.web}/#/air`);
     await shot(page, vp, '02-setup');
     await page.getByRole('button', { name: 'Start listening' }).click();
     await page.getByRole('dialog', { name: 'Listening to the room' }).waitFor();
@@ -67,7 +67,7 @@ try {
     await page.getByText(/This sounds like English/).waitFor();
     await shot(page, vp, '07-language-hint');
     await page.getByRole('button', { name: 'Dismiss' }).click();
-    await page.getByRole('button', { name: 'Live translate settings' }).click();
+    await page.getByRole('button', { name: 'AIR settings' }).click();
     await shot(page, vp, '08-settings');
     await page.getByRole('dialog').evaluate((d) => d.querySelector('.scroll-area')?.scrollTo(0, 99999));
     await shot(page, vp, '08b-settings-scrolled');
@@ -83,7 +83,7 @@ try {
     const p2 = await ctx2.newPage();
     await p2.goto(stack.web);
     await p2.evaluate(() => localStorage.setItem('talktual.ambient.consent.v2.browser-speech', 'granted'));
-    await p2.getByRole('button', { name: /translate what’s around you/i }).click();
+    await p2.goto(`${stack.web}/#/air`);
     await p2.getByRole('button', { name: 'Start listening' }).click();
     await shot(p2, vp, '10-no-speech-recognition');
     await ctx2.close();

@@ -17,7 +17,7 @@ export function LensPage({ go }: { go: (r: Route) => void }) {
         <p className="mt-2 max-w-[32rem] text-body text-fg-muted">
           Talktual can’t read text from the camera yet, so Lens doesn’t open your camera or capture anything. For speech, use AIR to translate the room, or Connect to talk with someone.
         </p>
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+        <div className="mt-6 flex flex-wrap gap-3">
           <Button variant="secondary" onClick={() => go('air')}>
             Open AIR
           </Button>

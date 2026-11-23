@@ -27,8 +27,13 @@ export function AppShell({ route, go, showNav, children }: { route: Route; go: (
   if (!showNav) return <>{children}</>;
   return (
     <div className="min-h-dvh lg:flex">
+      <a href="#content" onClick={(e) => (e.preventDefault(), document.getElementById('content')?.focus())} className="sr-only z-50 rounded-md bg-raised text-body font-semibold focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:px-4 focus:py-3">
+        Skip to content
+      </a>
       <DesktopRail route={route} go={go} />
-      <div className="min-w-0 flex-1 pb-[calc(64px+env(safe-area-inset-bottom))] lg:pb-0">{children}</div>
+      <div id="content" tabIndex={-1} className="min-w-0 flex-1 pb-[calc(64px+env(safe-area-inset-bottom))] outline-none lg:pb-0">
+        {children}
+      </div>
       <MobileBottomNav route={route} go={go} />
     </div>
   );
@@ -94,7 +99,7 @@ function MobileBottomNav({ route, go }: { route: Route; go: (r: Route) => void }
 export function Page({ title, description, action, children, wide }: { title: string; description?: ReactNode; action?: ReactNode; children: ReactNode; wide?: boolean }) {
   return (
     <main className={cn('mx-auto w-full px-4 pb-10 sm:px-6 lg:px-10', wide ? 'max-w-[880px]' : 'max-w-[720px]')}>
-      <header className="safe-t flex min-h-16 items-end justify-between gap-3 pb-2 pt-6 lg:pt-10">
+      <header className="safe-t flex min-h-16 items-end justify-between gap-3 pb-2 pt-10 lg:pt-14">
         <div className="min-w-0">
           <h1 className="text-title font-semibold tracking-[-0.01em]">{title}</h1>
           {description && <p className="mt-1.5 max-w-[34rem] text-body text-fg-muted">{description}</p>}
