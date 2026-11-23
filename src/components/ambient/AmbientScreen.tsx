@@ -7,6 +7,7 @@ import type { AmbientDeps, AmbientLine, AmbientSession, AmbientSnapshot, CapStat
 import type { ProcessingMode } from '../../privacy/policy';
 import { Banner, Button, IconButton, Row, Section, Segmented, Sheet, Switch } from '../ui';
 import { LanguagePicker } from '../LanguagePicker';
+import { coarseBrowser, type ValidationRecorder } from '../../ambient/validation';
 import { ConsentSheet } from '../ConsentSheet';
 
 interface AmbientScreenProps {
@@ -25,7 +26,7 @@ const CAP_LABEL: Record<CapState, string> = { device: 'On this device', cloud: '
 
 export function AmbientScreen({ language, onLanguageChange, onExit, depsFactory = createAmbientDeps }: AmbientScreenProps) {
   const initialFrom = language.bcp47.startsWith('hu') ? 'en-US' : DEFAULT_FROM;
-  const { session, snapshot: s } = useAmbientSession({ from: initialFrom, to: language.bcp47, speak: true, headphones: false, volume: VOLUMES.medium }, depsFactory);
+  const { session, snapshot: s, recorder } = useAmbientSession({ from: initialFrom, to: language.bcp47, speak: true, headphones: false, volume: VOLUMES.medium }, depsFactory);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [picker, setPicker] = useState<'from' | 'to' | null>(null);
 
@@ -81,6 +82,8 @@ export function AmbientScreen({ language, onLanguageChange, onExit, depsFactory 
         </header>
 
         <AmbientBanner s={s} session={session} onSettings={() => setSettingsOpen(true)} />
+
+        {recorder && <TestModeStrip recorder={recorder} />}
 
         {s && s.lines.length === 0 && !listening && s.phase !== 'paused' ? (
           <Setup s={s} session={session} from={from} to={to} onPick={setPicker} />
@@ -179,6 +182,65 @@ function AmbientBanner({ s, session, onSettings }: { s: AmbientSnapshot | null; 
         </div>
       )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Phase 8.5 test mode (only with ?validate=1 or ?debug=1): the device owner marks
+ * the end of each spoken test phrase and exports content-free timings.
+ */
+function TestModeStrip({ recorder }: { recorder: ValidationRecorder }) {
+  const [marks, setMarks] = useState(0);
+  const [msg, setMsg] = useState<string | null>(null);
+  const exportSummary = async () => {
+    const json = JSON.stringify(recorder.summary(coarseBrowser(navigator.userAgent)), null, 2);
+    try {
+      const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `talktual-validation-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setMsg('Exported');
+    } catch {
+      try {
+        await navigator.clipboard.writeText(json);
+        setMsg('Copied');
+      } catch {
+        setMsg('Export failed');
+      }
+    }
+  };
+  return (
+    <div className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-line-strong px-3 py-1.5 sm:mx-6" aria-label="Test mode">
+      <span className="mr-auto text-label font-semibold text-fg-muted">Test mode{msg ? ` · ${msg}` : ''}</span>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => {
+          recorder.marker();
+          setMarks((m) => m + 1);
+        }}
+      >
+        Mark end of speech{marks ? ` (${marks})` : ''}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={exportSummary}>
+        Export
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => {
+          recorder.clear();
+          setMarks(0);
+          setMsg('Cleared');
+        }}
+      >
+        Clear
+      </Button>
+    </div>
   );
 }
 
