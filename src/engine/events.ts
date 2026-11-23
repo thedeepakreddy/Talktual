@@ -31,6 +31,7 @@ export type ErrorCode =
   | 'device-lost'
   | 'capture-unavailable'
   | 'stt-unavailable'
+  | 'stt-language-unsupported'
   | 'stt-failed'
   | 'translation-failed'
   | 'playback-failed'

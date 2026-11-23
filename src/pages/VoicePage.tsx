@@ -17,6 +17,30 @@ const SAMPLE: Record<string, string> = {
   it: 'Ecco come suoneranno le traduzioni.',
   pt: 'É assim que as traduções vão soar.',
   hu: 'Így fognak hangzani a fordítások.',
+  nl: 'Zo zullen vertalingen klinken.',
+  pl: 'Tak będą brzmieć tłumaczenia.',
+  ru: 'Так будут звучать переводы.',
+  uk: 'Так звучатимуть переклади.',
+  tr: 'Çeviriler böyle duyulacak.',
+  ar: 'هكذا ستبدو الترجمات عند سماعها.',
+  fa: 'ترجمه‌ها این‌گونه شنیده می‌شوند.',
+  he: 'כך יישמעו התרגומים.',
+  hi: 'अनुवाद ऐसे सुनाई देंगे।',
+  te: 'అనువాదాలు ఇలా వినిపిస్తాయి.',
+  ta: 'மொழிபெயர்ப்புகள் இப்படித்தான் ஒலிக்கும்.',
+  ja: '翻訳はこのように聞こえます。',
+  ko: '번역은 이렇게 들립니다.',
+  zh: '翻译听起来会是这样的。',
+  id: 'Beginilah terjemahan akan terdengar.',
+  vi: 'Bản dịch sẽ nghe như thế này.',
+  th: 'คำแปลจะฟังดูแบบนี้',
+  sv: 'Så här kommer översättningarna att låta.',
+  da: 'Sådan kommer oversættelserne til at lyde.',
+  no: 'Slik vil oversettelsene høres ut.',
+  fi: 'Tältä käännökset kuulostavat.',
+  cs: 'Takto budou překlady znít.',
+  el: 'Έτσι θα ακούγονται οι μεταφράσεις.',
+  ro: 'Așa vor suna traducerile.',
 };
 const VOLUMES = { quiet: 0.4, medium: 0.7, full: 1 } as const;
 type VolumeKey = keyof typeof VOLUMES;
@@ -52,6 +76,7 @@ export function VoicePage({ language }: { language: Language }) {
   const [prefs, setPrefs] = useState<VoicePrefs>(() => getVoicePrefs());
   const [serverTts, setServerTts] = useState<boolean | null>(null);
   const [sample, setSample] = useState<'idle' | 'playing' | 'failed'>('idle');
+  const [sampleFailure, setSampleFailure] = useState<string | undefined>(undefined);
   const sampleId = useRef<string | null>(null);
   const voices = useDeviceVoices(language.bcp47);
   const onDevice = getModePref() === 'local-only';
@@ -61,10 +86,13 @@ export function VoicePage({ language }: { language: Language }) {
       .then((c) => setServerTts(c.tts))
       .catch(() => setServerTts(false));
     const pc = playbackController();
-    const off = pc.onStatus((id, status) => {
+    const off = pc.onStatus((id, status, _engine, failure) => {
       if (id !== sampleId.current) return;
       if (status === 'started') setSample('playing');
-      else if (status === 'failed') setSample('failed');
+      else if (status === 'failed') {
+        setSampleFailure(failure);
+        setSample('failed');
+      }
       else if (status === 'ended' || status === 'cancelled' || status === 'dropped') setSample('idle');
     });
     return () => {
@@ -120,7 +148,7 @@ export function VoicePage({ language }: { language: Language }) {
           <div>
             <p className="text-body">Sample in {language.native}</p>
             <p className="text-label text-fg-muted" aria-live="polite">
-              {sample === 'playing' ? 'Playing…' : sample === 'failed' ? 'No voice could play this. Check your device’s sound and voices.' : 'Uses the same voice route as translations.'}
+              {sample === 'playing' ? 'Playing…' : sample === 'failed' ? (sampleFailure === 'blocked' ? 'The browser blocked sound. Tap Play sample again.' : sampleFailure === 'no-voice' ? `No ${language.name} voice on this device.` : 'No voice could play this. Check your device’s sound and voices.') : 'Uses the same voice route as translations.'}
             </p>
           </div>
           <Button size="sm" variant="secondary" onClick={playSample} icon={sample === 'playing' ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}>

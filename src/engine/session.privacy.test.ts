@@ -246,6 +246,31 @@ describe('failure handling', () => {
     expect(h.playback.played).toHaveLength(1);
   });
 
+  it('recognizer refuses the language: honest notice, permission NOT marked denied; a new language retries', async () => {
+    const h = makeSession({ consent: true });
+    await connected(h);
+    const errors: EngineEvent[] = [];
+    h.session.events.on('error', (e) => errors.push(e));
+    h.session.pressTalk();
+    await settle();
+    const asr = FakeAsr.all.at(-1)!;
+    asr.cb.onError('language-unsupported', 'not available', true);
+    await settle();
+    const s = h.session.getSnapshot();
+    expect(s.permission).not.toBe('denied');
+    expect(s.notice?.code).toBe('stt-language-unsupported');
+    expect(s.notice?.message).not.toMatch(/microphone access is blocked/i);
+    expect(s.notice?.message).toMatch(/recognise/);
+    expect(errors.at(-1)).toMatchObject({ code: 'stt-language-unsupported', fatal: true });
+    h.session.setLanguage('fr-FR');
+    await settle();
+    expect(h.session.getSnapshot().notice).toBeNull();
+    h.session.pressTalk();
+    await settle();
+    expect(FakeAsr.all.length).toBe(2);
+    expect(FakeAsr.all.at(-1)!.lang).toBe('fr-FR');
+  });
+
   it('device removed: stopped + mic shown off; turning the mic back on and pressing re-acquires', async () => {
     const h = makeSession({ consent: true });
     await connected(h);

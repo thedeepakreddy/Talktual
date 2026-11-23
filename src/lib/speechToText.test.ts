@@ -425,4 +425,27 @@ describe('Web Speech adapter (streaming)', () => {
     expect(c2.onError).toHaveBeenLastCalledWith('capture-unavailable', expect.any(String), true);
     expect(r2.active).toBe(false);
   });
+
+  it('a language the recognizer refuses is NOT reported as a blocked microphone', async () => {
+    const perms = { state: 'granted' as PermissionState };
+    Object.defineProperty(navigator, 'permissions', { value: { query: async () => ({ state: perms.state }) }, configurable: true });
+    const { createAsr } = await import('./speechToText');
+    for (const code of ['service-not-allowed', 'language-not-supported']) {
+      const c = cb();
+      const r = createAsr('hi-IN', 'push-to-talk', c);
+      await r.start();
+      last().onerror!({ error: code });
+      await vi.waitFor(() => expect(c.onError).toHaveBeenCalled());
+      expect(c.onError).toHaveBeenLastCalledWith('language-unsupported', expect.stringContaining('hi-IN'), true);
+      expect(r.active).toBe(false);
+    }
+    // Safari's service-not-allowed with the microphone really denied → permission.
+    perms.state = 'denied';
+    const c3 = cb();
+    const r3 = createAsr('es-ES', 'push-to-talk', c3);
+    await r3.start();
+    last().onerror!({ error: 'service-not-allowed' });
+    await vi.waitFor(() => expect(c3.onError).toHaveBeenCalled());
+    expect(c3.onError).toHaveBeenLastCalledWith('permission-denied', expect.any(String), true);
+  });
 });

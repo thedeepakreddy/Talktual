@@ -58,6 +58,12 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'hu', name: 'Hungarian', native: 'Magyar', bcp47: 'hu-HU', flag: '🇭🇺' },
 ];
 
+/** English name for a BCP-47 tag (e.g. "es-ES" → "Spanish"); the tag itself if unknown. */
+export function languageName(tag: string): string {
+  const base = tag.toLowerCase().split(/[-_]/)[0];
+  return SUPPORTED_LANGUAGES.find((l) => l.code === base)?.name ?? tag;
+}
+
 export function findLanguage(code: string | undefined | null): Language | undefined {
   if (!code) return undefined;
   const base = code.split('-')[0].toLowerCase();

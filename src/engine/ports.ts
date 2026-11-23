@@ -24,7 +24,7 @@ export interface RecognizedSegment {
   promoted?: boolean;
 }
 
-export type AsrErrorCode = 'permission-denied' | 'device-lost' | 'capture-unavailable' | 'network' | 'no-result' | 'provider' | 'unknown';
+export type AsrErrorCode = 'permission-denied' | 'language-unsupported' | 'device-lost' | 'capture-unavailable' | 'network' | 'no-result' | 'provider' | 'unknown';
 
 export interface AsrCallbacks {
   onFinal: (segment: RecognizedSegment) => void;
@@ -107,7 +107,9 @@ export interface PlaybackItem {
 /** cloud-first: server voice, then any browser voice · device-first: on-device voice, then cloud · device-only: on-device voice or silence. */
 export type TtsRoute = 'cloud-first' | 'device-first' | 'device-only';
 
-export type PlaybackListener = (segmentId: string, status: PlaybackStatus, engine?: 'server' | 'browser') => void;
+/** Why a segment could not be spoken: browser refused (no tap yet), no voice for the language, or another error. */
+export type PlaybackFailure = 'blocked' | 'no-voice' | 'error';
+export type PlaybackListener = (segmentId: string, status: PlaybackStatus, engine?: 'server' | 'browser', failure?: PlaybackFailure) => void;
 
 export interface PlaybackPort {
   enqueue(item: PlaybackItem): void;
