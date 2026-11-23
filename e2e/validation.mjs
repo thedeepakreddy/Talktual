@@ -26,8 +26,7 @@ try {
     await ctx.addInitScript(initScript, {});
     await ctx.addInitScript(() => localStorage.setItem('talktual.ambient.consent.v2.browser-speech', 'granted'));
     const page = await ctx.newPage();
-    await page.goto(`${stack.web}/${query}`);
-    await page.getByRole('button', { name: /translate what’s around you/i }).click();
+    await page.goto(`${stack.web}/${query}#/air`);
     return { ctx, page };
   };
 

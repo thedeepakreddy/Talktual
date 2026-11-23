@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowRight, ChevronRight, Settings } from 'lucide-react';
 import type { Language } from '../types';
 import type { Route } from '../app/routes';
@@ -6,6 +6,8 @@ import { getModePref, getVoicePrefs, MODE_LABEL } from '../app/prefs';
 import { Wordmark } from '../components/Brand';
 import { Button, IconButton } from '../components/ui';
 import { LanguagePicker } from '../components/LanguagePicker';
+import { micPermission } from '../lib/audio';
+import { detectBrowserCapabilities } from '../engine/capabilities';
 
 interface HomeProps {
   language: Language;
@@ -32,6 +34,20 @@ export function HomePage({ language, airFrom, onLanguageChange, onAirFromChange,
   const [picker, setPicker] = useState<'from' | 'to' | null>(null);
   const mode = getModePref();
   const voice = getVoicePrefs();
+  // Real blockers, stated before Start (not discovered after it).
+  const [blocker, setBlocker] = useState<string | null>(null);
+  useEffect(() => {
+    const caps = typeof window !== 'undefined' ? detectBrowserCapabilities(window) : null;
+    if (caps && !caps.secureContext) return setBlocker('Listening needs a secure (https) connection.');
+    if (caps && !caps.webSpeech) return setBlocker('This browser can’t recognise speech. Use Chrome, Edge or Safari for AIR.');
+    let live = true;
+    micPermission()
+      .then((p) => live && p === 'denied' && setBlocker('Microphone access is blocked for this site. Allow it in your browser’s site settings.'))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
   return (
     <main className="mx-auto w-full max-w-[720px] px-4 pb-10 sm:px-6 lg:px-10">
       <header className="safe-t flex h-16 items-center justify-between lg:hidden">
@@ -64,6 +80,11 @@ export function HomePage({ language, airFrom, onLanguageChange, onAirFromChange,
         <p className="mt-3 text-label text-fg-muted" data-testid="home-air-status">
           {[MODE_LABEL[mode] + ' processing', voice.speak ? 'Spoken and on screen' : 'On screen only'].join(' · ')}
         </p>
+        {blocker && (
+          <p role="status" className="mt-2 text-label font-medium text-warning">
+            {blocker}
+          </p>
+        )}
         <Button variant="primary" className="mt-6 w-full sm:w-auto sm:min-w-[220px]" onClick={onStartAir}>
           Start listening
         </Button>

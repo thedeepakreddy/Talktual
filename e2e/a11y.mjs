@@ -81,7 +81,9 @@ const smallTargets = (page, min = 44) =>
       .filter((e) => {
         const r = e.getBoundingClientRect();
         const s = getComputedStyle(e);
-        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && !e.disabled && e.getAttribute('aria-hidden') !== 'true';
+        // Visually hidden until focused (e.g. "Skip to content") is not a tap target.
+        const hidden = s.clipPath.includes('inset(50%') || s.clip.startsWith('rect(0') || (r.width <= 1 && r.height <= 1);
+        return r.width > 0 && r.height > 0 && !hidden && s.visibility !== 'hidden' && !e.disabled && e.getAttribute('aria-hidden') !== 'true';
       })
       .map((e) => {
         const r = e.getBoundingClientRect();
@@ -96,7 +98,7 @@ try {
   host = await ctx('en-US', PHONE);
   guest = await ctx('es-ES', PHONE);
   const report = {};
-  await host.page.goto(stack.web);
+  await host.page.goto(`${stack.web}/#/connect`);
   report.home = await smallTargets(host.page);
   await host.page.getByLabel('Your name').fill('Ana');
   await host.page.getByRole('button', { name: 'Start a call' }).click();
@@ -139,16 +141,19 @@ try {
   // Keyboard on desktop.
   const kb = await ctx('en-US', { viewport: { width: 1280, height: 800 } });
   const kg = await ctx('es-ES', { viewport: { width: 1280, height: 800 } });
-  await step('keyboard: Home tab order is name → language → Start → Join', async () => {
-    await kb.page.goto(stack.web);
+  await step('keyboard: skip link first; Connect tab order is name → language → Start → Join', async () => {
+    await kb.page.goto(`${stack.web}/#/connect`);
     // Tab only once the app has rendered (otherwise the first Tab lands on <body>).
     await kb.page.getByLabel('Your name').waitFor();
+    await kb.page.keyboard.press('Tab');
+    assert.equal(await kb.page.evaluate(() => document.activeElement.textContent.trim()), 'Skip to content');
+    await kb.page.keyboard.press('Enter'); // focus moves past the navigation rail
     const order = [];
     for (let i = 0; i < 4; i++) {
       await kb.page.keyboard.press('Tab');
       order.push(await kb.page.evaluate(() => document.activeElement.getAttribute('aria-label') || document.activeElement.textContent.trim() || document.activeElement.id));
     }
-    assert.deepEqual(order.map((o) => o.replace(/:.*/, '')), ['name', 'Your language', 'Start a call', 'Join with a code']);
+    assert.deepEqual(order.map((o) => o.replace(/:.*/, '')), ['name', 'You speak', 'Start a call', 'Join with a code']);
   });
   await step('keyboard: whole call flow; sheet focus moves in, is trapped, Escape closes and focus returns', async () => {
     await kb.page.keyboard.press('Shift+Tab');
@@ -201,7 +206,7 @@ try {
 
   await step('reduced motion: no animation or transition longer than 10 ms on Home and Invite', async () => {
     const rm = await ctx('en-US', { reducedMotion: 'reduce' });
-    await rm.page.goto(stack.web);
+    await rm.page.goto(`${stack.web}/#/connect`);
     await rm.page.getByLabel('Your name').fill('Ana');
     await rm.page.getByRole('button', { name: 'Start a call' }).click();
     await readCallCode(rm.page);
@@ -223,8 +228,7 @@ try {
     const a = await ctx('en-US', PHONE);
     const p = a.page;
     const r = {};
-    await p.goto(stack.web);
-    await p.getByRole('button', { name: /translate what’s around you/i }).click();
+    await p.goto(`${stack.web}/#/air`);
     r.setup = await smallTargets(p);
     await p.getByRole('button', { name: 'Start listening' }).click();
     await p.getByRole('dialog', { name: 'Listening to the room' }).waitFor();
@@ -235,7 +239,7 @@ try {
     await p.evaluate(() => window.__say('Jó napot kívánok', true));
     await p.waitForTimeout(600);
     r.listening = await smallTargets(p);
-    await p.getByRole('button', { name: 'Live translate settings' }).click();
+    await p.getByRole('button', { name: 'AIR settings' }).click();
     await p.waitForTimeout(400);
     r.settings = await smallTargets(p);
     await a.context.close();
@@ -245,9 +249,7 @@ try {
   await step('Live translate by keyboard: Start, consent focus, Pause, settings focus trap and return', async () => {
     const a = await ctx('en-US', { viewport: { width: 1280, height: 800 } });
     const p = a.page;
-    await p.goto(stack.web);
-    await p.getByRole('button', { name: /translate what’s around you/i }).focus();
-    await p.keyboard.press('Enter');
+    await p.goto(`${stack.web}/#/air`);
     await p.getByRole('button', { name: 'Start listening' }).focus();
     await p.keyboard.press('Enter');
     const d = p.getByRole('dialog', { name: 'Listening to the room' });
@@ -259,10 +261,10 @@ try {
     await p.getByRole('button', { name: 'Pause listening' }).focus();
     await p.keyboard.press('Enter');
     await p.waitForFunction(() => !window.__srRunning(), null, { timeout: 2000 });
-    const btn = p.getByRole('button', { name: 'Live translate settings' });
+    const btn = p.getByRole('button', { name: 'AIR settings' });
     await btn.focus();
     await p.keyboard.press('Enter');
-    const sheet = p.getByRole('dialog', { name: 'Live translate settings' });
+    const sheet = p.getByRole('dialog', { name: 'AIR settings' });
     await sheet.waitFor();
     for (let i = 0; i < 30; i++) {
       await p.keyboard.press('Tab');
@@ -270,7 +272,7 @@ try {
     }
     await p.keyboard.press('Escape');
     await sheet.waitFor({ state: 'detached' });
-    assert.equal(await p.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Live translate settings');
+    assert.equal(await p.evaluate(() => document.activeElement.getAttribute('aria-label')), 'AIR settings');
     await a.context.close();
   });
 } finally {

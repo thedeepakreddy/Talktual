@@ -1,81 +1,81 @@
 ---
 name: Talktual
-direction: Quiet instrument
-version: 1.0.0
-status: provisional (L0 — first documented system; values chosen in Phase 7, see docs/phase7)
-source: src/index.css (tokens), src/components/ui/* (primitives)
-themes: [dark (default when the OS prefers dark), light]
+direction: Futuristic Audio — a precise, quiet listening instrument
+version: 2.0.0
+status: frozen for Phase 7 final (supersedes 1.0.0 "Quiet instrument"); governed by the Phase 7 Design Constitution
+source: src/index.css (tokens), src/components/ui/* (primitives), src/components/shell/* (navigation), src/pages/* (destinations)
+themes: [dark (showcase), light] — system by default, user-selectable (Settings › Appearance)
 ---
 
 # Talktual design system
 
-## Direction — "Quiet instrument"
-A two-person translated call is a conversation, not a dashboard. The interface stays quiet so the words carry it:
+## Direction
+Professional audio-instrument and communication design, not an AI product.
+- **Technology shows through precision:** alignment, typography, honest state and the activity trace.
+- **No ornament:** no AI iconography, gradients, glow, glass, card grids, pills or decorative motion.
+- **Translation text is always the most prominent element on a session screen.**
+- **Every visible state is true:**
+  - unavailable capabilities (Lens, Rewind) say so plainly
+  - the listening trace shows only real recognizer events
+  - nothing pulses or animates on its own
 
-* **The conversation is the screen.** Every other element is chrome around it.
-* **One loud thing:** the talk control. The signal accent belongs to talking and the single primary action on a screen, nowhere else.
-* **Status in one place.** A single status line (live region) under the conversation, plus at most one banner for problems. No chip rows.
-* **Settings live in one sheet**, grouped by what the user is deciding (how I talk, how it's processed, assistance), never scattered as pills.
-* **No ornament.** No gradients, glows, textures, decorative cards, or icon tiles. Depth comes only from surface steps and a hairline.
-* **Honest states.** Unavailable means hidden or explicitly "unavailable". Never a working-looking control that does nothing.
+Concept exploration (A atmospheric / B instrument / C editorial) and the selection rationale are in `docs/phase7_final/PHASE7_FINAL_REPORT.md`. The selection is B's structure (metered activity trace with a time axis, speaker-label rows, borderless language pair) edited with C's typography and honest status copy.
 
-## Tokens (CSS custom properties in `src/index.css`, exposed to Tailwind via `@theme`)
-### Color (semantic)
+## Tokens (`src/index.css`, exposed to Tailwind via `@theme inline`)
+### Color
 | Token | Dark | Light | Use |
 | --- | --- | --- | --- |
-| `--color-bg` | `#0E0F11` | `#F6F6F4` | page |
-| `--color-raised` | `#16181B` | `#FFFFFF` | sheets, panels |
-| `--color-surface` | `#1D2024` | `#EDEDEA` | inputs, controls, own messages |
-| `--color-surface-hover` | `#252930` | `#E4E4E0` | hover/pressed |
-| `--color-line` | `#2B2F35` | `#DADAD5` | hairlines, dividers |
-| `--color-line-strong` | `#3B4048` | `#C4C4BE` | control borders |
-| `--color-fg` | `#ECEDEE` | `#141517` | primary text |
-| `--color-fg-muted` | `#A3A9B1` | `#555B63` | secondary text (≥ 7:1 / ≥ 6:1) |
-| `--color-fg-subtle` | `#878E96` | `#60666E` | metadata only (≥ 4.5:1) |
-| `--color-accent` | `#F5A524` | `#F5A524` | talk (live), primary action fill |
-| `--color-on-accent` | `#1C1305` | `#1C1305` | text/icons on accent |
-| `--color-accent-text` | `#F7B24A` | `#8F5300` | accent as text |
-| `--color-incoming` | `#86BFFF` | `#1F64C0` | the other person speaking / playback |
-| `--color-success` | `#4CD488` | `#1B7F47` | connected dot |
-| `--color-danger` | `#FF6B6E` | `#C42F35` | end call, errors |
-| `--color-focus` | `#86BFFF` | `#1F64C0` | focus ring (2 px + 2 px offset) |
+| `bg` | `#101317` | `#F3F4F3` | base |
+| `raised` | `#191D22` | `#FFFFFF` | surface level (sheets) |
+| `surface` | `#22272D` | `#E8EBEC` | elevated level (controls, inputs) |
+| `line` / `line-strong` | `#262B31` / `#363C43` | `#DCE0E2` / `#C5CBCF` | dividers, control borders, trace baseline |
+| `fg` | `#D8E0E5` | `#20262D` | primary text |
+| `fg-muted` | `#A4ADB5` | `#4C545C` | supporting text |
+| `fg-subtle` | `#89939D` | `#5F676F`* | metadata |
+| `accent` | `#4EADB0` | `#2C7479`* | primary action, selection, live activity only |
+| `on-accent` | `#0B1F20` | `#FFFFFF` | text on accent |
+| `warning` | `#D9A441` | `#8A5A00` | paused |
+| `danger` | `#E5706A` | `#B9423B` | end, errors, the listening (recording) dot |
+| `success` | `#5CB98A` | `#2E7D55` | connected |
 
-Soft tints (`--color-accent-soft`, `--color-incoming-soft`, `--color-danger-soft`) are the same hues at 12–16 % alpha, used only behind their own color.
+\* **Deviation from the constitution's proposed light values,** made after the contrast validation it requires. Light secondary `#6B737B` measured 4.36:1 on base and 4.02:1 on elevated. Light accent `#327F84` measured 4.23:1 on base. Both fail WCAG AA for text. Replaced with `#5F676F` (≥ 4.79:1) and `#2C7479` (≥ 4.52:1; white on it ≥ 5:1). All dark values pass as proposed.
 
-### Type
-System UI stack (`-apple-system, "Segoe UI", Roboto, system-ui, sans-serif`). No web-font request. Tabular numerals for codes and timers; monospace only for the 6-character call code.
-
-| Role | Size / line | Weight |
+### Type (rem; follows the browser text size)
+| Role | Size / line | Constitution range |
 | --- | --- | --- |
-| `title` | 24 / 30 | 600 |
-| `heading` | 17 / 24 | 600 |
-| `body-lg` (conversation) | 17 / 25 | 400 |
-| `body` | 15 / 22 | 400 |
-| `label` | 13 / 18 | 500 |
-| `meta` | 12 / 16 | 500 |
+| `title` (page) | 26 / 32 | 24–28 |
+| `translation` (current line) | 24 / 32 | 20–26 |
+| `heading` (section) | 19 / 26 | 17–20 |
+| `body-lg` (transcript lines) | 18 / 26 | — |
+| `body` | 15 / 22 | 15–16 |
+| `label` (supporting) | 13 / 18 | 13–14 |
+| `meta` | 12 / 16 | 12–13 |
 
-Rem-based, so text scales with the user's browser setting. Letter-spacing −0.01em on title only. No all-caps text.
+The font is the system UI stack (no web font). Tabular numerals for times and codes.
 
-### Space, radius, elevation, motion
-* **Space:** 4 px grid (4, 8, 12, 16, 20, 24, 32, 40, 48). Side gutter 16 px on phones, 24 px on tablet and up.
-* **Radius:** `--radius-sm` 8, `--radius-md` 12, `--radius-lg` 16 (sheets top corners 20), full for round controls.
-* **Elevation:** level 0 (page), level 1 (`raised` + hairline), level 2 (sheet: `raised` + shadow `0 -8px 32px rgb(0 0 0 / .35)`). Nothing else casts a shadow.
-* **Motion:** 120 ms (press), 200 ms (state), 280 ms (sheet), ease `cubic-bezier(.2,.8,.2,1)`. Every animation is disabled under `prefers-reduced-motion` (`MotionConfig reducedMotion="user"` plus CSS).
+### Shape, depth, spacing, motion
+- **Radius:** controls 10, inputs 10, small 8, surfaces 14, sheets 16. Circles only for the hold-to-talk control (ergonomic) and status dots. **No pills.**
+- **Depth:** three levels — base, surface (sheets), elevated (controls). Shadow only on sheets. Content is separated by whitespace and hairline dividers, not cards.
+- **Spacing:** a 4 px scale (4, 8, 12, 16, 24, 32, 48, 64). Gutters are 16 px on phones, 24 px on tablets and 40 px in desktop pages.
+- **Motion:** `--duration-press` 120 ms, `--duration-state` 200 ms, `--duration-sheet` 280 ms; ease `cubic-bezier(.2,.8,.2,1)`. Motion follows real state:
+  - the trace advances only while capturing
+  - pause dims it
+  - the sheet slides
+  - there is no ambient animation
+  - everything is disabled under `prefers-reduced-motion`
 
-### Layout and breakpoints
-* **Phone (< 640):** single column. The call is a header, the conversation (scrolls) and the dock.
-* **Tablet (640–1023):** same structure, content column max 640, centered.
-* **Desktop (≥ 1024):** conversation column max 760. Sheets open as a right-side panel (400 px) instead of a bottom sheet, so the conversation stays visible.
-* **Touch targets:** ≥ 44 × 44 px (the talk control is 88 px).
+## Layout and navigation
+- **Desktop (≥ 1024):** an 88 px rail on the left, with five primary destinations (Home, Connect, AIR, Lens, Rewind) and Voice and Settings in the rail footer. Content is a single column (max 720 px). Sheets open as a 400 px right panel and the session column moves aside.
+- **Phone and tablet:** bottom navigation with the five primary destinations. Voice Studio and Settings are reached from Home (the list and the header icon).
+- **Active sessions** (AIR, a call, invite and join) are full-screen with the navigation hidden, so a session can't be left by an accidental tab tap. Leaving AIR stops listening; leaving a live call asks first.
+- A **"Skip to content"** link is the first focusable element on navigated pages.
 
-## Components (`src/components/ui`)
-* **Button** (`primary` accent fill · `secondary` surface · `ghost` text · `danger`), heights 48 (default) and 44 (compact). One primary per screen.
-* **IconButton**: 44 px, requires `label` (becomes `aria-label`).
-* **Sheet**: dialog with title, close, Escape, focus moves in on open and returns on close; bottom sheet on phones, side panel on desktop.
-* **Switch**: `role="switch"`, label left, optional one-line description.
-* **Segmented**: radiogroup for 2–3 mutually exclusive choices.
-* **Row**: list row (label, optional value, chevron) for navigation inside sheets.
-* **Banner**: one-line problem/notice (`info` | `warning` | `error`), optional action.
+## Components
+- **Primitives (`src/components/ui`):** `Button` (primary · secondary · ghost · danger; heights 48/44), `IconButton` (44 px, labelled), `Sheet`, `Switch`, `Segmented`, `Row`/`Section`, `Banner`.
+- **Shell (`src/components/shell`):** `AppShell`, `DesktopRail`, `MobileBottomNav`, `Page`.
+- **AIR (`src/components/ambient`):** `AmbientScreen` with `LanguagePair`, `ActivityTrace` (listening canvas), the transcript rows, the dock, the AIR settings sheet and the test-mode strip.
+- **Connect (`src/components/call`):** `ConversationFeed` (speaker-label rows), `TalkDock`, `SettingsSheet`; plus `StartCall` and `JoinCall`.
+- **Pages (`src/pages`):** `HomePage`, `ConnectPage`, `LensPage`, `RewindPage`, `VoicePage`, `SettingsPage`.
 
 ## Copy
-Plain verbs, sentence case, no exclamation marks. Labels say what happens ("Start a call", "Join", "End"), status says what is true ("Luis is speaking", "Reconnecting…"). No marketing lines, no restating what the UI already shows.
+Plain verbs, sentence case, no exclamation marks, no AI vocabulary. Status says what is true ("Paused — not listening", "Not set up on this server", "Nothing is kept").
