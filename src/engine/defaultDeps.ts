@@ -64,7 +64,7 @@ export function createDefaultDeps(): SessionDeps {
       ? {
           translators: [
             new BrowserTranslatorRuntime((globalThis as { Translator?: never }).Translator, [
-              ['en', 'es'], ['es', 'en'], ['en', 'fr'], ['fr', 'en'], ['en', 'de'], ['de', 'en'], ['en', 'pt'], ['pt', 'en'], ['en', 'it'], ['it', 'en'], ['es', 'fr'], ['fr', 'es'],
+              ['en', 'es'], ['es', 'en'], ['en', 'fr'], ['fr', 'en'], ['en', 'de'], ['de', 'en'], ['en', 'pt'], ['pt', 'en'], ['en', 'it'], ['it', 'en'], ['es', 'fr'], ['fr', 'es'], ['hu', 'en'], ['en', 'hu'],
             ]),
           ],
           voices: [new LocalVoiceRuntime(typeof speechSynthesis !== 'undefined' ? () => speechSynthesis.getVoices() : undefined)],

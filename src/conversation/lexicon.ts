@@ -45,7 +45,7 @@ const LEX: Record<string, Lex> = {
 };
 
 /** Non-lexical hesitation sounds (uh, um, mm, hmm, erm, eh, ah …) in any language. */
-const FILLER = /^(u+h+|u+m+|u+h+m+|e+r+m*|e+h+|a+h+|m{2,}|h+m+|e+m+|ehm+|euh+|äh+m*|öh+m*|ähm+)$/u;
+const FILLER = /^(u+h+|u+m+|u+h+m+|e+r+m*|e+h+|a+h+|m{2,}|h+m+|e+m+|ehm+|euh+|äh+m*|öh+m*|ähm+|ö{2,}m*|e{3,})$/u;
 
 export const baseLang = (lang: string) => lang.split('-')[0].toLowerCase();
 

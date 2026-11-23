@@ -3,6 +3,7 @@ import type { Language } from '../types';
 import { LanguagePicker } from './LanguagePicker';
 import { Wordmark } from './Brand';
 import { LanguageField, NameField } from './LanguageField';
+import { Ear, ChevronRight } from 'lucide-react';
 import { Button } from './ui';
 
 interface HomeProps {
@@ -12,9 +13,11 @@ interface HomeProps {
   onUserNameChange: (name: string) => void;
   onStart: () => void;
   onJoin: () => void;
+  /** Phase 8: translate the room around you (no name or second person needed). */
+  onAmbient?: () => void;
 }
 
-export function Home({ language, onLanguageChange, userName, onUserNameChange, onStart, onJoin }: HomeProps) {
+export function Home({ language, onLanguageChange, userName, onUserNameChange, onStart, onJoin, onAmbient }: HomeProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -64,6 +67,20 @@ export function Home({ language, onLanguageChange, userName, onUserNameChange, o
             </Button>
           </div>
         </form>
+        {onAmbient && (
+          <div className="mt-8 border-t border-line pt-6">
+            <button type="button" onClick={onAmbient} className="flex min-h-14 w-full items-center gap-3 rounded-md text-left hover:bg-surface">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface text-fg" aria-hidden="true">
+                <Ear className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-body font-semibold">Translate what’s around you</span>
+                <span className="block text-label text-fg-muted">Hear nearby conversation in {language.name}. No one else needs the app.</span>
+              </span>
+              <ChevronRight className="h-5 w-5 shrink-0 text-fg-subtle" aria-hidden="true" />
+            </button>
+          </div>
+        )}
       </div>
 
       <footer className="safe-b pt-4 text-center text-meta text-fg-subtle">

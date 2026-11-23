@@ -26,6 +26,8 @@ interface PlaybackState {
   sources: AudioBufferSourceNode[];
   gain: GainNode | null;
   element: HTMLAudioElement | null;
+  /** Phase 8: output level 0..1 for this item (default 1). */
+  volume?: number;
 }
 
 type Engine = "server" | "browser";
@@ -161,6 +163,7 @@ export class PlaybackController implements PlaybackPort {
           sources: [],
           gain: null,
           element: null,
+          volume: clampVolume(item.volume),
         };
         this.current = state;
         item.hooks?.onStart?.();
@@ -186,6 +189,11 @@ export class PlaybackController implements PlaybackPort {
       this.pumping = false;
     }
   }
+}
+
+function clampVolume(v: number | undefined): number | undefined {
+  if (v === undefined || !Number.isFinite(v)) return undefined;
+  return Math.min(1, Math.max(0, v));
 }
 
 // --- Phase 1 API, kept for existing callers --------------------------------------
@@ -317,6 +325,7 @@ async function playPcmStream(res: Response, sampleRate: number, state: PlaybackS
   if (ac.state === "suspended") await ac.resume().catch(() => {});
 
   const gain = ac.createGain();
+  if (state.volume !== undefined && gain.gain) gain.gain.value = state.volume;
   gain.connect(ac.destination);
   state.gain = gain;
 
@@ -423,6 +432,7 @@ async function playEncoded(res: Response, state: PlaybackState): Promise<void> {
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
   state.element = audio;
+  if (state.volume !== undefined) audio.volume = state.volume;
 
   try {
     await audio.play();
@@ -463,6 +473,7 @@ function browserSpeak(text: string, lang: string, state: PlaybackState, hints?: 
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = lang;
+    if (state.volume !== undefined) utterance.volume = state.volume;
     if (hints) {
       utterance.pitch = hints.browserPitch;
       utterance.rate = hints.browserRate;
