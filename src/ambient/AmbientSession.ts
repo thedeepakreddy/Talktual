@@ -34,6 +34,7 @@ import { routedTranslate } from '../privacy/routing';
 import { ambientConsentKey, ambientDisclosure } from './disclosure';
 import { LanguageMismatchDetector } from './langGuess';
 import { StablePrefixSegmenter, type AmbientUnit } from './stablePrefix';
+import type { ValidationRecorder } from './validation';
 
 export type AmbientPhase = 'idle' | 'starting' | 'listening' | 'paused' | 'stalled' | 'unavailable' | 'stopped';
 export type PauseReason = 'user' | 'hidden' | 'offline' | 'mic' | 'policy';
@@ -100,6 +101,12 @@ export interface AudioSessionLike {
   type: string;
 }
 
+export interface DeviceSource {
+  /** Counts of audio input/output devices (never labels or ids). */
+  counts(): Promise<{ inputs: number; outputs: number }>;
+  subscribe(fn: () => void): () => void;
+}
+
 export interface AmbientDeps extends Pick<SessionDeps, 'createAsr' | 'translate' | 'playback' | 'capture' | 'browser' | 'storage' | 'getServerCapabilities' | 'clearCaches' | 'onUserGesture' | 'processing'> {
   now?: () => number;
   setTimeout?: typeof setTimeout;
@@ -107,6 +114,10 @@ export interface AmbientDeps extends Pick<SessionDeps, 'createAsr' | 'translate'
   visibility?: VisibilitySource | null;
   /** WebKit Audio Session API (`navigator.audioSession`) where present. */
   audioSession?: AudioSessionLike | null;
+  /** Phase 8.5: opt-in, content-free validation recorder (stage timings and reliability counts). */
+  recorder?: ValidationRecorder | null;
+  /** Phase 8.5: audio device changes (counts of input/output kinds only). */
+  devices?: DeviceSource | null;
 }
 
 export interface AmbientLimits {
@@ -204,6 +215,7 @@ export class AmbientSession {
   private disposed = false;
   private pendingStart = false;
   private idSeq = 0;
+  private rec: ValidationRecorder | null = null;
 
   constructor(
     config: AmbientConfig,
@@ -272,6 +284,30 @@ export class AmbientSession {
       );
     }
     this.unsubs.push(deps.capture.onDeviceLost(() => this.onAsrError('device-lost', 'device lost', true)));
+    this.rec = deps.recorder ?? null;
+    this.rec?.sessionStart();
+    const devices = deps.devices;
+    if (devices) {
+      this.unsubs.push(
+        devices.subscribe(() => {
+          devices
+            .counts()
+            .then((c) => {
+              if (this.disposed) return;
+              this.rec?.routeChange(c.inputs, c.outputs);
+              this.diag.count('route_changes');
+              // The browser keeps using whatever the system now routes; say so while listening.
+              if (this.snap.phase === 'listening' && !this.snap.notice) {
+                this.commit({ notice: { code: 'route-change', message: 'An audio device was connected or removed. Talktual now uses your device’s current microphone and speaker.', tone: 'info' } });
+                this.setT(() => {
+                  if (this.snap.notice?.code === 'route-change') this.commit({ notice: null });
+                }, 8000);
+              }
+            })
+            .catch(() => {});
+        })
+      );
+    }
 
     if (this.policy && this.netSource) {
       const policy = this.policy;
@@ -443,6 +479,7 @@ export class AmbientSession {
 
   dispose(): void {
     if (this.disposed) return;
+    this.rec?.teardown();
     this.cancelOutput();
     this.stopCapture('dispose');
     this.restoreAudioSession();
@@ -535,12 +572,14 @@ export class AmbientSession {
           if (!current()) return;
           this.lastActivity = this.now();
           this.lastPartialAt = this.lastActivity;
+          this.rec?.partial();
           this.seg.partial(text);
           this.commit({ partial: text });
         },
         onFinal: (s: RecognizedSegment) => {
           if (!current()) return this.diag.count('stale_asr_results_dropped');
           this.lastActivity = this.now();
+          this.rec?.final();
           this.seg.final(s.text, s.confidence);
           this.commit({ partial: '' });
           this.flushSpeech();
@@ -548,6 +587,7 @@ export class AmbientSession {
         onSpeechActivity: (active) => {
           if (!current()) return;
           this.lastActivity = this.now();
+          this.rec?.speech(active);
           this.commit({ hearing: active });
         },
         onError: (code, message, fatal) => {
@@ -567,6 +607,7 @@ export class AmbientSession {
       .start()
       .then(() => {
         if (this.asr !== asr || !asr.active) return;
+        this.rec?.asrStart();
         this.commit({ phase: 'listening', capturing: true, heldForSpeech: false });
         this.diag.record('ambient', { state: 'listening' });
       })
@@ -590,6 +631,7 @@ export class AmbientSession {
       asr.dispose();
       this.deps.capture.release();
       this.diag.record('asr_stop', { reason });
+      this.rec?.asrStop(reason);
     }
     this.seg.reset();
     this.commit({ capturing: false, hearing: false, partial: '' });
@@ -605,6 +647,7 @@ export class AmbientSession {
     };
     this.commit({ phase: 'paused', pauseReason: reason, heldForSpeech: false, notice: notice ?? messages[reason] ?? null });
     this.diag.record('ambient', { state: 'paused', reason });
+    this.rec?.interruption(reason);
   }
 
   private unavailable(code: string, message: string): void {
@@ -616,6 +659,7 @@ export class AmbientSession {
 
   private onAsrError(code: AsrErrorCode, _message: string, fatal: boolean): void {
     this.diag.record('asr_error', { code, fatal });
+    this.rec?.asrError(code);
     if (code === 'permission-denied') {
       this.unavailable('permission-denied', 'Microphone access is blocked. Allow it in your browser’s site settings, then press Start again.');
       return;
@@ -646,6 +690,7 @@ export class AmbientSession {
     }
     this.restarts.push(t);
     this.diag.count('asr_restarts');
+    this.rec?.asrRestart(reason);
     this.startCapture();
   }
 
@@ -711,6 +756,7 @@ export class AmbientSession {
     };
     this.meta.set(id, { heardAt: u.heardAt, committedAt: u.committedAt });
     this.diag.sample('amb_commit_ms', u.committedAt - u.heardAt);
+    this.rec?.commit(id, u.kind);
     this.order.push(id);
     this.appendLine(line);
     this.pending.push({ ...u, id });
@@ -719,6 +765,7 @@ export class AmbientSession {
       const dropped = this.pending.shift()!;
       this.updateLine(dropped.id, { state: 'skipped', note: 'Skipped to keep up', speech: 'skipped' });
       this.diag.count('backlog_skipped');
+      this.rec?.queueDrop(dropped.id, 'backlog');
     }
     this.pump();
     this.flushSpeech();
@@ -761,6 +808,7 @@ export class AmbientSession {
   private async translateUnit(u: AmbientUnit): Promise<void> {
     const ctrl = new AbortController();
     this.inFlight.set(u.id, ctrl);
+    this.rec?.translateReq(u.id);
     const t0 = this.now();
     const { from, to } = this.snap;
     let result: TranslationResult;
@@ -791,14 +839,17 @@ export class AmbientSession {
     const m = this.meta.get(u.id);
     if (!m) return this.pump(); // line was cleared/dropped meanwhile
     if (result.status === 'cancelled') {
+      this.rec?.translateRes(u.id, 'cancelled', 'none');
       this.updateLine(u.id, { state: 'skipped', note: 'Cancelled', speech: 'skipped' });
     } else if (result.status === 'translated' || result.status === 'passthrough') {
       m.translatedAt = this.now();
       this.diag.sample('amb_translate_ms', m.translatedAt - t0);
       this.diag.sample('amb_text_ms', m.translatedAt - m.heardAt);
+      this.rec?.translateRes(u.id, 'translated', location ?? 'none');
       this.updateLine(u.id, { state: 'translated', translation: result.text, location });
     } else {
       const why = result.error?.code === 'unavailable' ? 'Not translated — not available in this mode' : 'Not translated — translation failed';
+      this.rec?.translateRes(u.id, result.error?.code === 'unavailable' ? 'unavailable' : 'failed', location ?? 'none');
       this.updateLine(u.id, { state: 'untranslated', note: why, speech: this.snap.speak ? 'skipped' : 'off', location });
       this.diag.count('translate_failed');
     }
@@ -827,6 +878,7 @@ export class AmbientSession {
       if (m && this.now() - m.heardAt > this.limits.maxSpeechLagMs) {
         this.updateLine(id, { speech: 'skipped', note: 'Shown, not spoken — arrived too late' });
         this.diag.count('speech_late_skipped');
+        this.rec?.queueDrop(id, 'late');
         continue;
       }
       this.enqueueSpeech(line, false);
@@ -858,7 +910,10 @@ export class AmbientSession {
       notAfter: replay ? undefined : (m?.heardAt ?? this.now()) + this.limits.maxSpeechLagMs + 4000,
       ...(this.policy ? { ttsRoute: () => this.ttsRoute() } : {}),
     });
-    if (!replay) this.updateLine(line.id, { speech: 'queued' });
+    if (!replay) {
+      this.rec?.queueAdmit(line.id, this.snap.lines.filter((l) => l.speech === 'queued' || l.speech === 'playing').length + 1);
+      this.updateLine(line.id, { speech: 'queued' });
+    }
   }
 
   private ttsRoute(): TtsRoute {
@@ -875,6 +930,7 @@ export class AmbientSession {
     if (!rawId.startsWith(ID_PREFIX)) return;
     const id = rawId.split('#')[0];
     const isReplay = rawId.includes('#');
+    if (!isReplay && status !== 'queued') this.rec?.playback(id, status);
     if (status === 'started') {
       const line = this.snap.lines.find((l) => l.id === id);
       if (line?.translation) this.spoken.push({ t: this.now(), text: line.translation });
@@ -924,7 +980,10 @@ export class AmbientSession {
       for (const u of this.pending) this.updateLine(u.id, { state: 'skipped', note: 'Stopped', speech: 'skipped' });
       this.pending = [];
     }
-    if (this.snap.playingId || this.snap.lines.some((l) => l.speech === 'queued' || l.speech === 'playing')) this.deps.playback.cancelAll();
+    if (this.snap.playingId || this.snap.lines.some((l) => l.speech === 'queued' || l.speech === 'playing')) {
+      const n = this.deps.playback.cancelAll();
+      this.rec?.cancel(n);
+    }
     // Everything not yet spoken won't be: advance the cursor past it.
     const lines = this.snap.lines.map((l) => (l.speech === 'waiting' || l.speech === 'queued' || l.speech === 'playing' ? { ...l, speech: 'skipped' as const } : l));
     this.speakCursor = this.order.length;

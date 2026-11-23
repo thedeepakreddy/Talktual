@@ -42,7 +42,11 @@ describe("POST /api/translate", () => {
       assert.equal(b1.text, "hola");
       assert.equal(b1.provider, "mymemory");
       const r2 = await postJson(srv.http, "/api/translate", { text: "hello", from: "en", to: "es" });
-      assert.equal((await r2.json()).provider, "cache");
+      // Served from the cache, but not advertised as a hit (that would reveal
+      // that someone else recently translated the same words).
+      const b2 = await r2.json();
+      assert.equal(b2.provider, "mymemory");
+      assert.equal(r2.headers.get("x-latency-ms"), null);
       assert.equal(srv.fetchCalls.length, 1);
       assert.match(srv.fetchCalls[0].url, /langpair=en%7Ces/);
       assert.ok(!srv.logs.join("\n").includes("hello"), "utterance text must not be logged");
@@ -80,6 +84,30 @@ describe("POST /api/translate", () => {
       const text = await r.text();
       assert.deepEqual(JSON.parse(text), { error: "invalid_json" });
       assert.ok(!/node_modules|at JSON\.parse/.test(text));
+    }));
+
+  test("Phase 8.5: cached text expires after the TTL; size 0 disables the cache", async () => {
+    await withServer({ fetch: myMemoryOk("hola"), translationCacheTtlMs: 60 }, async (srv) => {
+      await postJson(srv.http, "/api/translate", { text: "hello", from: "en", to: "es" });
+      await postJson(srv.http, "/api/translate", { text: "hello", from: "en", to: "es" });
+      assert.equal(srv.fetchCalls.length, 1);
+      await new Promise((r) => setTimeout(r, 90));
+      await postJson(srv.http, "/api/translate", { text: "hello", from: "en", to: "es" });
+      assert.equal(srv.fetchCalls.length, 2, "expired entry was not reused");
+    });
+    await withServer({ fetch: myMemoryOk("hola"), translationCacheMax: 0 }, async (srv) => {
+      await postJson(srv.http, "/api/translate", { text: "hello", from: "en", to: "es" });
+      await postJson(srv.http, "/api/translate", { text: "hello", from: "en", to: "es" });
+      assert.equal(srv.fetchCalls.length, 2);
+    });
+  });
+
+  test("Phase 8.5: provider error bodies are never logged (they could echo the user's text)", () =>
+    withServer({ fetch: async () => jsonResponse({ responseStatus: 403, responseDetails: "INVALID QUERY: secret phrase here" }) }, async (srv) => {
+      const r = await postJson(srv.http, "/api/translate", { text: "secret phrase here", from: "en", to: "es" });
+      assert.equal(r.status, 502);
+      assert.ok(!srv.logs.join("\n").includes("secret phrase"), srv.logs.join("\n"));
+      assert.ok(srv.logs.some((l) => l.includes("translate failed via mymemory")));
     }));
 
   test("DEF-C02 (server half): provider failure is an explicit error, not source text dressed as success", () =>
