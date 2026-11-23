@@ -22,6 +22,9 @@
 //     is suspended while translated speech plays (prevents a feedback loop), and
 //     recognised text matching what was just spoken is dropped (echo guard).
 
+import { languageUnsupportedMessage } from '../engine/asrMessages';
+import { languageName } from '../types';
+import type { PlaybackFailure } from '../engine/ports';
 import type { AsrAdapter, AsrErrorCode, RecognizedSegment, TranslationResult, TtsRoute } from '../engine/ports';
 import type { SessionDeps } from '../engine/CommunicationSession';
 import type { Disclosure } from '../engine/privacy';
@@ -273,7 +276,7 @@ export class AmbientSession {
     };
 
     // Speech playback status for OUR items only (the controller is shared with calls).
-    this.unsubs.push(deps.playback.onStatus((id, status) => this.onPlayback(id, status)));
+    this.unsubs.push(deps.playback.onStatus((id, status, _engine, failure) => this.onPlayback(id, status, failure)));
 
     const vis = deps.visibility === undefined ? defaultVisibility() : deps.visibility;
     if (vis) {
@@ -386,6 +389,7 @@ export class AmbientSession {
 
   resume(): void {
     if (this.disposed) return;
+    this.deps.onUserGesture?.();
     if (this.snap.phase === 'paused' || this.snap.phase === 'stalled' || this.snap.phase === 'unavailable') {
       this.restarts = [];
       this.begin();
@@ -454,6 +458,7 @@ export class AmbientSession {
 
   /** Speak one line again (a deliberate request: plays even if late). */
   replay(lineId: string): void {
+    this.deps.onUserGesture?.();
     const line = this.snap.lines.find((l) => l.id === lineId);
     if (!line?.translation || line.state !== 'translated') return;
     this.enqueueSpeech(line, true);
@@ -664,6 +669,10 @@ export class AmbientSession {
       this.unavailable('permission-denied', 'Microphone access is blocked. Allow it in your browser’s site settings, then press Start again.');
       return;
     }
+    if (code === 'language-unsupported') {
+      this.unavailable('language-unsupported', languageUnsupportedMessage(this.snap.from, 'Choose another language for “They speak”.'));
+      return;
+    }
     if (code === 'device-lost' || code === 'capture-unavailable') {
       if (this.snap.phase !== 'listening' && this.snap.phase !== 'starting') return;
       this.pauseFor('mic', { code, message: code === 'device-lost' ? 'The microphone was disconnected. Reconnect it and press Resume.' : 'No microphone is available.', tone: 'error' });
@@ -712,6 +721,22 @@ export class AmbientSession {
       s.type = 'play-and-record';
     } catch {
       this.savedAudioSessionType = null;
+    }
+  }
+
+  /**
+   * While capture is held for our own speech (no headphones), use the playback
+   * session so iOS sends speech to the speaker or headphones at full volume,
+   * not the quiet earpiece route that recording can select. Only after we set
+   * the session ourselves.
+   */
+  private setAudioSessionType(type: string): void {
+    const s = this.deps.audioSession === undefined ? defaultAudioSession() : this.deps.audioSession;
+    if (!s || this.savedAudioSessionType === null) return;
+    try {
+      s.type = type;
+    } catch {
+      /* best effort */
     }
   }
 
@@ -927,7 +952,7 @@ export class AmbientSession {
     return 'cloud-first';
   }
 
-  private onPlayback(rawId: string, status: string): void {
+  private onPlayback(rawId: string, status: string, failure?: PlaybackFailure): void {
     if (!rawId.startsWith(ID_PREFIX)) return;
     const id = rawId.split('#')[0];
     const isReplay = rawId.includes('#');
@@ -946,6 +971,7 @@ export class AmbientSession {
       // Half-duplex: no headphones → don't listen to our own speaker.
       if (!this.snap.headphones && this.asr) {
         this.stopCapture('half-duplex');
+        this.setAudioSessionType('playback');
         this.commit({ heldForSpeech: true });
         this.diag.count('half_duplex_holds');
         this.rec?.note('half_duplex_hold');
@@ -954,7 +980,7 @@ export class AmbientSession {
     }
     if (!isReplay) {
       const map: Record<string, AmbientLine['speech']> = { ended: 'played', cancelled: 'skipped', dropped: 'skipped', failed: 'failed' };
-      if (map[status]) this.updateLine(id, { speech: map[status], ...(status === 'dropped' ? { note: 'Shown, not spoken — arrived too late' } : {}) });
+      if (map[status]) this.updateLine(id, { speech: map[status], ...(status === 'dropped' ? { note: 'Shown, not spoken — arrived too late' } : {}), ...(status === 'failed' ? { note: speechFailureNote(failure, this.snap.to) } : {}) });
     }
     if (this.snap.playingId === id) this.commit({ playingId: null });
     if (!this.deps.playback.active) this.resumeCaptureIfHeld();
@@ -967,6 +993,7 @@ export class AmbientSession {
       this.resumeTimer = null;
       if (this.deps.playback.active && !this.snap.headphones && this.snap.speak) return; // more speech queued
       this.commit({ heldForSpeech: false });
+      this.setAudioSessionType('play-and-record');
       if (this.snap.phase === 'listening' || this.snap.phase === 'starting') this.startCapture();
     }, this.limits.resumeAfterSpeechMs);
   }
@@ -1048,6 +1075,12 @@ export class AmbientSession {
     this.snap = { ...this.snap, ...patch };
     for (const l of this.listeners) l(this.snap);
   }
+}
+
+function speechFailureNote(failure: PlaybackFailure | undefined, lang: string): string {
+  if (failure === 'blocked') return 'Not spoken — the browser blocked sound. Tap Play again.';
+  if (failure === 'no-voice') return `Not spoken — no ${languageName(lang)} voice on this device`;
+  return 'Not spoken — speech failed. Tap Play again.';
 }
 
 function clamp01(v: number): number {

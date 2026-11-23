@@ -7,6 +7,9 @@
 // privacy gates, cancellation and cleanup. Views read `getSnapshot()` and call
 // commands; they never touch adapters directly.
 
+import { languageUnsupportedMessage } from './asrMessages';
+import { languageName } from '../types';
+import type { PlaybackFailure } from './ports';
 import { EventBus } from './eventBus';
 import {
   Activity,
@@ -482,7 +485,7 @@ export class CommunicationSession {
     this.started = true;
     this.toPhase('connecting');
 
-    this.unsubs.push(this.deps.playback.onStatus((id, status, engine) => this.onPlaybackStatus(id, status, engine)));
+    this.unsubs.push(this.deps.playback.onStatus((id, status, engine, failure) => this.onPlaybackStatus(id, status, engine, failure)));
     this.unsubs.push(this.deps.capture.onDeviceLost(() => this.onAsrError('device-lost', 'Microphone disconnected.', true)));
 
     this.deps
@@ -652,7 +655,7 @@ export class CommunicationSession {
     } else {
       // Retry after a denial/device loss: re-check rather than trust the old state.
       if (this.snap.permission === 'denied') this.setPermission('unknown');
-      if (this.snap.notice && ['permission-denied', 'device-lost', 'capture-unavailable'].includes(this.snap.notice.code)) {
+      if (this.snap.notice && ['permission-denied', 'device-lost', 'capture-unavailable', 'stt-language-unsupported'].includes(this.snap.notice.code)) {
         this.clearNotice();
       }
       this.deps.capture
@@ -676,6 +679,14 @@ export class CommunicationSession {
     this.seg?.setLang(lang);
     this.aci?.setLangs(lang, this.snap.peer.lang);
     this.commit({ lang, holding: false });
+    // A recognizer refusal was about the old language: let the new one be tried.
+    if (this.snap.notice?.code === 'stt-language-unsupported') {
+      this.clearNotice();
+      this.micEnabled = true;
+      this.activity.to(this.privacy.hasConsent(this.snap.features.route) ? 'ready' : 'idle', 'language-change');
+      this.commitActivity();
+      this.emitPrivacy();
+    }
     this.sendHello();
     if (wasContinuous) this.startAsr('continuous');
   }
@@ -985,6 +996,19 @@ export class CommunicationSession {
       this.emit({ type: 'error', code: errCode, fatal: true, message: friendly });
       // The mic is now off. Turning it back on (setMicEnabled(true)) is the
       // retry path: it re-checks the permission and returns to ready.
+      this.micEnabled = false;
+      this.emitPrivacy();
+      return;
+    }
+    if (code === 'language-unsupported') {
+      // Not a microphone problem: this browser's recognizer can't do the language.
+      this.stopAsr('abort', code);
+      this.activity.to('stopped', code);
+      this.commit({ holding: false });
+      this.commitActivity();
+      const friendly = languageUnsupportedMessage(this.config.lang, 'You can still hear the other person.');
+      this.setNotice({ code: 'stt-language-unsupported', message: friendly, sticky: true });
+      this.emit({ type: 'error', code: 'stt-language-unsupported', fatal: true, message: friendly });
       this.micEnabled = false;
       this.emitPrivacy();
       return;
@@ -1976,8 +2000,17 @@ export class CommunicationSession {
 
   private receivedAt = new Map<string, number>();
 
-  private onPlaybackStatus(segmentId: string, status: SegmentRecord['playback'] & string, engine?: 'server' | 'browser'): void {
+  private onPlaybackStatus(segmentId: string, status: SegmentRecord['playback'] & string, engine?: 'server' | 'browser', failure?: PlaybackFailure): void {
     if (this.disposed) return;
+    if (status === 'failed' && !this.isTerminal && !this.snap.notice?.sticky) {
+      const message =
+        failure === 'blocked'
+          ? 'Translated speech was blocked by the browser. Tap the screen once to turn sound on — the text is still shown.'
+          : failure === 'no-voice'
+            ? `This device has no ${languageName(this.config.lang)} voice, so translations are shown but not spoken.`
+            : 'Translated speech couldn’t play — the text is still shown.';
+      this.setNotice({ code: 'playback-failed', message, sticky: false });
+    }
     this.updateSegment(segmentId, { playback: status });
     this.emit({ type: 'playback.status', segmentId, status, engine });
     this.diag.record('playback', { segmentId, status, engine });

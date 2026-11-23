@@ -71,10 +71,10 @@ export class PlaybackController implements PlaybackPort {
     return () => this.listeners.delete(fn);
   }
 
-  private emit(id: string, status: PlaybackStatus, engine?: Engine) {
+  private emit(id: string, status: PlaybackStatus, engine?: Engine, failure?: PlaybackFailure) {
     for (const l of this.listeners) {
       try {
-        l(id, status, engine);
+        l(id, status, engine, failure);
       } catch (err) {
         console.error("playback listener failed:", err);
       }
@@ -124,6 +124,7 @@ export class PlaybackController implements PlaybackPort {
     }
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       try {
+        lastCancelAt = Date.now();
         window.speechSynthesis.cancel();
       } catch {
         /* ignore */
@@ -168,19 +169,19 @@ export class PlaybackController implements PlaybackPort {
         this.current = state;
         item.hooks?.onStart?.();
         this.emit(item.segmentId, "started");
-        let outcome: Engine | "none" | "cancelled" = "none";
+        let outcome: Outcome = { engine: "none", failure: "error" };
         try {
           outcome = await playOne(item.text, item.lang, state, safeHints(item.voice), safeRoute(item.ttsRoute));
         } catch (err) {
-          console.error("TTS playback failed:", err);
-          outcome = state.aborted ? "cancelled" : "none";
+          console.error("TTS playback failed:", err instanceof Error ? err.message : "error");
+          outcome = state.aborted ? { engine: "cancelled" } : { engine: "none", failure: "error" };
         }
         if (this.current === state) this.current = null;
         const wasCancelled = state.aborted || this.playing !== item;
         if (this.playing === item) this.playing = null;
         if (!wasCancelled) {
-          if (outcome === "none") this.emit(item.segmentId, "failed");
-          else this.emit(item.segmentId, "ended", outcome === "cancelled" ? undefined : outcome);
+          if (outcome.engine === "none") this.emit(item.segmentId, "failed", undefined, outcome.failure ?? "error");
+          else this.emit(item.segmentId, "ended", outcome.engine === "cancelled" ? undefined : outcome.engine);
         }
         item.hooks?.onEnd?.();
         item.done();
@@ -209,6 +210,7 @@ export function playbackController(): PlaybackController {
 /** Test hook: start from a clean controller. */
 export function resetPlaybackForTests() {
   defaultController = new PlaybackController();
+  resetTtsStateForTests();
 }
 
 export function isSpeaking(): boolean {
@@ -266,29 +268,73 @@ function safeRoute(resolve?: () => TtsRoute): TtsRoute {
   }
 }
 
+/** Why a segment could not be spoken (passed with a `failed` status). */
+export type { PlaybackFailure } from "../engine/ports";
+import type { PlaybackFailure } from "../engine/ports";
+
+/** Server TTS: give up on the request (→ browser voice) if no response arrives in this long. */
+export const SERVER_TTS_FIRST_BYTE_MS = 4000;
+/** After the server says it has no voice configured (or isn't there), stop asking for a while. */
+const SERVER_UNCONFIGURED_BACKOFF_MS = 5 * 60_000;
+/** After a transient server failure (timeout, 5xx, network), skip it briefly. */
+const SERVER_FAILURE_BACKOFF_MS = 20_000;
+let serverTtsSkipUntil = 0;
+
+interface Outcome {
+  engine: Engine | "none" | "cancelled";
+  failure?: PlaybackFailure;
+}
+
 async function playOne(
   text: string,
   lang: string,
   state: PlaybackState,
   hints?: RenderHints,
   route: TtsRoute = "cloud-first"
-): Promise<Engine | "none" | "cancelled"> {
+): Promise<Outcome> {
   // Phase 6: on-device voices first (or only). Never a network voice here.
   if (route !== "cloud-first") {
-    const spoke = await browserSpeak(text, lang, state, hints, true);
-    if (state.aborted) return "cancelled";
-    if (spoke || route === "device-only") return spoke ? "browser" : "none";
+    const r = await browserSpeak(text, lang, state, hints, true);
+    if (state.aborted) return { engine: "cancelled" };
+    if (r === "ok") return { engine: "browser" };
+    if (route === "device-only") return { engine: "none", failure: r };
   }
-  try {
-    const res = await fetch(`${API_BASE}/api/tts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // Only coarse, non-identifying hints go to the server; it picks the voice.
-      body: JSON.stringify(hints ? { text, lang, voice: { register: hints.register, speed: hints.ttsSpeed } } : { text, lang }),
-      signal: state.controller.signal,
-    });
+  // Known-unavailable server: go straight to the browser voice instead of
+  // paying a round trip per segment.
+  if (Date.now() < serverTtsSkipUntil) return speakInBrowser(text, lang, state, hints);
 
-    if (!res.ok || !res.body) throw new Error(`TTS request failed: ${res.status}`);
+  const req = new AbortController();
+  const forward = () => req.abort();
+  state.controller.signal.addEventListener("abort", forward);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    req.abort();
+  }, SERVER_TTS_FIRST_BYTE_MS);
+  try {
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/api/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Only coarse, non-identifying hints go to the server; it picks the voice.
+        body: JSON.stringify(hints ? { text, lang, voice: { register: hints.register, speed: hints.ttsSpeed } } : { text, lang }),
+        signal: req.signal,
+      });
+    } catch (err) {
+      if (!state.aborted) serverTtsSkipUntil = Date.now() + SERVER_FAILURE_BACKOFF_MS;
+      throw timedOut ? new Error("TTS server did not answer in time") : err;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!res.ok || !res.body) {
+      // 503 = no voice configured; 404/405/501 = no TTS endpoint on this server.
+      const unconfigured = [404, 405, 501, 503].includes(res.status);
+      serverTtsSkipUntil = Date.now() + (unconfigured ? SERVER_UNCONFIGURED_BACKOFF_MS : SERVER_FAILURE_BACKOFF_MS);
+      res.body?.cancel().catch(() => {});
+      throw new Error(`TTS request failed: ${res.status}`);
+    }
 
     const format = res.headers.get("X-Audio-Format") || "";
     if (format === "pcm") {
@@ -305,14 +351,20 @@ async function playOne(
     } else {
       await playEncoded(res, state);
     }
-    return state.aborted ? "cancelled" : "server";
+    return { engine: state.aborted ? "cancelled" : "server" };
   } catch (err) {
-    if (state.aborted) return "cancelled";
-    console.warn("Falling back to browser speech synthesis:", err);
-    const spoke = await browserSpeak(text, lang, state, hints);
-    if (state.aborted) return "cancelled";
-    return spoke ? "browser" : "none";
+    if (state.aborted) return { engine: "cancelled" };
+    console.warn("Falling back to browser speech synthesis:", err instanceof Error ? err.message : "error");
+    return speakInBrowser(text, lang, state, hints);
+  } finally {
+    state.controller.signal.removeEventListener("abort", forward);
   }
+}
+
+async function speakInBrowser(text: string, lang: string, state: PlaybackState, hints?: RenderHints): Promise<Outcome> {
+  const r = await browserSpeak(text, lang, state, hints);
+  if (state.aborted) return { engine: "cancelled" };
+  return r === "ok" ? { engine: "browser" } : { engine: "none", failure: r };
 }
 
 /**
@@ -424,12 +476,26 @@ async function playPcmStream(res: Response, sampleRate: number, state: PlaybackS
   });
 }
 
-/** MP3/whatever-the-server-sent path, for tiers where PCM isn't available. */
+/**
+ * MP3/whatever-the-server-sent path, for tiers where PCM isn't available.
+ * Decoded and played through the shared AudioContext (unlocked by the user's
+ * tap); a fresh <audio> element would need its own gesture on iOS.
+ */
 async function playEncoded(res: Response, state: PlaybackState): Promise<void> {
-  const blob = await res.blob();
+  const bytes = await res.arrayBuffer();
   if (state.aborted) return;
 
-  const url = URL.createObjectURL(blob);
+  if (await audioContextRunning(AUDIO_RESUME_WAIT_MS)) {
+    const ac = audioContext();
+    const buffer = await decodeAudio(ac, bytes.slice(0)).catch(() => null);
+    if (state.aborted) return;
+    if (buffer) {
+      await playBuffer(ac, buffer, state);
+      return;
+    }
+  }
+
+  const url = URL.createObjectURL(new Blob([bytes], { type: res.headers.get("Content-Type") || "audio/mpeg" }));
   const audio = new Audio(url);
   state.element = audio;
   if (state.volume !== undefined) audio.volume = state.volume;
@@ -454,58 +520,297 @@ async function playEncoded(res: Response, state: PlaybackState): Promise<void> {
   });
 }
 
-/** Last resort so a call never goes silent, even with no API key configured. */
-function browserSpeak(text: string, lang: string, state: PlaybackState, hints?: RenderHints, localOnly = false): Promise<boolean> {
-  if (!("speechSynthesis" in window) || state.aborted) return Promise.resolve(false);
-  // On-device only: an explicit localService voice is required (the default voice may be a network voice).
-  if (localOnly) {
-    const voices = window.speechSynthesis.getVoices().filter((v) => v.localService);
-    if (!voices.some((v) => v.lang === lang || v.lang.startsWith(lang.split("-")[0]))) return Promise.resolve(false);
-  }
+function decodeAudio(ac: AudioContext, data: ArrayBuffer): Promise<AudioBuffer> {
+  // Older Safari only has the callback form.
+  return new Promise((resolve, reject) => {
+    try {
+      const p = ac.decodeAudioData(data, resolve, reject) as Promise<AudioBuffer> | undefined;
+      if (p && typeof p.then === "function") p.then(resolve, reject);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
 
-  return new Promise<boolean>((resolve) => {
+async function playBuffer(ac: AudioContext, buffer: AudioBuffer, state: PlaybackState): Promise<void> {
+  const gain = ac.createGain();
+  if (state.volume !== undefined && gain.gain) gain.gain.value = state.volume;
+  gain.connect(ac.destination);
+  state.gain = gain;
+  const source = ac.createBufferSource();
+  source.buffer = buffer;
+  source.connect(gain);
+  state.sources.push(source);
+  await new Promise<void>((resolve) => {
     let settled = false;
-    const finish = (ok = true) => {
+    const finish = () => {
       if (settled) return;
       settled = true;
-      resolve(ok);
+      try {
+        gain.disconnect();
+      } catch {
+        /* already disconnected by cancelAll */
+      }
+      resolve();
     };
+    source.onended = finish;
+    source.start();
+    setTimeout(finish, buffer.duration * 1000 + 500);
+  });
+}
 
+// --- Browser (Web Speech) voice ----------------------------------------------------
+
+/** No `onstart` within this long, and the engine isn't speaking → it was blocked. */
+export const SPEECH_START_TIMEOUT_MS = 2500;
+/** Long text is spoken in pieces: Chrome cuts single utterances off after ~15 s. */
+export const SPEECH_CHUNK_MAX = 160;
+/** Chrome drops a speak() issued straight after cancel(). */
+const AFTER_CANCEL_MS = 120;
+/** How long to wait, once, for an asynchronously loaded voice list. */
+const VOICE_LIST_WAIT_MS = 1200;
+
+let lastCancelAt = 0;
+let voiceListWaited = false;
+// Chrome garbage-collects utterances nothing references, and then never fires onend.
+const liveUtterances = new Set<SpeechSynthesisUtterance>();
+
+// Legacy tags some platforms (notably Android) still report.
+const TAG_ALIASES: Record<string, string> = { iw: "he", in: "id", ji: "yi", no: "nb" };
+
+function normTag(tag: string): string {
+  const t = (tag || "").replace(/_/g, "-").toLowerCase();
+  const [base, ...rest] = t.split("-");
+  return [TAG_ALIASES[base] ?? base, ...rest].join("-");
+}
+
+/**
+ * The voice that best speaks `lang`: the exact locale beats the same language
+ * in another region; the platform default and higher-quality voices win ties.
+ * Null when no installed voice speaks the language at all.
+ */
+export function pickVoice<V extends Pick<SpeechSynthesisVoice, "lang" | "name" | "localService" | "default">>(
+  voices: readonly V[],
+  lang: string,
+  localOnly = false
+): V | null {
+  const want = normTag(lang);
+  const base = want.split("-")[0];
+  let best: V | null = null;
+  let bestScore = 0;
+  for (const v of voices) {
+    if (localOnly && !v.localService) continue;
+    const tag = normTag(v.lang);
+    if (tag.split("-")[0] !== base) continue;
+    let score = tag === want ? 100 : 50;
+    if (v.default) score += 4;
+    if (/natural|neural|premium|enhanced|google/i.test(v.name || "")) score += 2;
+    if (score > bestScore) {
+      best = v;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+/** Split text into pieces of at most `max` characters, at sentence, then clause, then word boundaries. */
+export function splitForSpeech(text: string, max = SPEECH_CHUNK_MAX): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean ? [clean] : [];
+  const sentences = clean.match(/[^.!?。！？؟।]+[.!?。！？؟।]*\s*/g) ?? [clean];
+  const out: string[] = [];
+  let cur = "";
+  const push = (piece: string) => {
+    if ((cur + piece).length <= max) {
+      cur += piece;
+      return;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    cur = "";
+    if (piece.length <= max) {
+      cur = piece;
+      return;
+    }
+    // One very long sentence: break at commas or spaces; hard-split if neither (e.g. CJK).
+    let rest = piece;
+    while (rest.length > max) {
+      const window = rest.slice(0, max);
+      const at = Math.max(window.lastIndexOf(", "), window.lastIndexOf("、"), window.lastIndexOf("，"), window.lastIndexOf(" "));
+      const cut = at > max / 3 ? at + 1 : max;
+      out.push(rest.slice(0, cut).trim());
+      rest = rest.slice(cut);
+    }
+    cur = rest;
+  };
+  for (const sentence of sentences) push(sentence);
+  if (cur.trim()) out.push(cur.trim());
+  return out.filter(Boolean);
+}
+
+function waitForVoices(synth: SpeechSynthesis): Promise<SpeechSynthesisVoice[]> {
+  const now = synth.getVoices?.() ?? [];
+  if (now.length || voiceListWaited || typeof synth.addEventListener !== "function") return Promise.resolve(now);
+  voiceListWaited = true;
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      synth.removeEventListener?.("voiceschanged", finish);
+      resolve(synth.getVoices?.() ?? []);
+    };
+    synth.addEventListener("voiceschanged", finish);
+    setTimeout(finish, VOICE_LIST_WAIT_MS);
+  });
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function finiteOr(v: unknown, fallback: number, lo: number, hi: number): number {
+  return typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
+}
+
+/**
+ * Speaks with the browser's own voice, in the voice that matches `lang`.
+ * Resolves "ok" only if speech actually started; "blocked" when the browser
+ * never started it (autoplay rules, no prior tap); "no-voice" when an
+ * on-device voice was required and none speaks the language.
+ */
+async function browserSpeak(
+  text: string,
+  lang: string,
+  state: PlaybackState,
+  hints?: RenderHints,
+  localOnly = false
+): Promise<"ok" | PlaybackFailure> {
+  if (typeof window === "undefined" || !("speechSynthesis" in window) || state.aborted) return "error";
+  const synth = window.speechSynthesis;
+  const voices = await waitForVoices(synth);
+  if (state.aborted) return "error";
+  const voice = pickVoice(voices, lang, localOnly);
+  // On-device only: an explicit localService voice is required (the default voice may be a network voice).
+  if (localOnly && !voice) return "no-voice";
+
+  const since = Date.now() - lastCancelAt;
+  if (since < AFTER_CANCEL_MS) await sleep(AFTER_CANCEL_MS - since);
+
+  for (const piece of splitForSpeech(text)) {
+    if (state.aborted) return "error";
+    const r = await speakPiece(synth, piece, lang, voice, state, hints, localOnly);
+    if (r !== "ok") return r;
+  }
+  return "ok";
+}
+
+function speakPiece(
+  synth: SpeechSynthesis,
+  text: string,
+  lang: string,
+  voice: SpeechSynthesisVoice | null,
+  state: PlaybackState,
+  hints: RenderHints | undefined,
+  localOnly: boolean
+): Promise<"ok" | PlaybackFailure> {
+  return new Promise((resolve) => {
+    let started = false;
+    let settled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
     const utterance = new SpeechSynthesisUtterance(text);
+    const finish = (r: "ok" | PlaybackFailure) => {
+      if (settled) return;
+      settled = true;
+      timers.forEach(clearTimeout);
+      liveUtterances.delete(utterance);
+      resolve(r);
+    };
+    liveUtterances.add(utterance);
+
     utterance.lang = lang;
     if (state.volume !== undefined) utterance.volume = state.volume;
     if (hints) {
-      utterance.pitch = hints.browserPitch;
-      utterance.rate = hints.browserRate;
+      // Out-of-range or NaN values throw on assignment in some engines.
+      utterance.pitch = finiteOr(hints.browserPitch, 1, 0, 2);
+      utterance.rate = finiteOr(hints.browserRate, 1, 0.1, 10);
     }
-
-    const pool = window.speechSynthesis.getVoices().filter((v) => !localOnly || v.localService);
-    const voice = pool.find((v) => v.lang === lang) ?? pool.find((v) => v.lang.startsWith(lang.split("-")[0]));
     try {
       if (voice) utterance.voice = voice;
     } catch {
-      // Not a native SpeechSynthesisVoice (e.g. a polyfill): fall back to lang selection.
-      if (localOnly) return finish(false);
+      // Not a native SpeechSynthesisVoice (e.g. a polyfill): lang selection only.
+      if (localOnly) return finish("no-voice");
     }
 
-    utterance.onend = () => finish(true);
-    utterance.onerror = () => finish(false);
-    window.speechSynthesis.speak(utterance);
+    utterance.onstart = () => {
+      started = true;
+    };
+    utterance.onend = () => finish("ok");
+    utterance.onerror = (e?: Event) => {
+      const code = (e as (Event & { error?: string }) | undefined)?.error;
+      if (code === "not-allowed") return finish("blocked");
+      if (code === "language-unavailable" || code === "voice-unavailable") return finish("no-voice");
+      // Cut off after it started (e.g. a later cancel): it was heard.
+      if (started && (code === "interrupted" || code === "canceled")) return finish("ok");
+      finish("error");
+    };
 
-    // speechSynthesis fires onend unreliably across browsers; bound the wait.
+    try {
+      if (synth.paused) synth.resume(); // a stuck paused engine queues forever
+      synth.speak(utterance);
+    } catch {
+      return finish("error");
+    }
+
+    // Never started and the engine is idle: the browser refused (usually no
+    // prior tap on this page). Don't wait out the clip in silence.
+    timers.push(
+      setTimeout(() => {
+        if (started || synth.speaking || synth.pending) return;
+        try {
+          synth.cancel();
+        } catch {
+          /* ignore */
+        }
+        finish("blocked");
+      }, SPEECH_START_TIMEOUT_MS)
+    );
+
+    // onend is unreliable across browsers: bound the wait, extending while the
+    // engine still reports speaking.
+    let extensions = 0;
     const budgetMs = Math.max(4000, text.length * 120);
-    setTimeout(() => {
-      if (state.aborted) window.speechSynthesis.cancel();
-      finish();
-    }, budgetMs);
+    const check = () => {
+      if (state.aborted) {
+        try {
+          synth.cancel();
+        } catch {
+          /* ignore */
+        }
+        return finish("error");
+      }
+      if (synth.speaking && extensions++ < 3) {
+        timers.push(setTimeout(check, 2000));
+        return;
+      }
+      finish(started || synth.speaking ? "ok" : "blocked");
+    };
+    timers.push(setTimeout(check, budgetMs));
   });
 }
 
 /** Chrome populates the voice list asynchronously; ask for it early. */
 export function preloadVoices(): void {
-  if (!("speechSynthesis" in window)) return;
-  window.speechSynthesis.getVoices();
-  window.speechSynthesis.onvoiceschanged = () => {
-    window.speechSynthesis.getVoices();
-  };
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  const synth = window.speechSynthesis;
+  try {
+    synth.getVoices();
+    synth.addEventListener?.("voiceschanged", () => synth.getVoices());
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Test hook: forget server availability and voice-list state. */
+export function resetTtsStateForTests(): void {
+  serverTtsSkipUntil = 0;
+  voiceListWaited = false;
+  lastCancelAt = 0;
 }

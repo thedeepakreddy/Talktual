@@ -23,13 +23,36 @@ export function audioContext(): AudioContext {
   return ctx;
 }
 
+let speechPrimed = false;
+
 /**
- * Must be called synchronously from inside a real user gesture (the tap that
- * starts or joins a call). Playing a one-sample buffer is what flips the
- * autoplay flag, so later TTS can start without a fresh tap.
+ * Must be called synchronously from inside a real user gesture (any tap).
+ * Everything that needs the gesture happens before the first await: iOS only
+ * honours the unlock while the tap is still being handled.
+ *  - a one-sample buffer flips the AudioContext's autoplay flag;
+ *  - one silent utterance unlocks speechSynthesis (separate unlock on iOS).
+ * Cheap to call on every tap: after the first, only a suspended context is resumed.
  */
 export async function unlockAudio(): Promise<void> {
-  const ac = audioContext();
+  let ac: AudioContext | null = null;
+  try {
+    ac = audioContext();
+  } catch {
+    ac = null; // no Web Audio: the browser voice may still work
+  }
+  if (!speechPrimed && typeof window !== "undefined" && "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined") {
+    try {
+      // A single space: an empty string is skipped without unlocking on some iOS versions.
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      window.speechSynthesis.speak(u);
+      speechPrimed = true;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!ac) return;
+  const resumed = ac.state !== "running" ? ac.resume().catch(() => {}) : null;
   try {
     const src = ac.createBufferSource();
     src.buffer = ac.createBuffer(1, 1, 22050);
@@ -38,18 +61,14 @@ export async function unlockAudio(): Promise<void> {
   } catch {
     // Non-fatal: worst case the first utterance needs a tap.
   }
-  if (ac.state === "suspended") {
-    await ac.resume().catch(() => {});
-  }
-  // speechSynthesis has its own separate unlock on iOS.
-  if ("speechSynthesis" in window) {
-    try {
-      const u = new SpeechSynthesisUtterance("");
-      u.volume = 0;
-      window.speechSynthesis.speak(u);
-    } catch {
-      /* ignore */
-    }
+  if (resumed) await resumed;
+}
+
+/** Unlock audio on every tap or key press anywhere in the app (capture phase). */
+export function installAudioUnlock(target: Pick<Document, "addEventListener"> = document): void {
+  const unlock = () => void unlockAudio();
+  for (const type of ["pointerdown", "touchend", "keydown"] as const) {
+    target.addEventListener(type, unlock, { capture: true, passive: true });
   }
 }
 
