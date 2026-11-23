@@ -9,7 +9,7 @@ import { Banner, Button, IconButton, Row, Section, Segmented, Sheet, Switch } fr
 import { LanguagePicker } from '../LanguagePicker';
 import { coarseBrowser, type ValidationRecorder } from '../../ambient/validation';
 import { ConsentSheet } from '../ConsentSheet';
-import { ActivityTrace } from './ActivityTrace';
+import { VoiceWave } from '../voice/VoiceWave';
 import { getVoicePrefs } from '../../app/prefs';
 
 interface AmbientScreenProps {
@@ -107,8 +107,8 @@ export function AmbientScreen({ language, onLanguageChange, from: fromProp, onFr
           <Feed s={s} session={session} />
         )}
 
-        <div className="px-4 pt-3 sm:px-6">
-          <ActivityTrace capturing={Boolean(s?.capturing)} hearing={Boolean(s?.hearing)} partial={s?.partial ?? ''} settled={!listening} />
+        <div className="px-4 pt-2 sm:px-6">
+          <VoiceWave capturing={Boolean(s?.capturing)} hearing={Boolean(s?.hearing)} partial={s?.partial ?? ''} settled={!listening} className="h-32 sm:h-36" />
         </div>
 
         <Dock s={s} session={session} />

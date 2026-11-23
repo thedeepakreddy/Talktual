@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { FakeWebSocket } from './test/fakes';
 
 vi.mock('@yudiel/react-qr-scanner', () => ({ Scanner: () => null }));
-vi.mock('./lib/audio', () => ({ unlockAudio: vi.fn(async () => {}), micPermission: vi.fn(async () => 'prompt'), captureAdapter: { permission: async () => 'prompt', release: () => {}, onDeviceLost: () => () => {} } }));
+vi.mock('./lib/audio', () => ({ unlockAudio: vi.fn(async () => {}), liveMicStream: () => null, createLevelMeter: () => () => {}, micPermission: vi.fn(async () => 'prompt'), captureAdapter: { permission: async () => 'prompt', release: () => {}, onDeviceLost: () => () => {} } }));
 vi.mock('./lib/translate', async (orig) => ({ ...(await orig<object>()), prewarm: vi.fn() }));
 
 const { default: App } = await import('./App');
