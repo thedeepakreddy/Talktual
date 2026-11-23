@@ -116,6 +116,11 @@ export async function getMic(): Promise<MediaStream> {
   return micRequest;
 }
 
+/** The call's microphone stream if it is open and enabled right now (server-STT path only). */
+export function liveMicStream(): MediaStream | null {
+  return micStream && micStream.getAudioTracks().some((t) => t.readyState === "live" && t.enabled) ? micStream : null;
+}
+
 export function setMicEnabled(enabled: boolean) {
   micStream?.getAudioTracks().forEach((t) => {
     t.enabled = enabled;
