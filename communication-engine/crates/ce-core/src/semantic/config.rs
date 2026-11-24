@@ -204,6 +204,11 @@ pub struct SemanticConfig {
     pub references: bool,
     /// Label communicative acts (optional capability). Default true.
     pub acts: bool,
+    /// Restrict the act taxonomy to these labels (`None`: the adapter's
+    /// whole taxonomy). An act outside the subset is an
+    /// `out_of_taxonomy` abstention. The adapter rejects labels it does not
+    /// know. Default `None`.
+    pub act_labels: Option<Vec<String>>,
     /// Observations below this certainty are not emitted. Default `Low`
     /// (everything, with its uncertainty).
     pub min_certainty: Certainty,
@@ -228,6 +233,7 @@ impl Default for SemanticConfig {
             relations: true,
             references: true,
             acts: true,
+            act_labels: None,
             min_certainty: Certainty::Low,
             context: ContextConfig::default(),
             policy: LocalityPolicy::default(),
@@ -283,6 +289,18 @@ impl SemanticConfig {
                 "budget",
                 "queue 2..=10000, max_input_chars 16..=65536, deadline_ms 1..=60000, max_observations 1..=4096, errors >= 1, stall 100..=600000 ms",
             ));
+        }
+        if let Some(l) = &self.act_labels {
+            if l.is_empty()
+                || l.len() > 64
+                || l.iter().any(|x| {
+                    x.is_empty()
+                        || x.len() > 32
+                        || !x.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                })
+            {
+                return Err(bad("act_labels", "1..=64 labels of [a-z_], 1..=32 chars"));
+            }
         }
         if self.reference_date.is_some_and(|d| !d.is_valid()) {
             return Err(bad("reference_date", "a valid calendar date"));
@@ -367,6 +385,8 @@ mod tests {
             Box::new(|c| c.budget.max_observations = 0),
             Box::new(|c| c.budget.max_consecutive_errors = 0),
             Box::new(|c| c.budget.stall_timeout_ms = 1),
+            Box::new(|c| c.act_labels = Some(vec![])),
+            Box::new(|c| c.act_labels = Some(vec!["Bad Label".into()])),
             Box::new(|c| {
                 c.reference_date = Some(CivilDate {
                     year: 2026,

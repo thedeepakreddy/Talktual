@@ -176,6 +176,7 @@ pub struct RulesAdapter {
     relations: bool,
     references: bool,
     acts: bool,
+    act_labels: Option<Vec<String>>,
     reference_date: Option<CivilDate>,
     profile: Option<CompiledProfile>,
 }
@@ -192,11 +193,22 @@ impl RulesAdapter {
                 ));
             }
         }
+        if let Some(l) = &config.act_labels {
+            if let Some(bad) = l.iter().find(|x| !ACT_LABELS.contains(&x.as_str())) {
+                return Err(CeError::new(
+                    ce_core::ErrorCategory::CapabilityResolution,
+                    "semantic.act_label_unsupported",
+                    "the act taxonomy has no such label",
+                )
+                .with_context("label", bad.clone()));
+            }
+        }
         Ok(Self {
             entities: config.entities,
             relations: config.relations,
             references: config.references,
             acts: config.acts,
+            act_labels: config.act_labels.clone(),
             reference_date: config.reference_date,
             profile: config.profile.as_ref().map(CompiledProfile::new),
         })
@@ -1679,6 +1691,25 @@ impl SemanticAdapter for RulesAdapter {
         }
         if self.acts {
             if let Some((decision, alternatives, rule)) = act(&t) {
+                // A configured subset: labels outside it abstain.
+                let (decision, rule) = match (&decision, &self.act_labels) {
+                    (ActDecision::Labeled { label }, Some(allowed)) if !allowed.contains(label) => {
+                        (
+                            ActDecision::Abstained {
+                                reason: ActAbstention::OutOfTaxonomy,
+                            },
+                            "act.outside_configured_subset",
+                        )
+                    }
+                    _ => (decision, rule),
+                };
+                let alternatives = match &self.act_labels {
+                    Some(allowed) => alternatives
+                        .into_iter()
+                        .filter(|a| allowed.contains(a))
+                        .collect(),
+                    None => alternatives,
+                };
                 let s = span(&t, 0, t.len());
                 let labeled = matches!(decision, ActDecision::Labeled { .. });
                 drafts.push(Draft {

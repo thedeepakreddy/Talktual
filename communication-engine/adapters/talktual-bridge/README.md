@@ -68,6 +68,7 @@ the engine:
 
 | Panel | What you can check |
 |---|---|
+| Phase 5 · Semantic & contextual interpretation | observations from the on-device rule adapter (switch "Interpret meaning"): numbers, quantities, money, times, dates, durations, digit sequences; references such as "it" or "then" resolved against this session's context, or left ambiguous/unresolved; the utterance's act (question, request, …) or an abstention. Each shows its status (provisional → stable → final, or retracted), epistemic kind, certainty, version and source revision. **Confirm** marks an entity as user-confirmed; **Clear context** empties the session context |
 | Phase 4 · Speech recognition & language | the live transcript (committed text in bold, provisional tail muted); finals with reason, revision count, audio length and utterance language; latency percentiles, mode, drops; stream language; recognizer capabilities. **Reset recognizer** and **Abort** exercise cancellation |
 | Phase 3 · Audio intelligence | voice activity, level, SNR, noise floor, usability and reasons, active conditions, closed segments (toggle with "Run audio intelligence") |
 | Phase 2 · Audio capture | stream state, negotiated device/delivered format, frames, blocks, overflow, discontinuities, ring fill |
@@ -75,6 +76,11 @@ the engine:
 | CE event log | every engine event of your session, newest first, by topic, with its privacy class (transcript text is never shown in the log) |
 
 Things worth trying:
+* "set a timer for twenty five minutes", then "no I said fifteen minutes"
+  (a duration that updates while you speak, then a correction);
+* "the total is forty dollars", then "can you split it" (a reference
+  resolved to the earlier amount); then "and twelve euros", "pay it" (now
+  ambiguous);
 * talking in a noisy room (quality, conditions);
 * pausing mid-sentence (segments, endpoints, revisions);
 * very short words like "yes" or "no" (language abstention);
@@ -128,7 +134,12 @@ See [`src/protocol.rs`](src/protocol.rs):
   session, flattened as topic, kind, privacy and data) and a 1 s `status`
   (audio stream, analysis, recognition, metrics); `"analysis": true` runs
   Phase 3 in push-to-talk too. Clients that don't ask get exactly the
-  v1 messages.
+  v1 messages;
+* optional semantics (Phase 5): `"semantics": true` in `start` runs CE
+  semantic interpretation, whose events arrive as `ce-event`s with topic
+  `semantic`; `status` gains `semantic`; `reset-context` and
+  `confirm` (`observation`) requests; `end` follows the drained
+  interpretation.
 
 ## Verify
 

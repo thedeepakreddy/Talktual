@@ -1,12 +1,14 @@
 # Communication Engine — Architecture
 
 Status: Phase 1 foundation, Phase 2 audio foundation, Phase 3 audio
-intelligence and Phase 4 speech recognition & language intelligence
-pipeline, implemented and verified on Linux x86_64 (see the
+intelligence, Phase 4 speech recognition & language intelligence pipeline
+and Phase 5 semantic & contextual intelligence, implemented and verified on
+Linux x86_64 (see the
 [Phase 1](docs/phases/phase-1-report.md),
 [Phase 2](docs/phases/phase-2-report.md),
-[Phase 3](docs/phases/phase-3-report.md) and
-[Phase 4](docs/phases/phase-4-report.md) reports). APIs are
+[Phase 3](docs/phases/phase-3-report.md),
+[Phase 4](docs/phases/phase-4-report.md) and
+[Phase 5](docs/phases/phase-5-report.md) reports). APIs are
 **provisional**.
 
 The Communication Engine (CE) is a product-agnostic Rust foundation for a
@@ -31,9 +33,20 @@ abstention, supervised bounded recognition workers, and replay/evaluation
 links native libraries and needs Rust ≥ 1.89, and it has been evaluated on
 synthetic speech only. Tests use a scripted adapter, and pipeline
 evaluation uses an oracle adapter.
-There is no diarization, translation, semantic, voice or TTS
-functionality, nothing that infers personal traits, and no latency or
-device claims (no audio hardware has been tested).
+Phase 5 adds `ce-semantic`:
+* typed, versioned observations (entities, relations, references,
+  optional acts) linked to transcript revisions and spans, with epistemic
+  status, uncertainty, evidence and provenance;
+* stable identity across revisions; stale rejection; stabilization,
+  finalization, retraction and correction cascades;
+* scoped, bounded, expiring, ephemeral context; locality policy; domain
+  profiles as validated data;
+* a supervised coalescing worker and a deterministic English rule adapter.
+
+See [semantic.md](docs/architecture/semantic.md). There is no
+diarization, translation, voice or TTS functionality, nothing that infers
+personal traits, and no latency or device claims (no audio hardware has
+been tested).
 
 ## 1. Crates and dependency direction
 
@@ -44,7 +57,12 @@ device claims (no audio hardware has been tested).
   SDKs,     │  EventSubscription         │  feature `tracing`: TracingSink
   tests)    └─────────────┬──────────────┘
                           │ re-exports as `contracts`
-                          │ re-exports as `audio`, `audio_intel`, `speech`
+                          │ re-exports as `audio`, `audio_intel`, `speech`, `semantic`
+            ┌─────────────▼──────────────┐
+            │ ce-semantic (Phase 5)      │  semantic adapter boundary, rule/scripted
+            │                            │  adapters, context, processor, worker, eval
+            │                            │  (deps: ce-core only)
+            └────────────────────────────┘
             ┌─────────────▼──────────────┐
             │ ce-speech (Phase 4)        │  ASR adapter boundary, scripted/oracle
             │                            │  adapters, transcript revisions, LID
@@ -134,6 +152,7 @@ let s = engine.create_session(SessionConfig::default()).await?;
 engine.health().await?;                                 // probes modules
 engine.start_analysis(stream, None).await?;             // Phase 3
 engine.start_recognition(stream, None).await?;          // Phase 4 (adapters via builder.asr_adapter)
+engine.start_semantics(stream, None).await?;            // Phase 5 (rule adapter by default; builder.semantic_adapter)
 engine.execute(Command::…).await?;                      // typed, serializable commands
 engine.shutdown().await?;                               // bounded, reports per module
 ```
@@ -163,4 +182,5 @@ intelligence architecture · 0015 VAD selection · 0016 analysis results and
 units · 0017 analysis privacy · 0018 analysis resource policy · 0019
 speech architecture · 0020 ASR and language-ID selection · 0021 transcript
 revision semantics · 0022 language observations · 0023 real-ASR baseline
-(sherpa-onnx) · 0024 Talktual ↔ CE bridge.
+(sherpa-onnx) · 0024 Talktual ↔ CE bridge · 0025 semantic layer and
+contracts · 0026 rule baseline and semantic evaluation.

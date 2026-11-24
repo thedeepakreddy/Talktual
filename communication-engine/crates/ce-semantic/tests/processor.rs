@@ -1039,3 +1039,114 @@ fn domain_profiles_add_terms_without_manufacturing_certainty() {
     assert_eq!(en.category, "profile:ambiguous");
     assert_eq!(en.normalized, None);
 }
+
+#[test]
+fn act_taxonomy_subsets_are_configurable_and_validated() {
+    let s = stream(1);
+    let cfg = SemanticConfig {
+        act_labels: Some(vec!["question".into(), "request".into()]),
+        ..SemanticConfig::default()
+    };
+    let mut p = rules(cfg, s);
+    let act = |ev: &[SemanticEvent]| {
+        observations(ev).into_iter().find_map(|o| match o.payload {
+            ObservationPayload::Act(a) => Some(a.decision),
+            _ => None,
+        })
+    };
+    let e = run(&mut p, final_(s, 1, 0, "WHAT TIME IS IT", 100));
+    assert_eq!(
+        act(&e),
+        Some(ActDecision::Labeled {
+            label: "question".into()
+        })
+    );
+    let e = run(&mut p, final_(s, 2, 0, "YES", 200));
+    assert_eq!(
+        act(&e),
+        Some(ActDecision::Abstained {
+            reason: ActAbstention::OutOfTaxonomy
+        }),
+        "confirmation is outside the subset"
+    );
+    let bad = SemanticConfig {
+        act_labels: Some(vec!["gossip".into()]),
+        ..SemanticConfig::default()
+    };
+    assert_eq!(
+        RulesFactory
+            .create(&bad)
+            .err()
+            .map(|e| e.code().to_string()),
+        Some("semantic.act_label_unsupported".into())
+    );
+}
+
+#[test]
+fn non_english_input_yields_no_observations() {
+    let s = stream(1);
+    let mut p = rules(SemanticConfig::default(), s);
+    let mut i = final_(s, 1, 0, "QUIERO DOS CAFES A LAS NUEVE", 100);
+    i.language = Some(ce_core::speech::LanguageTag::parse("es").unwrap());
+    let e = run(&mut p, i);
+    assert!(
+        changes(&e).is_empty(),
+        "the rule adapter supports English only"
+    );
+    assert!(e.iter().any(|e| matches!(
+        e,
+        SemanticEvent::UtteranceFinalized {
+            observations: 0,
+            ..
+        }
+    )));
+    let mut i = final_(s, 2, 0, "TWO COFFEES AT NINE", 200);
+    i.language = Some(ce_core::speech::LanguageTag::parse("en-US").unwrap());
+    assert!(!changes(&run(&mut p, i)).is_empty());
+}
+
+#[test]
+fn contradictions_across_utterances_are_kept_not_overwritten() {
+    let s = stream(1);
+    let mut p = rules(SemanticConfig::default(), s);
+    run(
+        &mut p,
+        final_(s, 1, 0, "SET A TIMER FOR TEN MINUTES", 1_000),
+    );
+    let e = run(&mut p, final_(s, 2, 0, "NO I SAID FIFTEEN MINUTES", 2_000));
+    // The correction is labeled (a hypothesis); the earlier duration is
+    // neither retracted nor edited: CE keeps both with their sources and
+    // does not decide which one is true.
+    assert!(
+        changes(&e)
+            .iter()
+            .all(|c| c.0 != ObservationChange::Retracted)
+    );
+    let durations: Vec<(u64, String)> = p
+        .current()
+        .into_iter()
+        .filter_map(|o| match &o.payload {
+            ObservationPayload::Entity(en) if en.category == "duration" => {
+                Some((o.source.utterance, en.mention.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        durations,
+        vec![(1, "TEN MINUTES".into()), (2, "FIFTEEN MINUTES".into())]
+    );
+    let act = observations(&e).into_iter().find_map(|o| match o.payload {
+        ObservationPayload::Act(a) => Some((a.decision, o.epistemic)),
+        _ => None,
+    });
+    assert_eq!(
+        act,
+        Some((
+            ActDecision::Labeled {
+                label: "correction".into()
+            },
+            Epistemic::Hypothesis
+        ))
+    );
+}

@@ -88,7 +88,9 @@ communication-engine/adapters/talktual-bridge/scripts/run-talktual-ce.sh        
 
 Then open http://localhost:5173 in two windows and talk in English, or open
 **http://localhost:5173/#/engine** (Settings › Engine Lab) to test every engine
-phase live: transcript and language (Phase 4), voice activity and quality
+phase live: semantic interpretation — numbers, times, dates, amounts,
+references and utterance types with their certainty and revision (Phase 5) —
+transcript and language (Phase 4), voice activity and quality
 (Phase 3), audio capture (Phase 2), and runtime health and events (Phase 1). Details,
 a step-by-step human test and scoring are in
 [`communication-engine/adapters/talktual-bridge/README.md`](communication-engine/adapters/talktual-bridge/README.md).
