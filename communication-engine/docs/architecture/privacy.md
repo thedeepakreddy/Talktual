@@ -43,9 +43,31 @@ reports (and that a permissive policy still hides secrets).
 * `DataErasure` is the deletion interface any future component that retains
   personal, content or biometric data must implement.
 
-Phase 1 does not yet *gate* capability use on session consent: no capability
-processes data yet. Phase 2 must enforce `requires_consent` against the
-session's consent before any capture or remote processing starts.
+**Phase 2 enforces a capture gate** (ADR-0013): audio capture requires the
+session's `capture` consent (optionally not older than
+`audio.consent_max_age_ms`) **and** platform permission. It is checked
+before any device opens, at every start, and continuously; revocation stops
+data flow synchronously and releases the device. Generic gating of other
+capabilities on `requires_consent` remains future work (no other capability
+processes data yet).
+
+### Audio data (Phase 2)
+
+* Captured samples are **biometric** data. CE keeps them only in bounded
+  in-memory rings and queues, hands them to the host, and never logs,
+  persists, uploads or puts them in events.
+* Device names are **personal** data (they can name people): returned in the
+  catalog to the host, never in events or logs; events use opaque device ids.
+* On revocation, queued blocks are purged, not delivered.
+
+## Audio analysis (Phase 3)
+
+Analysis describes the signal, never the person (ADR-0017): no identity,
+emotion, health, personality or other trait inference; a closed set of six
+signal conditions; overlap detection not claimed. Analysis events are
+`Operational` and contain no samples. Analysis is local and ephemeral and
+runs only on authorized capture streams under `Capture` consent; revocation
+ends it and discards queued audio.
 
 ## Voice governance (no implementation)
 

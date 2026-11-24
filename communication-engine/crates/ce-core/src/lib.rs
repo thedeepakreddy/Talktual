@@ -31,6 +31,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod audio;
 pub mod capability;
 pub mod command;
 pub mod config;
@@ -38,6 +39,7 @@ pub mod error;
 pub mod event;
 pub mod health;
 pub mod ids;
+pub mod intel;
 pub mod lifecycle;
 pub mod module;
 pub mod observability;

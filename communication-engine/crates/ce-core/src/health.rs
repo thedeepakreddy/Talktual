@@ -87,10 +87,31 @@ pub struct MetricsSnapshot {
     pub module_failures: u64,
     /// Sessions created since start.
     pub sessions_created: u64,
+    /// Audio streams opened (Phase 2).
+    #[serde(default)]
+    pub audio_streams_opened: u64,
+    /// Capture attempts refused by the authorization gate.
+    #[serde(default)]
+    pub audio_capture_denied: u64,
+    /// Capture streams closed because authorization was lost.
+    #[serde(default)]
+    pub audio_capture_revoked: u64,
+    /// Audio streams invalidated (device lost or stream invalidated).
+    #[serde(default)]
+    pub audio_streams_invalidated: u64,
+    /// Audio streams that failed.
+    #[serde(default)]
+    pub audio_streams_failed: u64,
+    /// Analyses started (Phase 3).
+    #[serde(default)]
+    pub analyses_started: u64,
+    /// Analyses that failed (panic or stall).
+    #[serde(default)]
+    pub analysis_failures: u64,
 }
 
 /// Health and status of the runtime and every module.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeHealth {
     /// Runtime lifecycle state.
     pub state: RuntimeState,
@@ -102,6 +123,12 @@ pub struct RuntimeHealth {
     pub open_sessions: u32,
     /// Counters.
     pub metrics: MetricsSnapshot,
+    /// Audio streams that are not closed (Phase 2).
+    #[serde(default)]
+    pub audio_streams: Vec<crate::audio::AudioStreamStatus>,
+    /// Running or recently ended analyses (Phase 3).
+    #[serde(default)]
+    pub analyses: Vec<crate::intel::AnalysisStatus>,
 }
 
 /// Aggregate runtime health from the runtime state and module statuses.
@@ -131,6 +158,35 @@ pub fn aggregate_health(state: RuntimeState, modules: &[ModuleStatus]) -> Health
         return HealthStatus::Degraded(format!("{degraded} module(s) degraded or unknown"));
     }
     HealthStatus::Healthy
+}
+
+/// [`aggregate_health`] extended with audio streams: a stream that is
+/// invalidated or failed degrades a running runtime (Phase 2).
+pub fn aggregate_runtime_health(
+    state: RuntimeState,
+    modules: &[ModuleStatus],
+    audio: &[crate::audio::AudioStreamStatus],
+) -> HealthStatus {
+    let base = aggregate_health(state, modules);
+    if state != RuntimeState::Running {
+        return base;
+    }
+    let broken = audio
+        .iter()
+        .filter(|s| {
+            matches!(
+                s.state,
+                crate::audio::AudioStreamState::Invalidated
+                    | crate::audio::AudioStreamState::Failed
+            )
+        })
+        .count();
+    match base {
+        HealthStatus::Healthy if broken > 0 => {
+            HealthStatus::Degraded(format!("{broken} audio stream(s) invalidated or failed"))
+        }
+        other => other,
+    }
 }
 
 #[cfg(test)]

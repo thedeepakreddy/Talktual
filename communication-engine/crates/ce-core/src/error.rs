@@ -51,6 +51,12 @@ pub enum ErrorCategory {
     Internal,
     /// The runtime is shutting down or has shut down.
     Shutdown,
+    /// An audio (or other) device failed, disappeared or rejected a
+    /// configuration. Added in Phase 2.
+    Device,
+    /// Required permission or consent is absent, denied, revoked, stale or
+    /// cannot be determined. Added in Phase 2.
+    Unauthorized,
 }
 
 impl ErrorCategory {
@@ -68,6 +74,8 @@ impl ErrorCategory {
             ErrorCategory::Serialization => "serialization",
             ErrorCategory::Internal => "internal",
             ErrorCategory::Shutdown => "shutdown",
+            ErrorCategory::Device => "device",
+            ErrorCategory::Unauthorized => "unauthorized",
         }
     }
 
@@ -80,7 +88,9 @@ impl ErrorCategory {
             | ErrorCategory::Lifecycle
             | ErrorCategory::CapabilityResolution
             | ErrorCategory::Cancelled
-            | ErrorCategory::Serialization => Recoverability::Recoverable,
+            | ErrorCategory::Serialization
+            | ErrorCategory::Device
+            | ErrorCategory::Unauthorized => Recoverability::Recoverable,
             ErrorCategory::Provider => Recoverability::Unknown,
             ErrorCategory::Internal | ErrorCategory::Shutdown => Recoverability::Fatal,
         }
@@ -421,6 +431,8 @@ mod tests {
             Serialization,
             Internal,
             Shutdown,
+            Device,
+            Unauthorized,
         ] {
             let json = serde_json::to_string(&cat).unwrap();
             assert_eq!(json, format!("\"{}\"", cat.as_str()));

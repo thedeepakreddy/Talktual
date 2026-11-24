@@ -14,6 +14,13 @@ pub(crate) struct Metrics {
     pub(crate) events_missed_by_subscribers: AtomicU64,
     pub(crate) module_failures: AtomicU64,
     pub(crate) sessions_created: AtomicU64,
+    pub(crate) audio_streams_opened: AtomicU64,
+    pub(crate) audio_capture_denied: AtomicU64,
+    pub(crate) audio_capture_revoked: AtomicU64,
+    pub(crate) audio_streams_invalidated: AtomicU64,
+    pub(crate) audio_streams_failed: AtomicU64,
+    pub(crate) analyses_started: AtomicU64,
+    pub(crate) analysis_failures: AtomicU64,
     /// Set by producers when a queue rejects; cleared by the core when it
     /// publishes the coalesced `QueueSaturated` event.
     pub(crate) ingress_saturated: AtomicBool,
@@ -35,6 +42,13 @@ impl Metrics {
             events_missed_by_subscribers: self.events_missed_by_subscribers.load(Relaxed),
             module_failures: self.module_failures.load(Relaxed),
             sessions_created: self.sessions_created.load(Relaxed),
+            audio_streams_opened: self.audio_streams_opened.load(Relaxed),
+            audio_capture_denied: self.audio_capture_denied.load(Relaxed),
+            audio_capture_revoked: self.audio_capture_revoked.load(Relaxed),
+            audio_streams_invalidated: self.audio_streams_invalidated.load(Relaxed),
+            audio_streams_failed: self.audio_streams_failed.load(Relaxed),
+            analyses_started: self.analyses_started.load(Relaxed),
+            analysis_failures: self.analysis_failures.load(Relaxed),
         }
     }
 }
