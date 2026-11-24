@@ -46,6 +46,7 @@ pub mod observability;
 pub mod privacy;
 pub mod provider;
 pub mod resource;
+pub mod semantic;
 pub mod session;
 pub mod speech;
 pub mod time;
