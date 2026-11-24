@@ -19,6 +19,13 @@
 //! too; `{"type":"reset"}` resets the recognizer. Clients that do not ask
 //! for diagnostics see exactly the v1 messages above.
 //!
+//! Phase 5 (optional): `"semantics": true` in `start` runs CE semantic
+//! interpretation (the deterministic rule adapter, in process) on the
+//! session's transcripts; its events arrive as `ce-event`s with topic
+//! `semantic` when diagnostics are on, and `status` gains `semantic`.
+//! `{"type":"reset-context"}` clears the semantic context and
+//! `{"type":"confirm","observation":"…"}` records a user confirmation.
+//!
 //! Text is the recognizer's own output (the sherpa-onnx model emits
 //! upper-case words without punctuation); presentation is the client's job.
 
@@ -59,6 +66,9 @@ pub enum ClientMsg {
         /// Run Phase 3 analysis even with continuous delimitation.
         #[serde(default)]
         analysis: bool,
+        /// Run Phase 5 semantic interpretation of the transcripts.
+        #[serde(default)]
+        semantics: bool,
     },
     /// Graceful end.
     Stop,
@@ -70,6 +80,13 @@ pub enum ClientMsg {
     Health,
     /// Cancel the open utterance and reset the recognizer.
     Reset,
+    /// Clear the semantic context (Phase 5).
+    ResetContext,
+    /// The user confirmed a semantic observation (Phase 5).
+    Confirm {
+        /// Observation id.
+        observation: String,
+    },
 }
 
 /// Bridge → client messages.
@@ -184,6 +201,8 @@ pub enum ServerMsg {
         analysis: serde_json::Value,
         /// `RecognitionStatus`.
         recognition: serde_json::Value,
+        /// `SemanticStatus`, if semantics run (Phase 5).
+        semantic: serde_json::Value,
         /// Engine-wide `MetricsSnapshot`.
         metrics: serde_json::Value,
     },
@@ -215,6 +234,7 @@ mod tests {
                 segmentation: Segmentation::Activity,
                 diagnostics: false,
                 analysis: false,
+                semantics: false,
             }
         );
         let m: ClientMsg =
@@ -246,6 +266,28 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<ClientMsg>(r#"{"type":"info"}"#).unwrap(),
             ClientMsg::Info
+        );
+        let m: ClientMsg = serde_json::from_str(
+            r#"{"type":"start","lang":"en","sampleRate":16000,"semantics":true}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            m,
+            ClientMsg::Start {
+                semantics: true,
+                ..
+            }
+        ));
+        assert_eq!(
+            serde_json::from_str::<ClientMsg>(r#"{"type":"reset-context"}"#).unwrap(),
+            ClientMsg::ResetContext
+        );
+        assert_eq!(
+            serde_json::from_str::<ClientMsg>(r#"{"type":"confirm","observation":"u1.entity.0"}"#)
+                .unwrap(),
+            ClientMsg::Confirm {
+                observation: "u1.entity.0".into()
+            }
         );
         let e = serde_json::to_value(ServerMsg::CeEvent {
             sequence: 3,

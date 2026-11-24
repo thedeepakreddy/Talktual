@@ -28,6 +28,10 @@ fn pct(x: f64) -> String {
     format!("{:.3}", x)
 }
 
+fn ratio(x: f64, support: u32) -> String {
+    if support == 0 { "n/a".into() } else { pct(x) }
+}
+
 fn prf(p: &Prf) -> String {
     format!(
         "{} | {} | {} | {} | {} | {}",
@@ -81,13 +85,13 @@ fn print_split(r: &SplitReport, errors: bool) {
         x.gold,
         x.detected,
         x.correct,
-        pct(x.accuracy),
+        ratio(x.accuracy, x.gold),
         x.spurious,
         x.predicted_resolved,
         x.predicted_ambiguous,
         x.predicted_unresolved,
-        pct(x.resolution_precision),
-        pct(x.abstention_rate)
+        ratio(x.resolution_precision, x.predicted_resolved),
+        ratio(x.abstention_rate, x.detected)
     );
     println!("| gold \\ predicted | counts |\n|---|---|");
     for (g, m) in &x.confusion {
@@ -108,7 +112,7 @@ fn print_split(r: &SplitReport, errors: bool) {
         pct(a.coverage),
         pct(a.selective_accuracy),
         a.gold_abstentions,
-        pct(a.abstention_recall)
+        ratio(a.abstention_recall, a.gold_abstentions)
     );
     println!("| label | TP | FP | FN | P | R | F1 |\n|---|---|---|---|---|---|---|");
     for (k, v) in &a.per_label {

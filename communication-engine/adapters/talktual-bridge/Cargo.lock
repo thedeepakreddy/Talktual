@@ -133,6 +133,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ce-semantic"
+version = "0.1.0"
+dependencies = [
+ "ce-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "ce-speech"
 version = "0.1.0"
 dependencies = [
@@ -192,6 +203,7 @@ dependencies = [
  "ce-audio",
  "ce-audio-intel",
  "ce-core",
+ "ce-semantic",
  "ce-speech",
  "tokio",
  "tokio-util",

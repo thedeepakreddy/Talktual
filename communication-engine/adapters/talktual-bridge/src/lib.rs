@@ -24,6 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ce_core::ErrorCategory;
+use ce_core::semantic::SemanticEvent;
 use ce_core::speech::{
     LanguageDecision, RecognitionConfig, RevisionStatus, SegmentationMode, SpeechEvent,
 };
@@ -201,9 +202,10 @@ impl Bridge {
                 msg = rx.next() => match msg {
                     Some(Ok(Message::Text(t))) => {
                         match serde_json::from_str::<ClientMsg>(&t) {
-                            Ok(ClientMsg::Start { lang, sample_rate, segmentation, diagnostics, analysis }) => {
+                            Ok(ClientMsg::Start { lang, sample_rate, segmentation, diagnostics, analysis, semantics }) => {
                                 session.diagnostics = diagnostics;
                                 session.analysis = analysis;
+                                session.semantics = semantics;
                                 self.begin(&mut session, &lang, sample_rate, segmentation).await
                             }
                             Ok(ClientMsg::Info) => vec![ServerMsg::Info {
@@ -218,6 +220,22 @@ impl Bridge {
                                     Err(e) => vec![error(e.code(), &e.to_string(), false)],
                                 },
                                 None => vec![error("bridge.not_started", "nothing to reset", false)],
+                            },
+                            Ok(ClientMsg::ResetContext) => match session.stream {
+                                Some(id) if session.semantics => match self.engine.reset_semantic_context(id).await {
+                                    Ok(_) => Vec::new(),
+                                    Err(e) => vec![error(e.code(), &e.to_string(), false)],
+                                },
+                                _ => vec![error("bridge.no_semantics", "semantics are not running", false)],
+                            },
+                            Ok(ClientMsg::Confirm { observation }) => match session.stream {
+                                Some(id) if session.semantics && !observation.is_empty() && observation.len() <= 128 => {
+                                    match self.engine.confirm_observation(id, ce_core::semantic::ObservationId(observation)).await {
+                                        Ok(_) => Vec::new(),
+                                        Err(e) => vec![error(e.code(), &e.to_string(), false)],
+                                    }
+                                }
+                                _ => vec![error("bridge.no_semantics", "semantics are not running", false)],
                             },
                             Ok(ClientMsg::Stop) => {
                                 if let Some(id) = session.stream {
@@ -391,6 +409,11 @@ impl Bridge {
                 self.engine.start_analysis(id, Some(acfg)).await?;
             }
         }
+        if s.semantics {
+            // Phase 5: the in-process rule adapter; context is per session
+            // and cleared when the session closes.
+            self.engine.start_semantics(id, None).await?;
+        }
         self.engine.start_recognition(id, Some(rcfg)).await?;
         Ok(())
     }
@@ -462,9 +485,24 @@ impl Bridge {
                 SpeechEvent::QueuePressure { .. } => vec![ServerMsg::Warning {
                     kind: "recognizer_behind".into(),
                 }],
+                // With semantics, the session ends when interpretation of
+                // the last transcripts has finished (it drains after the
+                // recognition stops).
+                SpeechEvent::Stopped { .. } if s.semantics && !s.semantic_ended => {
+                    s.speech_ended = true;
+                    Vec::new()
+                }
                 SpeechEvent::Stopped { .. } => vec![ServerMsg::End { aborted: false }],
                 _ => Vec::new(),
             },
+            EventPayload::Semantic(SemanticEvent::Stopped { stream: st, .. }) if *st == stream => {
+                s.semantic_ended = true;
+                if s.speech_ended {
+                    vec![ServerMsg::End { aborted: false }]
+                } else {
+                    Vec::new()
+                }
+            }
             _ => Vec::new(),
         }
     }
@@ -491,6 +529,11 @@ impl Bridge {
             audio: to_json(&audio),
             analysis: to_json(&self.engine.analysis_status(id).await.ok()),
             recognition: to_json(&self.engine.recognition_status(id).await.ok()),
+            semantic: if s.semantics {
+                to_json(&self.engine.semantic_status(id).await.ok())
+            } else {
+                serde_json::Value::Null
+            },
             metrics: to_json(&self.engine.metrics()),
         }]
     }
@@ -547,6 +590,8 @@ impl Bridge {
     async fn end(&self, s: &mut Session) {
         s.slot = None;
         s.stream = None;
+        s.speech_ended = false;
+        s.semantic_ended = false;
         if let Some(id) = s.session.take() {
             let _ = self.engine.close_session(id).await;
         }
@@ -562,6 +607,9 @@ struct Session {
     warned_closed: bool,
     diagnostics: bool,
     analysis: bool,
+    semantics: bool,
+    speech_ended: bool,
+    semantic_ended: bool,
     utterance_at: Option<std::time::Instant>,
     first_partial_ms: Option<u64>,
     stop_at: Option<std::time::Instant>,
@@ -579,11 +627,16 @@ fn ce_event(env: &EventEnvelope) -> ServerMsg {
         .get("data")
         .cloned()
         .unwrap_or(serde_json::Value::Null);
-    let kind = ["audio_event", "analysis_event", "speech_event"]
-        .iter()
-        .find_map(|k| data.get(*k).and_then(|v| v.as_str()))
-        .unwrap_or(&topic)
-        .to_owned();
+    let kind = [
+        "audio_event",
+        "analysis_event",
+        "speech_event",
+        "semantic_event",
+    ]
+    .iter()
+    .find_map(|k| data.get(*k).and_then(|v| v.as_str()))
+    .unwrap_or(&topic)
+    .to_owned();
     ServerMsg::CeEvent {
         sequence: env.sequence,
         topic,
