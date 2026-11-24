@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { PhoneOff, SlidersHorizontal, X } from 'lucide-react';
+import { PhoneOff, SlidersHorizontal, X } from './icons';
 import { Language, findLanguage } from '../types';
 import { cn } from '../utils';
 
@@ -137,14 +137,18 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
   return (
     // On desktop, sheets are a 400 px side panel: the call column moves aside so
     // the conversation stays readable while settings are open.
-    <div className={cn('transition-[padding] duration-200', (settingsOpen || pickerOpen) && 'lg:pr-[400px]')}>
-      <div className="mx-auto flex h-dvh w-full max-w-[760px] flex-col">
+    <div className={cn('transition-[padding] duration-300', (settingsOpen || pickerOpen) && 'lg:pr-[432px]')}>
+      <div className="mx-auto flex h-dvh w-full max-w-[780px] flex-col">
         {/* ---- Header: who, connection, settings, end ---- */}
-        <header className="safe-t flex min-h-16 items-center gap-2 border-b border-line px-4 sm:px-6">
+        <header className="safe-t px-3 pt-2 sm:px-5">
+          <div className="glass-strong @container flex min-h-[64px] items-center gap-2.5 rounded-[30px] py-2 pl-2.5 pr-2">
+          <span aria-hidden="true" className="orb-core hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-body-lg font-[680] text-on-accent @min-[19rem]:flex">
+            {(peerName ?? '·').slice(0, 1).toUpperCase()}
+          </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-heading font-semibold">{peerName ?? (connected ? 'Connected' : 'Waiting for them')}</p>
+            <p className="truncate text-body-lg font-[640] tracking-[-0.015em]">{peerName ?? (connected ? 'Connected' : 'Waiting for them')}</p>
             <p className="flex items-center gap-1.5 text-label text-fg-muted" data-testid="call-meta">
-              <span className={cn('h-2 w-2 shrink-0 rounded-full', dot)} aria-hidden="true" />
+              <span className={cn('h-2 w-2 shrink-0 rounded-full', dot, connected && 'shadow-[0_0_8px_var(--success)]')} aria-hidden="true" />
               <span className="truncate">
                 {connected
                   ? [
@@ -160,7 +164,7 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
             </p>
           </div>
           <IconButton label="Call settings" onClick={() => setSettingsOpen(true)}>
-            <SlidersHorizontal className="h-5 w-5" />
+            <SlidersHorizontal className="h-[18px] w-[18px]" />
           </IconButton>
           <Button
             variant="danger"
@@ -169,9 +173,11 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
             onClick={connected || phase === 'reconnecting' || phase === 'waiting-for-peer' ? () => setConfirmEnd(true) : leave}
             aria-label="End call"
             icon={<PhoneOff className="h-4 w-4" />}
+            className="shrink-0 px-3.5 @min-[20rem]:px-4"
           >
-            End
+            <span className="hidden @min-[20rem]:inline">End</span>
           </Button>
+          </div>
         </header>
 
         {/* ---- Persistent hands-free indicator (privacy: always visible while on) + one banner ---- */}
@@ -218,7 +224,7 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
 
         {/* ---- Phase 5 suggestion: one at a time, dismissible, never acts on its own ---- */}
         {suggestion && (
-          <div role="note" aria-label="Suggestion" className="mx-4 mb-2 flex items-start gap-2 rounded-md bg-surface px-3.5 py-2.5 sm:mx-6">
+          <div role="note" aria-label="Suggestion" className="glass mx-4 mb-2 flex items-start gap-2 rounded-[22px] px-3.5 py-2.5 sm:mx-6">
             <p className="flex-1 text-label text-fg-muted">{suggestion.text}</p>
             <button
               onClick={() => session?.dismissSuggestion(suggestion.id)}
@@ -248,9 +254,9 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
               maxLength={500}
               aria-label="Type a message"
               placeholder="Type a message"
-              className="h-11 min-w-0 flex-1 rounded-md border border-line bg-surface px-3.5 text-body text-fg outline-none placeholder:text-fg-subtle focus:border-focus"
+              className="glass-clear h-12 min-w-0 flex-1 rounded-full px-5 text-body text-fg outline-none placeholder:text-fg-subtle focus:shadow-[inset_0_0_0_1.5px_var(--focus)]"
             />
-            <Button type="submit" variant="primary" size="sm" className="h-11" disabled={!draft.trim()}>
+            <Button type="submit" variant="primary" size="sm" className="h-12 px-5" disabled={!draft.trim()}>
               Send
             </Button>
           </form>
@@ -263,7 +269,7 @@ export function CallRoom({ roomCode, language, userName, onLanguageChange, onEnd
             partial={s?.partial.local ?? ''}
             settled={micOff}
             meter={micMeter}
-            className="mx-4 h-16 sm:mx-6"
+            className="h-24 sm:h-28"
           />
         )}
 

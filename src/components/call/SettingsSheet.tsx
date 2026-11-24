@@ -138,11 +138,11 @@ export function SettingsSheet({ open, onClose, session, snapshot: s, roomCode, l
 
           <Section title="This call">
             <div className="flex min-h-12 items-center justify-between py-2.5">
-              <span className="text-body">Call code</span>
+              <span className="text-body-lg font-[520]">Call code</span>
               <span className="font-mono tracking-[0.12em] text-fg-muted">{roomCode}</span>
             </div>
             <div className="flex min-h-12 items-center justify-between py-2.5">
-              <span className="text-body">Connection</span>
+              <span className="text-body-lg font-[520]">Connection</span>
               <span className="text-fg-muted">{s?.transport === 'p2p' ? 'Direct' : s?.transport === 'relay' ? 'Relayed' : '—'}</span>
             </div>
             <Row label="How your voice is processed" onClick={onShowDisclosure} />
@@ -152,10 +152,10 @@ export function SettingsSheet({ open, onClose, session, snapshot: s, roomCode, l
 
       {page === 'runs' && proc && (
         <div className="space-y-6 pt-1">
-          <ul className="divide-y divide-line" aria-label="Where each function runs">
+          <ul className="[&>*+*]:border-t [&>*+*]:border-[var(--glass-stroke)]" aria-label="Where each function runs">
             {proc.capabilities.map((c) => (
               <li key={c.task} className="flex items-start justify-between gap-4 py-3">
-                <span className="text-body">{TASK_LABEL[c.task] ?? c.task}</span>
+                <span className="text-body-lg font-[520]">{TASK_LABEL[c.task] ?? c.task}</span>
                 <span className="text-right">
                   <span className={cn('block text-label font-semibold', c.state === 'unavailable' ? 'text-accent-text' : 'text-fg')}>{STATE_LABEL[c.state]}</span>
                   <span className="block text-label text-fg-muted">{c.detail}</span>
@@ -191,7 +191,7 @@ export function SettingsSheet({ open, onClose, session, snapshot: s, roomCode, l
         <div className="pt-1">
           <p className="text-label text-fg-muted">Names, places and topics from this call only. Cleared when the call ends.</p>
           {ctx.entities.length ? (
-            <ul className="mt-3 divide-y divide-line" aria-label="Remembered items">
+            <ul className="mt-3 [&>*+*]:border-t [&>*+*]:border-[var(--glass-stroke)]" aria-label="Remembered items">
               {ctx.entities.map((e) => (
                 <li key={e.id} className="flex min-h-12 items-center justify-between gap-3 py-2">
                   <span className="min-w-0">

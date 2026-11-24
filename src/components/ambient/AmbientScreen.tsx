@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, AudioLines, ChevronLeft, Ear, Pause, Square, RotateCcw, SlidersHorizontal, Trash2, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowRight, AudioLines, ChevronLeft, Ear, Pause, Square, RotateCcw, SlidersHorizontal, Trash2, Volume2, VolumeX, X } from '../icons';
 import { findLanguage, type Language } from '../../types';
 import { cn } from '../../utils';
 import { useAmbientSession, createAmbientDeps } from '../../ambient/useAmbientSession';
@@ -9,7 +9,7 @@ import { Banner, Button, IconButton, Row, Section, Segmented, Sheet, Switch } fr
 import { LanguagePicker } from '../LanguagePicker';
 import { coarseBrowser, type ValidationRecorder } from '../../ambient/validation';
 import { ConsentSheet } from '../ConsentSheet';
-import { VoiceWave } from '../voice/VoiceWave';
+import { VoiceStage } from '../voice/VoiceStage';
 import { getVoicePrefs } from '../../app/prefs';
 
 interface AmbientScreenProps {
@@ -73,16 +73,19 @@ export function AmbientScreen({ language, onLanguageChange, from: fromProp, onFr
   };
 
   return (
-    <div className={cn('transition-[padding] duration-200', (settingsOpen || picker) && 'lg:pr-[400px]')}>
-      <div className="mx-auto flex h-dvh w-full max-w-[760px] flex-col">
-        <header className="safe-t flex min-h-16 items-center gap-2 border-b border-line px-2 sm:px-4">
+    <div className={cn('transition-[padding] duration-300', (settingsOpen || picker) && 'lg:pr-[432px]')}>
+      <div className="mx-auto flex h-dvh w-full max-w-[780px] flex-col">
+        <header className="safe-t flex min-h-[72px] items-center gap-3 px-3 sm:px-5">
           <IconButton label="Back" onClick={exit}>
             <ChevronLeft className="h-5 w-5" />
           </IconButton>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-heading font-semibold">AIR</h1>
-            <p className="flex items-center gap-1.5 text-label text-fg-muted" data-testid="ambient-meta">
-              <span className={cn('h-2 w-2 shrink-0 rounded-full', listening ? (s?.capturing ? 'bg-danger' : 'bg-accent') : s?.phase === 'paused' ? 'bg-warning' : 'bg-fg-subtle')} aria-hidden="true" />
+          <div className="min-w-0 flex-1 text-center">
+            <h1 className="t-title truncate text-heading">AIR</h1>
+            <p className="mt-0.5 inline-flex max-w-full items-center gap-1.5 text-label text-fg-muted" data-testid="ambient-meta">
+              <span
+                className={cn('h-2 w-2 shrink-0 rounded-full', listening ? (s?.capturing ? 'bg-danger shadow-[0_0_10px_var(--danger)]' : 'bg-accent') : s?.phase === 'paused' ? 'bg-warning' : 'bg-fg-subtle')}
+                aria-hidden="true"
+              />
               <span className="truncate">
                 {[phaseLabel(s), s?.processing.available && s.processing.mode !== 'cloud' ? (s.processing.mode === 'local-only' ? 'On-device only' : 'Hybrid') : null]
                   .filter(Boolean)
@@ -91,7 +94,7 @@ export function AmbientScreen({ language, onLanguageChange, from: fromProp, onFr
             </p>
           </div>
           <IconButton label="AIR settings" onClick={() => setSettingsOpen(true)}>
-            <SlidersHorizontal className="h-5 w-5" />
+            <SlidersHorizontal className="h-[18px] w-[18px]" />
           </IconButton>
         </header>
 
@@ -101,15 +104,20 @@ export function AmbientScreen({ language, onLanguageChange, from: fromProp, onFr
 
         {recorder && <TestModeStrip recorder={recorder} />}
 
+        <VoiceStage
+          capturing={Boolean(s?.capturing)}
+          hearing={Boolean(s?.hearing)}
+          partial={s?.partial ?? ''}
+          settled={!listening}
+          compact={Boolean(s?.lines.length)}
+          className="mt-1 shrink-0"
+        />
+
         {s && s.lines.length === 0 && !listening && s.phase !== 'paused' ? (
           <Setup s={s} session={session} to={to} />
         ) : (
           <Feed s={s} session={session} />
         )}
-
-        <div className="px-4 pt-2 sm:px-6">
-          <VoiceWave capturing={Boolean(s?.capturing)} hearing={Boolean(s?.hearing)} partial={s?.partial ?? ''} settled={!listening} className="h-32 sm:h-36" />
-        </div>
 
         <Dock s={s} session={session} />
       </div>
@@ -142,16 +150,20 @@ export function AmbientScreen({ language, onLanguageChange, from: fromProp, onFr
 /** They speak → You hear, borderless and tappable (the concept-B channel strip without the box). */
 function LanguagePair({ from, to, onPick }: { from: Language; to: Language; onPick: (w: 'from' | 'to') => void }) {
   return (
-    <div className="grid grid-cols-[1fr_auto_1fr] items-center border-b border-line px-4 sm:px-6" role="group" aria-label="Language pair">
-      <button type="button" onClick={() => onPick('from')} className="min-w-0 py-2.5 text-left" aria-label={`They speak: ${from.native}. Change`}>
-        <span className="block text-meta text-fg-subtle">They speak</span>
-        <span className="block truncate text-body font-semibold">{from.native}</span>
-      </button>
-      <ArrowRight className="mx-3 h-4 w-4 text-fg-subtle" aria-hidden="true" />
-      <button type="button" onClick={() => onPick('to')} className="min-w-0 py-2.5 text-right" aria-label={`You hear: ${to.native}. Change`}>
-        <span className="block text-meta text-fg-subtle">You hear</span>
-        <span className="block truncate text-body font-semibold">{to.native}</span>
-      </button>
+    <div className="px-4 sm:px-6">
+      <div className="glass-clear mx-auto grid max-w-[520px] grid-cols-[1fr_auto_1fr] items-center rounded-full p-1" role="group" aria-label="Language pair">
+        <button type="button" onClick={() => onPick('from')} className="press min-w-0 rounded-full py-2 pl-5 pr-2 text-left hover:bg-[var(--glass-top)]" aria-label={`They speak: ${from.native}. Change`}>
+          <span className="t-eyebrow block text-fg-subtle">They speak</span>
+          <span className="block truncate text-body font-[640] tracking-[-0.01em]">{from.native}</span>
+        </button>
+        <span className="orb-core flex h-8 w-8 items-center justify-center rounded-full text-on-accent" aria-hidden="true">
+          <ArrowRight className="h-[15px] w-[15px]" strokeWidth={2.2} />
+        </span>
+        <button type="button" onClick={() => onPick('to')} className="press min-w-0 rounded-full py-2 pl-2 pr-5 text-right hover:bg-[var(--glass-top)]" aria-label={`You hear: ${to.native}. Change`}>
+          <span className="t-eyebrow block text-fg-subtle">You hear</span>
+          <span className="block truncate text-body font-[640] tracking-[-0.01em]">{to.native}</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -253,7 +265,7 @@ function TestModeStrip({ recorder }: { recorder: ValidationRecorder }) {
     }
   };
   return (
-    <div className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-line-strong px-3 py-1.5 sm:mx-6" aria-label="Test mode">
+    <div className="glass-clear mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-[22px] px-3 py-1.5 sm:mx-6" aria-label="Test mode">
       <span className="mr-auto text-label font-semibold text-fg-muted">Test mode{msg ? ` · ${msg}` : ''}</span>
       <Button
         size="sm"
@@ -287,8 +299,8 @@ function TestModeStrip({ recorder }: { recorder: ValidationRecorder }) {
 
 function Setup({ s, session, to }: { s: AmbientSnapshot; session: AmbientSession | null; to: Language }) {
   return (
-    <div className="scroll-area flex-1 overflow-y-auto px-4 pb-4 pt-6 sm:px-6">
-      <p className="max-w-[32rem] text-body text-fg-muted">Hear what people around you are saying, translated into {to.name}. It listens only while you want it to.</p>
+    <div className="scroll-area flex-1 overflow-y-auto px-4 pb-4 pt-2 sm:px-6">
+      <p className="mx-auto max-w-[28rem] text-center text-body-lg text-fg-muted">Hear what people around you are saying, translated into {to.name}. It listens only while you want it to.</p>
       <Section title="Listening">
         <Switch label="Speak translations" description="Off: text only." checked={s.speak} onChange={(v) => session?.setSpeak(v)} />
         <Switch
@@ -298,7 +310,7 @@ function Setup({ s, session, to }: { s: AmbientSnapshot; session: AmbientSession
           onChange={(v) => session?.setHeadphones(v)}
         />
       </Section>
-      <p className="mt-4 text-label text-fg-muted">Uses this device’s current microphone. Hold the phone toward the people speaking.</p>
+      <p className="mt-4 px-1 text-label text-fg-muted">Uses this device’s current microphone. Hold the phone toward the people speaking.</p>
     </div>
   );
 }
@@ -328,7 +340,7 @@ function Feed({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
     >
       {empty ? (
         <div className="flex h-full min-h-48 items-center justify-center py-10">
-          <p className="max-w-[18rem] text-center text-body text-fg-muted">{s?.phase === 'listening' ? 'Listening. Translations appear here as people speak.' : 'Nothing yet.'}</p>
+          <p className="max-w-[18rem] text-center text-body-lg text-fg-muted">{s?.phase === 'listening' ? 'Listening. Translations appear here as people speak.' : 'Nothing yet.'}</p>
         </div>
       ) : (
         <ol className="flex min-h-full flex-col justify-end py-4">
@@ -337,8 +349,8 @@ function Feed({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
             <Line key={l.id} line={l} latest={i === lines.length - 1} playing={s?.playingId === l.id} canReplay={Boolean(s?.speak) && l.id === lastTranslated} onReplay={() => session?.replay(l.id)} />
           ))}
           {s?.partial && (
-            <li className="border-t border-line py-3" aria-label="Hearing">
-              <p className="text-body italic text-fg-muted">
+            <li className="border-t border-[var(--glass-stroke)] py-3.5" aria-label="Hearing">
+              <p className="text-body-lg italic text-fg-muted">
                 {s.partial}
                 <span aria-hidden="true">…</span>
               </p>
@@ -359,16 +371,16 @@ function Line({ line: l, latest, playing, canReplay, onReplay }: { line: Ambient
   ].filter(Boolean);
   const translated = l.state === 'translated' && l.translation;
   return (
-    <li className="flex items-start gap-2 border-t border-line py-3.5 first:border-t-0">
+    <li className={cn('flex items-start gap-2 border-t border-[var(--glass-stroke)] py-4 first:border-t-0', latest && translated && 'glass-strong -mx-1 mt-2 rounded-[26px] border-t-0 px-4 py-4')}>
       <div className={cn('min-w-0 flex-1', l.state === 'skipped' && 'opacity-60')}>
         {playing && (
-          <p className="mb-1 flex items-center gap-1.5 text-meta font-semibold text-accent-text">
+          <p className="t-eyebrow mb-1.5 flex items-center gap-1.5 text-accent-text">
             <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
             Playing
           </p>
         )}
         {translated ? (
-          <p className={cn('text-fg', latest ? 'text-translation font-medium tracking-[-0.005em]' : 'text-body-lg')}>{l.translation}</p>
+          <p className={cn('text-fg', latest ? 'text-translation font-[600] tracking-[-0.018em]' : 'text-body-lg text-fg-muted')}>{l.translation}</p>
         ) : (
           <p data-original className={cn(latest ? 'text-translation' : 'text-body-lg', l.state === 'translating' ? 'italic text-fg-muted' : 'text-fg')}>
             {l.original}
@@ -384,7 +396,7 @@ function Line({ line: l, latest, playing, canReplay, onReplay }: { line: Ambient
         {markers.length > 0 && <p className="mt-1 text-meta text-fg-subtle">{markers.join(' · ')}</p>}
       </div>
       {translated && canReplay && (
-        <IconButton label="Play again" onClick={onReplay} className="text-fg-subtle">
+        <IconButton label="Play again" onClick={onReplay} className="text-fg-muted">
           <RotateCcw className="h-4 w-4" />
         </IconButton>
       )}
@@ -417,60 +429,63 @@ function Dock({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
               : 'Not listening yet';
   const canStart = !(s?.phase === 'unavailable' && s.notice?.code !== 'permission-denied');
   return (
-    <div className="safe-b px-4 pt-3 sm:px-6">
-      <p aria-live="polite" className={cn('mb-3 min-h-5 text-center text-label font-medium', listening ? 'text-accent-text' : paused ? 'text-warning' : 'text-fg-muted')}>
+    <div className="safe-b px-3 pt-2 sm:px-6">
+      <p aria-live="polite" className={cn('mb-2.5 min-h-5 text-center text-label font-[560]', listening ? 'text-accent-text' : paused ? 'text-warning' : 'text-fg-muted')}>
         {hint}
       </p>
-      <div className="mx-auto grid max-w-[420px] grid-cols-[1fr_auto_1fr] items-center gap-3">
-        <div className="flex flex-col items-start">
-          <span className="flex flex-col items-center">
+      <div className="glass-strong mx-auto grid max-w-[440px] grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-[34px] px-3 py-2.5">
+        <div className="flex justify-start">
+          <span className="flex flex-col items-center gap-1">
             <IconButton label="Speak translations" aria-pressed={Boolean(s?.speak)} tone={s?.speak ? 'default' : 'active'} onClick={() => session?.setSpeak(!s?.speak)}>
               {s?.speak ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
             </IconButton>
-            <span className="text-meta text-fg-subtle" aria-hidden="true">
+            <span className="text-[0.6875rem] font-[560] text-fg-subtle" aria-hidden="true">
               {s?.speak ? 'Speech on' : 'Text only'}
             </span>
           </span>
         </div>
         {!canStart ? (
           // Nothing to start until something changes (browser, settings): no dead button.
-          <span className="h-12 w-[164px]" aria-hidden="true" />
+          <span className="h-14 w-[168px]" aria-hidden="true" />
         ) : listening ? (
-          <Button variant="primary" className="w-[164px]" onClick={() => session?.pause()} aria-label="Pause listening" icon={s?.hearing ? <AudioLines className="h-5 w-5" /> : <Pause className="h-5 w-5" />}>
+          <Button variant="primary" size="lg" className="w-[168px] px-5" onClick={() => session?.pause()} aria-label="Pause listening" icon={s?.hearing ? <AudioLines className="h-5 w-5" strokeWidth={2} /> : <Pause className="h-5 w-5" strokeWidth={2} />}>
             Pause
           </Button>
         ) : (
           <Button
             variant="primary"
-            className="w-[164px]"
+            size="lg"
+            className="w-[168px] px-5"
             disabled={!session}
             onClick={() => (paused ? session?.resume() : session?.start())}
             aria-label={paused ? 'Resume listening' : 'Start listening'}
-            icon={<Ear className="h-5 w-5" />}
+            icon={<Ear className="h-5 w-5" strokeWidth={2} />}
           >
             {paused ? 'Resume' : s?.phase === 'stopped' ? 'Start again' : 'Start'}
           </Button>
         )}
         <div className="flex justify-end">
           {live ? (
-            <span className="flex flex-col items-center">
+            <span className="flex flex-col items-center gap-1">
               <IconButton label="Stop listening" onClick={() => session?.stop()}>
-                <Square className="h-[18px] w-[18px]" />
+                <Square className="h-4 w-4" />
               </IconButton>
-              <span className="text-meta text-fg-subtle" aria-hidden="true">
+              <span className="text-[0.6875rem] font-[560] text-fg-subtle" aria-hidden="true">
                 Stop
               </span>
             </span>
           ) : Boolean(s?.lines.length) ? (
-            <span className="flex flex-col items-center">
+            <span className="flex flex-col items-center gap-1">
               <IconButton label="Clear translations" onClick={() => session?.clear()}>
-                <Trash2 className="h-5 w-5" />
+                <Trash2 className="h-[18px] w-[18px]" />
               </IconButton>
-              <span className="text-meta text-fg-subtle" aria-hidden="true">
+              <span className="text-[0.6875rem] font-[560] text-fg-subtle" aria-hidden="true">
                 Clear
               </span>
             </span>
-          ) : null}
+          ) : (
+            <span className="w-11" aria-hidden="true" />
+          )}
         </div>
       </div>
     </div>
@@ -542,7 +557,7 @@ function AmbientSettings({
                   ]}
                 />
               </div>
-              <ul className="divide-y divide-line" aria-label="Where each step runs">
+              <ul className="[&>*+*]:border-t [&>*+*]:border-[var(--glass-stroke)]" aria-label="Where each step runs">
                 {(
                   [
                     ['Speech recognition', s.processing.asr],
@@ -551,7 +566,7 @@ function AmbientSettings({
                   ] as const
                 ).map(([label, st]) => (
                   <li key={label} className="flex min-h-11 items-center justify-between py-2">
-                    <span className="text-body">{label}</span>
+                    <span className="text-body-lg font-[520]">{label}</span>
                     <span className={cn('text-label font-semibold', st === 'unavailable' ? 'text-accent-text' : 'text-fg-muted')}>{CAP_LABEL[st]}</span>
                   </li>
                 ))}

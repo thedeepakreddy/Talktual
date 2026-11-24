@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Play, Square } from 'lucide-react';
+import { Play, Square } from '../components/icons';
 import type { Language } from '../types';
 import { Page } from '../components/shell/AppShell';
 import { Button, Section, Segmented, Switch } from '../components/ui';
@@ -128,7 +128,7 @@ export function VoicePage({ language }: { language: Language }) {
   const naturalVoice = onDevice ? 'Not used in On-device mode' : serverTts === null ? 'Checking…' : serverTts ? 'Available' : 'Not set up on this server';
 
   return (
-    <Page title="Voice Studio" description="How translations are spoken to you.">
+    <Page eyebrow="Sound" title="Voice Studio" description="How translations are spoken to you.">
       <Section title="Spoken translations">
         <Switch label="Speak translations in AIR" description="Off: AIR shows translations on screen only." checked={prefs.speak} onChange={(v) => update({ ...prefs, speak: v })} />
         <div className="py-3">
@@ -146,12 +146,12 @@ export function VoicePage({ language }: { language: Language }) {
         </div>
         <div className="flex min-h-14 items-center justify-between gap-4 py-2.5">
           <div>
-            <p className="text-body">Sample in {language.native}</p>
+            <p className="text-body-lg font-[520]">Sample in {language.native}</p>
             <p className="text-label text-fg-muted" aria-live="polite">
               {sample === 'playing' ? 'Playing…' : sample === 'failed' ? (sampleFailure === 'blocked' ? 'The browser blocked sound. Tap Play sample again.' : sampleFailure === 'no-voice' ? `No ${language.name} voice on this device.` : 'No voice could play this. Check your device’s sound and voices.') : 'Uses the same voice route as translations.'}
             </p>
           </div>
-          <Button size="sm" variant="secondary" onClick={playSample} icon={sample === 'playing' ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}>
+          <Button size="sm" variant="tertiary" onClick={playSample} icon={sample === 'playing' ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}>
             {sample === 'playing' ? 'Stop' : 'Play'}
           </Button>
         </div>
@@ -159,11 +159,11 @@ export function VoicePage({ language }: { language: Language }) {
 
       <Section title="Voices">
         <div className="flex min-h-12 items-center justify-between gap-4 py-2.5">
-          <span className="text-body">Natural voice (server)</span>
+          <span className="text-body-lg font-[520]">Natural voice (server)</span>
           <span className="text-label text-fg-muted">{naturalVoice}</span>
         </div>
         <div className="py-3">
-          <p className="text-body">On this device, for {language.native}</p>
+          <p className="text-body-lg font-[520]">On this device, for {language.native}</p>
           {voices === null ? (
             <p className="mt-1 text-label text-fg-muted">Checking…</p>
           ) : voices.length === 0 ? (

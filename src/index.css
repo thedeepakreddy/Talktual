@@ -1,102 +1,145 @@
 @import "tailwindcss";
+@import "@fontsource-variable/geist/wght.css";
+@import "@fontsource-variable/geist-mono/wght.css";
 
 /* ===========================================================================
-   Talktual design tokens — Phase 7 final, Talktual brand (orange #F59A38 /
-   #FFB45B, charcoal #1F2328, warm white #FAF7F2) on the Constitution structure.
-   Semantic tokens only; components never use raw colors. See DESIGN.md.
+   Talktual — Liquid Glass (Cosmic Orange). See docs/liquid_glass/DESIGN_PLAN.md
+   and DESIGN.md. Semantic tokens only. `raised`/`surface`/`selected` are the
+   EFFECTIVE opaque colours of glass over the base (used for contrast checks
+   and fallbacks); the translucent layers are the --glass-* tokens.
    Theme: system by default; <html data-theme="light|dark"> overrides it.
    =========================================================================== */
 
 :root {
   color-scheme: dark;
-  --bg: #1f2328;
-  --raised: #262b31;
-  --surface: #2e343b;
-  --surface-hover: #363d45;
-  --line: #343b42;
-  --line-strong: #4a525a;
-  --fg: #f2eee7;
-  --fg-muted: #bdb6ac;
-  --fg-subtle: #a49d93;
-  --selected: #434a52;
-  --accent: #f59a38;
-  --on-accent: #1f2328;
-  --accent-text: #ffb45b;
-  --accent-soft: rgb(245 154 56 / 0.16);
-  --incoming: #ffb45b;
-  --incoming-soft: rgb(245 154 56 / 0.12);
-  --success: #63c08f;
-  --warning: #e6c860;
-  --warning-soft: rgb(230 200 96 / 0.14);
-  --danger: #f0766e;
-  --danger-soft: rgb(240 118 110 / 0.14);
-  --focus: #ffb45b;
-  --sheet-shadow: 0 -12px 32px rgb(10 12 14 / 0.45);
-  --scrim: rgb(14 16 18 / 0.6);
+  --bg: #0b0705;
+  --raised: #1a120d;
+  --surface: #221812;
+  --surface-hover: #2c1f17;
+  --line: #2e221a;
+  --line-strong: #574436;
+  --fg: #fff7f0;
+  --fg-muted: #d7c8bb;
+  --fg-subtle: #a89889;
+  --selected: #3a2a1f;
+  --accent: #ff7a1a;
+  --on-accent: #1a0a02;
+  --accent-text: #ffa564;
+  --accent-soft: rgb(255 122 26 / 0.16);
+  --incoming: #ffb27a;
+  --incoming-soft: rgb(255 122 26 / 0.12);
+  --success: #5ad08f;
+  --warning: #ffd36b;
+  --warning-soft: rgb(255 211 107 / 0.14);
+  --danger: #ff7b6e;
+  --danger-soft: rgb(255 92 80 / 0.16);
+  --focus: #ffb27a;
+  --scrim: rgb(6 3 2 / 0.55);
+  /* Liquid glass (translucent fills; surfaces above give the effective colour) */
+  --glass: rgb(22 14 10 / 0.46);
+  --glass-top: rgb(78 56 42 / 0.4);
+  --glass-strong: rgb(26 18 13 / 0.62);
+  --glass-strong-top: rgb(48 32 22 / 0.7);
+  --glass-stroke: rgb(255 226 200 / 0.12);
+  --glass-rim: rgb(255 244 236 / 0.5);
+  --glass-rim-warm: rgb(255 150 80 / 0.28);
+  --glass-hi: rgb(255 255 255 / 0.16);
+  --glass-lo: rgb(0 0 0 / 0.28);
+  --glass-drop: 0 24px 60px -18px rgb(0 0 0 / 0.75), 0 2px 8px rgb(0 0 0 / 0.35);
+  --glass-blur: 28px;
+  --glow: rgb(255 110 20 / 0.55);
+  --field-base: #0b0705;
+  --sheet-shadow: 0 -24px 60px rgb(0 0 0 / 0.6);
 }
 
 :root[data-theme="light"] {
     color-scheme: light;
-    --bg: #faf7f2;
+    --bg: #fbf5ef;
     --raised: #ffffff;
-    --surface: #f0ece5;
-    --surface-hover: #e8e3da;
-    --line: #e5dfd5;
-    --line-strong: #c7bfb2;
-    --fg: #1f2328;
-    --fg-muted: #4a4f55;
-    --fg-subtle: #62676d;
+    --surface: #f3ebe3;
+    --surface-hover: #ece1d6;
+    --line: #eadfd4;
+    --line-strong: #cbb8a6;
+    --fg: #1b120c;
+    --fg-muted: #574a40;
+    --fg-subtle: #6e5f53;
     --selected: #ffffff;
-    --accent: #f59a38;
-    --on-accent: #1f2328;
-    --accent-text: #a4560b;
-    --accent-soft: rgb(245 154 56 / 0.16);
-    --incoming: #a4560b;
-    --incoming-soft: rgb(245 154 56 / 0.12);
-    --success: #2e7d55;
-    --warning: #6f5a00;
-    --warning-soft: rgb(176 140 20 / 0.14);
-    --danger: #b9423b;
-    --danger-soft: rgb(185 66 59 / 0.1);
-    --focus: #a4560b;
-    --sheet-shadow: 0 -12px 32px rgb(31 35 40 / 0.12);
-    --scrim: rgb(31 35 40 / 0.32);
+    --accent: #ff7a1a;
+    --on-accent: #1a0a02;
+    --accent-text: #b2450a;
+    --accent-soft: rgb(255 122 26 / 0.14);
+    --incoming: #b2450a;
+    --incoming-soft: rgb(255 122 26 / 0.1);
+    --success: #23784b;
+    --warning: #6e5500;
+    --warning-soft: rgb(190 150 20 / 0.14);
+    --danger: #b93a30;
+    --danger-soft: rgb(220 70 50 / 0.1);
+    --focus: #b2450a;
+    --scrim: rgb(60 30 10 / 0.22);
+    --glass: rgb(255 255 255 / 0.5);
+    --glass-top: rgb(255 255 255 / 0.78);
+    --glass-strong: rgb(255 252 249 / 0.8);
+    --glass-strong-top: rgb(255 255 255 / 0.92);
+    --glass-stroke: rgb(120 60 20 / 0.1);
+    --glass-rim: rgb(255 255 255 / 0.95);
+    --glass-rim-warm: rgb(255 140 60 / 0.22);
+    --glass-hi: rgb(255 255 255 / 0.9);
+    --glass-lo: rgb(120 60 20 / 0.06);
+    --glass-drop: 0 24px 60px -24px rgb(120 50 10 / 0.28), 0 2px 8px rgb(120 50 10 / 0.08);
+    --glass-blur: 30px;
+    --glow: rgb(255 122 26 / 0.4);
+    --field-base: #fbf5ef;
+    --sheet-shadow: 0 -24px 60px rgb(120 50 10 / 0.16);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --bg: #faf7f2;
+    --bg: #fbf5ef;
     --raised: #ffffff;
-    --surface: #f0ece5;
-    --surface-hover: #e8e3da;
-    --line: #e5dfd5;
-    --line-strong: #c7bfb2;
-    --fg: #1f2328;
-    --fg-muted: #4a4f55;
-    --fg-subtle: #62676d;
+    --surface: #f3ebe3;
+    --surface-hover: #ece1d6;
+    --line: #eadfd4;
+    --line-strong: #cbb8a6;
+    --fg: #1b120c;
+    --fg-muted: #574a40;
+    --fg-subtle: #6e5f53;
     --selected: #ffffff;
-    --accent: #f59a38;
-    --on-accent: #1f2328;
-    --accent-text: #a4560b;
-    --accent-soft: rgb(245 154 56 / 0.16);
-    --incoming: #a4560b;
-    --incoming-soft: rgb(245 154 56 / 0.12);
-    --success: #2e7d55;
-    --warning: #6f5a00;
-    --warning-soft: rgb(176 140 20 / 0.14);
-    --danger: #b9423b;
-    --danger-soft: rgb(185 66 59 / 0.1);
-    --focus: #a4560b;
-    --sheet-shadow: 0 -12px 32px rgb(31 35 40 / 0.12);
-    --scrim: rgb(31 35 40 / 0.32);
+    --accent: #ff7a1a;
+    --on-accent: #1a0a02;
+    --accent-text: #b2450a;
+    --accent-soft: rgb(255 122 26 / 0.14);
+    --incoming: #b2450a;
+    --incoming-soft: rgb(255 122 26 / 0.1);
+    --success: #23784b;
+    --warning: #6e5500;
+    --warning-soft: rgb(190 150 20 / 0.14);
+    --danger: #b93a30;
+    --danger-soft: rgb(220 70 50 / 0.1);
+    --focus: #b2450a;
+    --scrim: rgb(60 30 10 / 0.22);
+    --glass: rgb(255 255 255 / 0.5);
+    --glass-top: rgb(255 255 255 / 0.78);
+    --glass-strong: rgb(255 252 249 / 0.8);
+    --glass-strong-top: rgb(255 255 255 / 0.92);
+    --glass-stroke: rgb(120 60 20 / 0.1);
+    --glass-rim: rgb(255 255 255 / 0.95);
+    --glass-rim-warm: rgb(255 140 60 / 0.22);
+    --glass-hi: rgb(255 255 255 / 0.9);
+    --glass-lo: rgb(120 60 20 / 0.06);
+    --glass-drop: 0 24px 60px -24px rgb(120 50 10 / 0.28), 0 2px 8px rgb(120 50 10 / 0.08);
+    --glass-blur: 30px;
+    --glow: rgb(255 122 26 / 0.4);
+    --field-base: #fbf5ef;
+    --sheet-shadow: 0 -24px 60px rgb(120 50 10 / 0.16);
 }
 }
 
 @theme inline {
-  /* Brand: Inter / Manrope / SF Pro — used when installed; no web-font download. */
-  --font-sans: Inter, Manrope, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  /* Geist: one minimal, precise family for everything; Geist Mono for codes. */
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --color-bg: var(--bg);
   --color-raised: var(--raised);
@@ -121,39 +164,43 @@
   --color-danger-soft: var(--danger-soft);
   --color-focus: var(--focus);
 
-  /* Type scale (rem → respects the user's text-size setting). Constitution
-     ranges: page 24–28, section 17–20, translation 20–26, body 15–16,
-     supporting 13–14, metadata 12–13. */
+  /* Type scale (rem → respects the user's text size). */
+  --text-eyebrow: 0.6875rem;
+  --text-eyebrow--line-height: 1rem;
   --text-meta: 0.75rem;
   --text-meta--line-height: 1rem;
   --text-label: 0.8125rem;
   --text-label--line-height: 1.125rem;
   --text-body: 0.9375rem;
-  --text-body--line-height: 1.375rem;
-  --text-body-lg: 1.125rem;
-  --text-body-lg--line-height: 1.625rem;
+  --text-body--line-height: 1.4rem;
+  --text-body-lg: 1.0625rem;
+  --text-body-lg--line-height: 1.6rem;
   --text-heading: 1.1875rem;
-  --text-heading--line-height: 1.625rem;
-  --text-translation: 1.5rem;
-  --text-translation--line-height: 2rem;
-  --text-title: 1.625rem;
-  --text-title--line-height: 2rem;
+  --text-heading--line-height: 1.5rem;
+  --text-translation: 1.625rem;
+  --text-translation--line-height: 2.05rem;
+  --text-title: 1.875rem;
+  --text-title--line-height: 2.125rem;
+  --text-display: 2.75rem;
+  --text-display--line-height: 2.85rem;
+  --text-display-lg: 3.875rem;
+  --text-display-lg--line-height: 3.9rem;
 
-  /* Radius: controls 8–10, inputs 8–10, surfaces 12–16, dialogs 14–18. */
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-sheet: 16px;
+  /* Radius: capsules for controls; continuous-corner cards and sheets. */
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 28px;
+  --radius-sheet: 34px;
 
   /* Motion tokens (all disabled under prefers-reduced-motion). */
-  --duration-press: 120ms;
-  --duration-state: 200ms;
-  --duration-sheet: 280ms;
-  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-press: 140ms;
+  --duration-state: 240ms;
+  --duration-sheet: 420ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
 }
 
-/* Element defaults live in the base layer so utilities (e.g. text-on-accent)
-   always win over them; unlayered rules would beat every utility. */
+/* Element defaults live in the base layer so utilities always win over them. */
 @layer base {
   html,
   body {
@@ -162,11 +209,19 @@
 
   body {
     margin: 0;
-    background: var(--bg);
+    /* Fallback atmosphere (no WebGL / before the field loads): the same light, static. */
+    background:
+      radial-gradient(120% 60% at 85% -10%, color-mix(in oklab, var(--accent) 34%, transparent) 0%, transparent 60%),
+      radial-gradient(140% 55% at 10% 115%, color-mix(in oklab, #e2560c 40%, transparent) 0%, transparent 62%),
+      var(--field-base);
+    background-attachment: fixed;
     color: var(--fg);
     font-family: var(--font-sans);
     font-size: 100%;
+    font-feature-settings: "ss01", "ss02";
+    letter-spacing: -0.008em;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     /* A push-to-talk hold must never turn into a pull-to-refresh. */
     overscroll-behavior: none;
@@ -174,6 +229,8 @@
 
   #root {
     min-height: 100%;
+    position: relative;
+    isolation: isolate;
   }
 
   button,
@@ -182,6 +239,7 @@
   textarea {
     font: inherit;
     color: inherit;
+    letter-spacing: inherit;
   }
 
   button {
@@ -196,12 +254,255 @@
   /* One focus treatment everywhere: visible for keyboard, invisible for touch. */
   :focus-visible {
     outline: 2px solid var(--focus);
-    outline-offset: 2px;
-    border-radius: inherit;
+    outline-offset: 3px;
   }
 
   ::selection {
-    background: var(--accent-soft);
+    background: color-mix(in oklab, var(--accent) 35%, transparent);
+  }
+}
+
+@layer components {
+  /* ---- Liquid glass ------------------------------------------------------
+     Tint + backdrop blur, a specular rim (bright top-left, warm bottom-right),
+     an inner top highlight and bottom shade, and a soft long drop. */
+  .glass,
+  .glass-strong,
+  .glass-clear {
+    position: relative;
+    isolation: isolate;
+    background: linear-gradient(180deg, var(--glass-top), var(--glass));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+    box-shadow: inset 0 1px 0 var(--glass-hi), inset 0 -1px 0 var(--glass-lo), var(--glass-drop);
+  }
+  .glass-strong {
+    background: linear-gradient(180deg, var(--glass-strong-top), var(--glass-strong));
+    -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(1.4);
+    backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(1.4);
+  }
+  .glass-clear {
+    box-shadow: inset 0 1px 0 var(--glass-hi), inset 0 -1px 0 var(--glass-lo);
+  }
+  .glass::before,
+  .glass-strong::before,
+  .glass-clear::before,
+  .rim::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(155deg, var(--glass-rim) 0%, var(--glass-stroke) 26%, var(--glass-stroke) 62%, var(--glass-rim-warm) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    pointer-events: none;
+  }
+  .rim {
+    position: relative;
+  }
+
+  /* ---- Molten (primary action) ------------------------------------------
+     Specular bloom, Cosmic body, deep ember base, a glossy liquid cap, a
+     pointer-following sheen and orange light underneath. Ink label. */
+  .molten {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    color: var(--on-accent);
+    background:
+      radial-gradient(120% 140% at 50% -30%, rgb(255 222 190 / 0.95) 0%, rgb(255 222 190 / 0) 46%),
+      radial-gradient(90% 130% at 50% 135%, #b8380a 0%, rgb(184 56 10 / 0) 62%),
+      linear-gradient(180deg, #ffa458 0%, #ff7a1a 52%, #f0600e 100%);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.7),
+      inset 0 -3px 8px rgb(110 28 0 / 0.35),
+      0 0 0 1px rgb(255 150 70 / 0.55),
+      0 14px 34px -10px var(--glow),
+      0 3px 8px rgb(70 18 0 / 0.35);
+    transition:
+      transform var(--duration-press) var(--ease-spring),
+      box-shadow var(--duration-state) var(--ease-out),
+      filter var(--duration-state) var(--ease-out);
+  }
+  .molten::before {
+    /* liquid cap */
+    content: "";
+    position: absolute;
+    left: 7%;
+    right: 7%;
+    top: 1.5px;
+    height: 46%;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.62), rgb(255 255 255 / 0.04));
+    opacity: 0.75;
+    pointer-events: none;
+    z-index: -1;
+  }
+  .molten::after {
+    /* pointer sheen */
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(160px circle at var(--mx, 50%) var(--my, 0%), rgb(255 246 236 / 0.55), transparent 60%);
+    opacity: 0;
+    transition: opacity var(--duration-state) var(--ease-out);
+    pointer-events: none;
+    z-index: -1;
+  }
+  .molten:hover::after {
+    opacity: 0.7;
+  }
+  .molten:hover {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.75),
+      inset 0 -3px 8px rgb(110 28 0 / 0.3),
+      0 0 0 1px rgb(255 160 80 / 0.7),
+      0 18px 44px -10px var(--glow),
+      0 3px 8px rgb(70 18 0 / 0.35);
+  }
+  .molten:active:not(:disabled) {
+    transform: scale(0.97) translateY(1px);
+    filter: saturate(1.08) brightness(0.98);
+  }
+
+  /* Ink chip inside a molten button: the icon sits in a dark lens. */
+  .btn-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    color: #ffb36b;
+    background: radial-gradient(120% 120% at 30% 20%, #3a1606 0%, #1a0902 70%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 -1px 2px rgb(0 0 0 / 0.5), 0 1px 0 rgb(255 255 255 / 0.35);
+  }
+  .btn-chip-glass {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.875rem;
+    height: 1.875rem;
+    border-radius: 999px;
+    color: var(--on-accent);
+    background: radial-gradient(55% 45% at 34% 26%, rgb(255 236 214 / 0.9) 0%, rgb(255 236 214 / 0) 70%), linear-gradient(180deg, #ffa458, #f0600e);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 4px 12px -4px var(--glow);
+  }
+
+  /* Prism glass (secondary): dark glass, a specular top edge, a warm rim. */
+  .prism::after {
+    content: "";
+    position: absolute;
+    left: 16%;
+    right: 16%;
+    top: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.7), transparent);
+    opacity: 0.8;
+    pointer-events: none;
+  }
+  .prism:hover::before {
+    background: linear-gradient(155deg, var(--glass-rim) 0%, var(--glass-stroke) 30%, var(--glass-stroke) 55%, color-mix(in oklab, var(--accent) 70%, transparent) 100%);
+  }
+
+  /* Ember line (tertiary): a glowing gradient outline with ember text. */
+  .ember-line {
+    position: relative;
+    isolation: isolate;
+    color: var(--accent-text);
+    background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 12%, transparent), color-mix(in oklab, var(--accent) 3%, transparent));
+    transition:
+      transform var(--duration-press) var(--ease-spring),
+      background var(--duration-state) var(--ease-out),
+      box-shadow var(--duration-state) var(--ease-out);
+  }
+  .ember-line::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    padding: 1.5px;
+    background: linear-gradient(120deg, #ffc08a 0%, #ff7a1a 38%, #e2560c 68%, #ffb070 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    pointer-events: none;
+  }
+  .ember-line:hover {
+    background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 22%, transparent), color-mix(in oklab, var(--accent) 8%, transparent));
+    box-shadow: 0 10px 28px -12px var(--glow);
+  }
+  .ember-line:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  /* Glass capsule press feel */
+  .press {
+    transition:
+      transform var(--duration-press) var(--ease-spring),
+      background-color var(--duration-state) var(--ease-out),
+      color var(--duration-state) var(--ease-out),
+      box-shadow var(--duration-state) var(--ease-out);
+  }
+  .press:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+
+  /* Molten sphere (the mic control's core): a lit orange ball in pure CSS. */
+  .orb-core {
+    background:
+      radial-gradient(55% 45% at 34% 24%, rgb(255 236 214 / 0.95) 0%, rgb(255 236 214 / 0) 70%),
+      radial-gradient(85% 85% at 70% 80%, #7a2205 0%, rgb(122 34 5 / 0) 60%),
+      radial-gradient(100% 100% at 40% 35%, #ffa458 0%, #ff7a1a 42%, #d9480f 78%, #8a2a05 100%);
+    box-shadow:
+      inset 0 2px 2px rgb(255 255 255 / 0.55),
+      inset 0 -10px 18px rgb(80 16 0 / 0.45),
+      0 0 0 1px rgb(255 150 70 / 0.5),
+      0 18px 40px -12px var(--glow);
+  }
+
+  /* Type styles */
+  .t-display {
+    font-weight: 600;
+    letter-spacing: -0.048em;
+    text-wrap: balance;
+  }
+  .t-title {
+    font-weight: 600;
+    letter-spacing: -0.034em;
+    text-wrap: balance;
+  }
+  .t-eyebrow {
+    font-size: var(--text-eyebrow);
+    line-height: var(--text-eyebrow--line-height);
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  /* Accent words: the same family at a light weight, lit in ember. */
+  .t-accent {
+    font-weight: 300;
+    letter-spacing: -0.05em;
+  }
+  .text-ember {
+    background: linear-gradient(100deg, #ffc08a 0%, #ff8a2e 45%, #ff6a12 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  :root[data-theme="light"] .text-ember {
+    background-image: linear-gradient(100deg, #d9560c 0%, #b2450a 60%, #8f3407 100%);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) .text-ember {
+      background-image: linear-gradient(100deg, #d9560c 0%, #b2450a 60%, #8f3407 100%);
+    }
   }
 }
 
@@ -225,6 +526,16 @@
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .fade-x {
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 24px), transparent 100%);
   }
 }
 

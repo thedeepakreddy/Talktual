@@ -14,9 +14,9 @@ export function BrandMark({ size = 28, mono = false }: { size?: number; mono?: b
       {!mono && (
         <defs>
           <linearGradient id={`tt-${id}`} x1="0" y1="0" x2="96" y2="0" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stopColor="#F28A1E" />
-            <stop offset="0.5" stopColor="#F59A38" />
-            <stop offset="1" stopColor="#FFB45B" />
+            <stop offset="0" stopColor="#E2560C" />
+            <stop offset="0.5" stopColor="#FF7A1A" />
+            <stop offset="1" stopColor="#FFB070" />
           </linearGradient>
         </defs>
       )}
@@ -32,7 +32,7 @@ export function Wordmark({ size = 'md' }: { size?: 'md' | 'lg' }) {
   return (
     <span className="inline-flex items-center gap-2.5">
       <BrandMark size={size === 'lg' ? 26 : 20} />
-      <span className={size === 'lg' ? 'text-title font-bold tracking-[-0.025em]' : 'text-heading font-bold tracking-[-0.02em]'}>Talktual</span>
+      <span className={size === 'lg' ? 'text-title font-[680] tracking-[-0.035em]' : 'text-heading font-[680] tracking-[-0.03em]'}>Talktual</span>
     </span>
   );
 }
