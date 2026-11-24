@@ -177,6 +177,7 @@ export function LiquidField({ mood }: { mood: FieldMood }) {
         material.dispose();
         mesh.geometry.dispose();
         renderer.dispose();
+        renderer.forceContextLoss(); // free the GPU context now, not at garbage collection
         canvas.remove();
       };
     }));

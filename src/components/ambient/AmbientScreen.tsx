@@ -65,6 +65,8 @@ export function AmbientScreen({ language, onLanguageChange, from: fromProp, onFr
     };
   }, [listening]);
 
+  const hasLines = Boolean(s?.lines.length);
+  const showSetup = Boolean(s && s.lines.length === 0 && !listening && s.phase !== 'paused');
   const from = findLanguage(s?.from) ?? fromProp;
   const to = findLanguage(s?.to) ?? language;
   const exit = () => {
@@ -104,20 +106,17 @@ export function AmbientScreen({ language, onLanguageChange, from: fromProp, onFr
 
         {recorder && <TestModeStrip recorder={recorder} />}
 
+        {/* The orb sits in the middle of the screen until translations arrive. */}
         <VoiceStage
           capturing={Boolean(s?.capturing)}
           hearing={Boolean(s?.hearing)}
           partial={s?.partial ?? ''}
           settled={!listening}
-          compact={Boolean(s?.lines.length)}
-          className="mt-1 shrink-0"
+          size={hasLines ? 'compact' : showSetup ? 'setup' : 'hero'}
+          className={cn('mt-1', hasLines || showSetup ? 'shrink-0' : '')}
         />
 
-        {s && s.lines.length === 0 && !listening && s.phase !== 'paused' ? (
-          <Setup s={s} session={session} to={to} />
-        ) : (
-          <Feed s={s} session={session} />
-        )}
+        {showSetup && s ? <Setup s={s} session={session} to={to} /> : <Feed s={s} session={session} fill={hasLines} />}
 
         <Dock s={s} session={session} />
       </div>
@@ -317,7 +316,7 @@ function Setup({ s, session, to }: { s: AmbientSnapshot; session: AmbientSession
 
 // ---------------------------------------------------------------------------
 
-function Feed({ s, session }: { s: AmbientSnapshot | null; session: AmbientSession | null }) {
+function Feed({ s, session, fill = true }: { s: AmbientSnapshot | null; session: AmbientSession | null; fill?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const lines = s?.lines ?? [];
@@ -336,10 +335,10 @@ function Feed({ s, session }: { s: AmbientSnapshot | null; session: AmbientSessi
         const el = e.currentTarget;
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
       }}
-      className="scroll-area flex-1 overflow-y-auto px-4 sm:px-6"
+      className={cn('scroll-area overflow-y-auto px-4 sm:px-6', fill ? 'flex-1' : 'max-h-[30vh] flex-none')}
     >
       {empty ? (
-        <div className="flex h-full min-h-48 items-center justify-center py-10">
+        <div className={cn('flex items-center justify-center', fill ? 'h-full min-h-48 py-10' : 'py-3')}>
           <p className="max-w-[18rem] text-center text-body-lg text-fg-muted">{s?.phase === 'listening' ? 'Listening. Translations appear here as people speak.' : 'Nothing yet.'}</p>
         </div>
       ) : (
