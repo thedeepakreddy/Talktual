@@ -1,5 +1,13 @@
 # Phase 6 handoff
 
+> **Phase 6 status: ACCEPTED WITH LIMITATIONS** (by the user, 2026-11-24,
+> after the independent audit; defects D1–D5 accepted as corrected). The
+> engine-side translation architecture is accepted. **This is not a usable
+> machine translation system:** the real MT adapter is BLOCKED pending
+> model-download approval and translation quality is unmeasured. All
+> BLOCKED, PARTIAL and DEFERRED items below remain open. Not a production
+> certification (Phase 15).
+
 State at the end of Phase 6. Read with `phase-6-report.md` (status,
 evidence), `phase-6-ledger.md` and `docs/architecture/translation.md`.
 
@@ -40,6 +48,18 @@ evidence), `phase-6-ledger.md` and `docs/architecture/translation.md`.
   freezing it on `dev`.
 * Changing a metric or the corpus changes the pinned values in
   `ce-translate/tests/evaluation.rs` and the evaluation report.
+
+## Closure
+
+* Accepted with limitations after the independent audit
+  (`phase-6-audit.md`); audit fixes D1–D5 are in `ce-translate`
+  (processor and worker) with regression tests `audit_d*` in
+  `tests/processor.rs`.
+* Consumers: sequences restart at 0 in a new worker run (reset
+  per-utterance state on `Started`); hints use only final, stated
+  Phase 5 entities and follow retractions.
+* Still open: real MT adapter (BLOCKED); STR-7, CTX-1, CTX-4, FID-1/2/4,
+  RUN-5, ERR-1/2, OBS-3 (PARTIAL); LNG-6, FID-3, MET-3, DEP-4 (DEFERRED).
 
 ## Open items (need a decision)
 

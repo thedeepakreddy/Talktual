@@ -1,5 +1,13 @@
 # Phase 6 independent completeness and evidence audit
 
+> **Phase 6 status: ACCEPTED WITH LIMITATIONS** (by the user, 2026-11-24,
+> after the independent audit; defects D1–D5 accepted as corrected). The
+> engine-side translation architecture is accepted. **This is not a usable
+> machine translation system:** the real MT adapter is BLOCKED pending
+> model-download approval and translation quality is unmeasured. All
+> BLOCKED, PARTIAL and DEFERRED items below remain open. Not a production
+> certification (Phase 15).
+
 Audited state: `main` at `f3213e2` (merge of PR #11; same tree as
 `f3b7cae`). Date: 2026-11-24. Environment: Linux x86_64 cloud container,
 Rust 1.97.0 and 1.85.0. **No audio hardware, GPU or real MT model.**
@@ -151,7 +159,10 @@ e2e, which need a local model.
 5. The worker-level D4 filter has no dedicated test.
 6. Talktual regressions were not rerun in this audit (not affected).
 
-## 9. Recommendation
+## 9. Recommendation and decision
+
+Decision recorded: the user accepted this recommendation and D1–D5
+as corrected (2026-11-24).
 
 **ACCEPT WITH LIMITATIONS.** The engine-side translation architecture
 is complete and verified after five correctness fixes. That covers
@@ -159,3 +170,12 @@ contracts, revision semantics, lifecycle, bounded execution, privacy and
 evaluation infrastructure. Phase 6 does not deliver usable machine
 translation: the real adapter is blocked on approval and no quality has
 been measured. This is not a production certification.
+
+## 10. Closure verification
+
+Run after the closure documentation was updated, on the working branch
+(`f3213e2` + audit fixes): `scripts/verify.sh` all gates passed (exit 0);
+tests 361 default / 365 all features, 0 failed; MSRV 1.85.0 361 passed,
+0 failed; Talktual `tsc` pass, `npm test` 549 passed, `npm run
+test:server` 60 passed, `npm run build` pass. The audit fixes reach
+`main` through a merged pull request (no force push, no history rewrite).

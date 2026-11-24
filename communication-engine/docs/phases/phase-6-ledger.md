@@ -1,5 +1,13 @@
 # Phase 6 requirements ledger — Translation Intelligence
 
+> **Phase 6 status: ACCEPTED WITH LIMITATIONS** (by the user, 2026-11-24,
+> after the independent audit; defects D1–D5 accepted as corrected). The
+> engine-side translation architecture is accepted. **This is not a usable
+> machine translation system:** the real MT adapter is BLOCKED pending
+> model-download approval and translation quality is unmeasured. All
+> BLOCKED, PARTIAL and DEFERRED items below remain open. Not a production
+> certification (Phase 15).
+
 Source: *Communication Engine — Phase 6, Translation Intelligence — Full
 Engineering Specification* (PDF, authoritative). Every requirement bullet
 has an ID (section prefix + number).

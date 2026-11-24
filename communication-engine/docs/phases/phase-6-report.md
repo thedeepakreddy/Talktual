@@ -1,5 +1,13 @@
 # Phase 6 report — Translation Intelligence
 
+> **Phase 6 status: ACCEPTED WITH LIMITATIONS** (by the user, 2026-11-24,
+> after the independent audit; defects D1–D5 accepted as corrected). The
+> engine-side translation architecture is accepted. **This is not a usable
+> machine translation system:** the real MT adapter is BLOCKED pending
+> model-download approval and translation quality is unmeasured. All
+> BLOCKED, PARTIAL and DEFERRED items below remain open. Not a production
+> certification (Phase 15).
+
 Branch `deepak/gallant-hamilton-wegi2i`, baseline `910b898` (main with
 Phases 1–5 merged, PR #10). Date: 2026-11-24. Environment: Linux x86_64
 cloud container, 4 vCPU, Rust 1.97.0 (MSRV 1.85.0 also run); **no audio
@@ -199,8 +207,9 @@ end with "Built by Deepak and Claude". No PR opened (only on request).
 | Every requirement reconciled in the ledger | met |
 | Report and handoff complete | met |
 
-**Recommendation: accept Phase 6 as architecturally complete with one
-blocked component.** Engine-side translation (contracts, lifecycle,
+**Decision: ACCEPTED WITH LIMITATIONS** (user acceptance after the
+independent audit, `phase-6-audit.md`). Architecturally complete with one
+blocked component. Engine-side translation (contracts, lifecycle,
 revision semantics, context, terminology, privacy, bounded execution,
 evaluation infrastructure) is implemented and verified. Translation
 **quality** is not established; do not treat Phase 6 as delivering
