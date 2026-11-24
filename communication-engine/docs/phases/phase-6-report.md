@@ -140,7 +140,9 @@ latency figures exist (no model).
 1. No real MT; translation quality unknown (the main risk for Phase 7+).
 2. Tiny authored corpus, single references, no human evaluation.
 3. Terminology is not inflection-aware; screens are heuristic.
-4. Hints use only final Phase 5 entities; no epistemic field on hints.
+4. Hints use only final, stated Phase 5 entities (no epistemic field on
+   the hint itself); hint availability depends on timing (an entity
+   observed after its utterance's translation is not used).
 5. In-process adapters are not preempted; deadlines discard late results
    and the stall detector abandons hung workers.
 6. Talktual bridge does not expose translation yet.
@@ -205,3 +207,13 @@ evaluation infrastructure) is implemented and verified. Translation
 usable machine translation until a real adapter is approved, built and
 evaluated with the existing harness. Phase 15 remains the
 production/certification gate.
+
+## 15. Independent audit addendum
+
+An independent audit of the merged state found and fixed five defects
+(stale results after a failed final, sequence reuse after reset,
+inferred and retracted observations used as hints, overstated
+`terms_applied`). See the ledger's "Audit corrections" section. After
+the fixes, `scripts/verify.sh` passes and tests are 361 default / 365
+all features / 361 MSRV, 0 failed. The recommendation is unchanged:
+accept with limitations (real MT blocked on approval).

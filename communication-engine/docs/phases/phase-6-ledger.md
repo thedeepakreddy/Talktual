@@ -98,7 +98,7 @@ the named module. **Docs**: ADR-0027/0028/0029, `architecture/translation.md`
 | RES-2 | Target language and adapter identity/version | result fields | P | VERIFIED | — |
 | RES-3 | Text and explicit status | `TranslationState` + withdrawn/unavailable events | P, R | VERIFIED | — |
 | RES-4 | Revision/sequence identity and ordering | `sequence` (gapless) | P supersede test | VERIFIED | — |
-| RES-5 | Provenance without excessive sensitive detail | `TranslationProvenance` (counts, ids) | P | VERIFIED | — |
+| RES-5 | Provenance without excessive sensitive detail | `TranslationProvenance` (counts, ids); `terms_applied` counts terms only for terminology-capable adapters, plus protected terms (audit fix D5) | P, P `audit_d5_terms_applied_reflects_the_adapter` | VERIFIED | — |
 | RES-6 | Typed error/uncertainty/diagnostics | `UncertaintyFlag`, `UnavailableReason`, `ErrorReport` | P | VERIFIED | — |
 | RES-7 | Timing/resource data | `TranslationTiming`, counters percentiles | P (fields), `eval` overhead | VERIFIED | no model timing (no model) |
 | STA-1 | Provisional | `Provisional` | P full policy | VERIFIED | — |
@@ -130,9 +130,9 @@ the named module. **Docs**: ADR-0027/0028/0029, `architecture/translation.md`
 | CTX-1 | Optional typed hints (values, entities, refs, acts, profile) | final entity hints with normalized value | P, R | PARTIAL | only entities are used (references/acts not passed: no adapter consumes them yet) |
 | CTX-2 | Bounded by size, age, privacy, relevance | `ContextPolicy`, stored-hint caps | P | VERIFIED | — |
 | CTX-3 | Context never overrides source facts | conflict drop + flag; hints not used to edit text | P | VERIFIED | — |
-| CTX-4 | Distinguish spoken from inferred | `same_utterance`; only stated entities | P | PARTIAL | hint lacks the Phase 5 epistemic kind; all admitted hints are final entities (observations) |
+| CTX-4 | Distinguish spoken from inferred | `same_utterance`; only final entities whose epistemic kind is `observation` or `user_confirmed_fact` are admitted (audit fix D3) | P `audit_d3_d4_hints_are_stated_and_follow_retraction` | PARTIAL | the hint itself carries no epistemic field (all admitted hints are stated). Before the audit, hypotheses and resolved interpretations were admitted too: the earlier row was inaccurate |
 | CTX-5 | Contradictory context conservative and observable | `context_conflict` | P | VERIFIED | — |
-| CTX-6 | No persistent personal memory | per-worker, bounded, cleared on reset | P reset, inspection | VERIFIED | — |
+| CTX-6 | No persistent personal memory | per-worker, bounded, cleared on reset; a retracted observation removes its hint (audit fix D4) | P reset, P `audit_d3_d4_…`, inspection | VERIFIED | — |
 | PRE-1 | Deterministic precedence policy, documented | ADR-0029 | P (explicit vs detected, conflict) | VERIFIED | — |
 | TRM-1 | Profile structure only as justified | `TerminologyProfile` (pair, domain, version, provenance, terms) | U | VERIFIED | — |
 | TRM-2 | Scoped to pair, profile, version, provenance | profile fields; `terminology_mismatch` | P | VERIFIED | — |
@@ -160,8 +160,8 @@ the named module. **Docs**: ADR-0027/0028/0029, `architecture/translation.md`
 | STR-1 | Streaming only where adapter/contract support it | `partials_unsupported` | P | VERIFIED | — |
 | STR-2 | Every output tied to source revision and target | result fields | R | VERIFIED | — |
 | STR-3 | Partial behaviour, replacement, stable/segment commitment, finalization, withdrawal defined | ADR-0029, `arch` | P | VERIFIED | — |
-| STR-4 | Source revisions supersede translations; stale not current | supersession + withdrawal + rejection | P, W | VERIFIED | — |
-| STR-5 | Cancellation/reset/teardown invalidate pending work | reset, stop, cancel, session close | P, W, R | VERIFIED | — |
+| STR-4 | Source revisions supersede translations; stale not current | supersession + withdrawal + rejection; an utterance is marked finished only after its final was handled, so a processor failure during a final withdraws earlier results (audit fix D1) | P, W, P `audit_d1_failed_final_withdraws_earlier_results` | VERIFIED | — |
+| STR-5 | Cancellation/reset/teardown invalidate pending work | reset, stop, cancel, session close; reset keeps per-utterance sequence counters, so post-reset results never reuse a withdrawn sequence; withdrawals are not repeated (audit fix D2) | P, W, R, P `audit_d2_reset_keeps_sequences_monotonic` | VERIFIED | a new worker (after failure or restart) still starts sequences at 0: consumers must key on the worker run (`Started`) as well |
 | STR-6 | Race tests: revisions during translation, delays, cancels, resets, failures | coalescing under slow adapter; reset mid-stream; panic | W, R | VERIFIED | — |
 | STR-7 | Measure first output, first useful output, stability delay, finalization delay | `first_result_ms`, queue/adapter ms | P fields; `eval` overhead | PARTIAL | measured only with scripted adapters; "first useful output" undefined without real MT quality |
 
@@ -241,3 +241,19 @@ the named module. **Docs**: ADR-0027/0028/0029, `architecture/translation.md`
 | SCO-1..5 | Scope control: no extra phases; deferred backlog; explicit non-compliance; approval for impactful changes; Phase 5 closed, Phase 7 future | report §12 backlog | VERIFIED | Phase 4/5 code touched only to forward events (hooks), and one Phase 2 tap API extended earlier in Phase 4 — no behaviour change |
 | DEL-1..9 | Deliverables | report, this ledger, `eval`, ADRs, tests, docs, handoff | VERIFIED | — |
 | ACC-1..12 | Acceptance criteria | report §14 | see report | — |
+
+## Audit corrections (independent completeness audit)
+
+An audit of the merged Phase 6 (`f3213e2`) found five defects. Each was
+first reproduced with a regression test that failed, then fixed.
+
+| Defect | Violates | Fix | Test |
+|---|---|---|---|
+| D1: a final marked its utterance finished before translation, so when translating it failed the processor (repeated errors, panic), `fail`/`finish` skipped the utterance and its earlier provisional or stable results stayed current | STR-4, STA-4 (stale results not current) | mark finished only after the final is handled | `audit_d1_failed_final_withdraws_earlier_results` |
+| D2: `reset` cleared the utterance table, so later revisions of an open utterance restarted at sequence 0, which is at or below the withdrawn `through_sequence` (a consumer keeping the highest sequence ignores them) | STR-5, STA-4 | keep sequence counters; reset only revision state; deduplicate withdrawals | `audit_d2_reset_keeps_sequences_monotonic` |
+| D3: hypotheses and resolved interpretations were admitted as hints | CTX-4 | admit only `observation`/`user_confirmed_fact` | `audit_d3_d4_…` |
+| D4: a retracted Phase 5 observation stayed as a hint (stale context); and provisional observations could evict pending finals from the worker's 64-slot hint queue | CTX-2/CTX-6, bounded context | hints are keyed by observation id; a new version replaces and a retraction removes; the worker queues only final and retracted observations | `audit_d3_d4_…` (processor); the worker filter is covered by inspection only |
+| D5: `terms_applied` counted terms found in the output even when the adapter had no terminology capability | RES-5 (provenance honesty) | count them only for terminology-capable adapters | `audit_d5_terms_applied_reflects_the_adapter` |
+
+After the fixes: `scripts/verify.sh` all gates passed; tests 361 default
+/ 365 all features / 361 on MSRV 1.85.0, 0 failed (was 357/361/357).

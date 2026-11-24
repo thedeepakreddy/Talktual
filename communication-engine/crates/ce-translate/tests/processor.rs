@@ -905,3 +905,232 @@ fn transcripts_and_observations_are_not_mutated() {
     p.process(&r, 0.0, &mut out).unwrap();
     assert_eq!(r, before, "the transcript revision is read-only");
 }
+
+// ------------------------------------------------------------------ audit regressions
+
+fn entity_obs(
+    utt: u64,
+    mention: &str,
+    status: ce_core::semantic::ObservationStatus,
+    epistemic: ce_core::semantic::Epistemic,
+) -> ce_core::semantic::SemanticObservation {
+    use ce_core::semantic::{
+        Certainty, Entity, Evidence, EvidenceKind, ObservationId, ObservationPayload, Provenance,
+        SemanticObservation, SourceRef, TextSpan, Uncertainty,
+    };
+    SemanticObservation {
+        id: ObservationId(format!("o{utt}-{mention}")),
+        schema_version: 1,
+        version: 1,
+        payload: ObservationPayload::Entity(Entity {
+            category: "time".into(),
+            mention: mention.into(),
+            normalized: None,
+            attributes: vec![],
+        }),
+        status,
+        epistemic,
+        uncertainty: Uncertainty {
+            level: Certainty::High,
+            score: None,
+            calibrated: false,
+        },
+        evidence: vec![Evidence {
+            kind: EvidenceKind::Explicit,
+            span: None,
+            context_item: None,
+            rule: "x".into(),
+        }],
+        source: SourceRef {
+            stream: stream(),
+            utterance: utt,
+            revision: 0,
+            revision_status: RevisionStatus::Final,
+            span: TextSpan { start: 0, end: 1 },
+            committed: true,
+        },
+        provenance: Provenance {
+            adapter: "r".into(),
+            adapter_version: "1".into(),
+            config_fingerprint: "f".into(),
+            profile: None,
+            locality: Locality::InProcess,
+        },
+        produced_at: Default::default(),
+    }
+}
+
+/// D1: a final whose translation fails the processor must not leave the
+/// utterance's earlier results current.
+#[test]
+fn audit_d1_failed_final_withdraws_earlier_results() {
+    let f = echo().with_faults(Faults {
+        error_at: vec![1],
+        ..Faults::default()
+    });
+    let mut c = cfg(PartialPolicy::Full);
+    c.budget.max_consecutive_errors = 1;
+    let mut p = processor(&f, c);
+    let mut out = Vec::new();
+    p.process(&rev(0, 0, RevisionStatus::Partial, "", "a"), 0.0, &mut out)
+        .unwrap();
+    assert!(matches!(out[0], TranslationEvent::Result(_)));
+    let err = p.process(&rev(0, 1, RevisionStatus::Final, "a b", ""), 0.0, &mut out);
+    assert!(err.is_err(), "repeated errors fail the processor");
+    p.fail(&err.unwrap_err(), &mut out);
+    assert!(
+        out.iter().any(|e| matches!(
+            e,
+            TranslationEvent::Withdrawn {
+                utterance: 0,
+                through_sequence: Some(0),
+                ..
+            }
+        )),
+        "the provisional result of utterance 0 must be withdrawn: {:?}",
+        out.iter().map(TranslationEvent::kind).collect::<Vec<_>>()
+    );
+}
+
+/// D2: after a reset, results never restart at a sequence a consumer has
+/// already seen (or withdrawn).
+#[test]
+fn audit_d2_reset_keeps_sequences_monotonic() {
+    let mut p = processor(&echo(), cfg(PartialPolicy::Full));
+    let mut out = Vec::new();
+    for n in 0..3 {
+        p.process(
+            &rev(
+                0,
+                n,
+                RevisionStatus::Partial,
+                "",
+                &"w ".repeat(n as usize + 1),
+            ),
+            0.0,
+            &mut out,
+        )
+        .unwrap();
+    }
+    p.reset(&mut out);
+    let withdrawn = out.iter().find_map(|e| match e {
+        TranslationEvent::Withdrawn {
+            through_sequence, ..
+        } => *through_sequence,
+        _ => None,
+    });
+    assert_eq!(withdrawn, Some(2));
+    out.clear();
+    p.process(
+        &rev(0, 3, RevisionStatus::Final, "w w w w", ""),
+        0.0,
+        &mut out,
+    )
+    .unwrap();
+    for e in &out {
+        if let TranslationEvent::Result(r) = e {
+            assert!(
+                r.sequence > 2,
+                "sequence {} reuses a withdrawn number",
+                r.sequence
+            );
+        }
+    }
+}
+
+/// D3/D4: only stated (not inferred) final entities become hints, and a
+/// retracted one is removed.
+#[test]
+fn audit_d3_d4_hints_are_stated_and_follow_retraction() {
+    use ce_core::semantic::{Epistemic, ObservationStatus};
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let s2 = seen.clone();
+    let f = ScriptedFactory::new(scripted_capabilities("t", &[("en", "es")]), move |r| {
+        s2.lock().unwrap().push(
+            r.hints
+                .iter()
+                .map(|h| h.mention.clone())
+                .collect::<Vec<_>>(),
+        );
+        AdapterOutcome::Translated {
+            text: "ok".into(),
+            score: None,
+            detected_source: None,
+        }
+    });
+    let mut p = processor(&f, cfg(PartialPolicy::Off));
+    p.observe(&entity_obs(
+        0,
+        "seven",
+        ObservationStatus::Final,
+        Epistemic::Observation,
+    ));
+    p.observe(&entity_obs(
+        0,
+        "maybe",
+        ObservationStatus::Final,
+        Epistemic::Hypothesis,
+    ));
+    p.observe(&entity_obs(
+        0,
+        "linked",
+        ObservationStatus::Final,
+        Epistemic::ResolvedInterpretation,
+    ));
+    p.observe(&entity_obs(
+        0,
+        "eight",
+        ObservationStatus::Final,
+        Epistemic::Observation,
+    ));
+    p.observe(&entity_obs(
+        0,
+        "eight",
+        ObservationStatus::Retracted,
+        Epistemic::Observation,
+    ));
+    run(&mut p, &[rev(1, 0, RevisionStatus::Final, "x", "")]);
+    assert_eq!(seen.lock().unwrap()[0], vec!["seven".to_string()]);
+}
+
+/// D5: terms are reported as applied only by an adapter that applies them
+/// (or when they were protected).
+#[test]
+fn audit_d5_terms_applied_reflects_the_adapter() {
+    let mem = MemoryFactory::new(
+        TranslationMemory::new(&[ce_translate::memory::Segment {
+            source_language: tag("en"),
+            target_language: tag("es"),
+            source: "where is check-in".into(),
+            target: "dónde está el registro".into(),
+            provenance: "t".into(),
+        }])
+        .unwrap(),
+    );
+    let c = TranslationConfig {
+        terminology: Some("hospitality-en-es".into()),
+        ..cfg(PartialPolicy::Off)
+    };
+    let mut p = TranslationProcessor::new(ProcessorSetup {
+        stream: stream(),
+        adapters: vec![slot(&mem, &c)],
+        config: c,
+        terminology: Some(hotel()),
+    })
+    .unwrap();
+    let evs = run(
+        &mut p,
+        &[rev(0, 0, RevisionStatus::Final, "where is check-in", "")],
+    );
+    let TranslationEvent::Result(r) = &evs[0] else {
+        panic!("{evs:?}")
+    };
+    assert_eq!(
+        r.provenance.terms_applied, 0,
+        "the memory adapter applies no terminology"
+    );
+    assert!(
+        r.flags.is_empty(),
+        "the target term is present: verified, not applied"
+    );
+}

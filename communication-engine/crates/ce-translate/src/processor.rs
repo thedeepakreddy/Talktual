@@ -32,7 +32,10 @@ use std::time::Instant;
 use ce_core::error::ErrorReport;
 use ce_core::ids::AudioStreamId;
 use ce_core::privacy::RedactionPolicy;
-use ce_core::semantic::{ObservationPayload, ObservationStatus, ProfileRef, SemanticObservation};
+use ce_core::semantic::{
+    Epistemic, ObservationId, ObservationPayload, ObservationStatus, ProfileRef,
+    SemanticObservation,
+};
 use ce_core::speech::{LanguageDecision, LanguageTag, RevisionStatus, TranscriptRevision};
 use ce_core::translation::{
     PartialPolicy, SourceLanguagePolicy, SourceLanguageProvenance, SourceLanguageRef, Term,
@@ -89,6 +92,9 @@ struct Utt {
     last_revision: Option<u32>,
     finished: bool,
     next_sequence: u32,
+    /// `next_sequence` at the last withdrawal (nothing newer to withdraw
+    /// while equal).
+    withdrawn_at: u32,
     stable_chars: u32,
     first_input: Option<Instant>,
 }
@@ -104,7 +110,7 @@ pub struct TranslationProcessor {
     terminology: Option<TerminologyProfile>,
     term_ref: Option<ProfileRef>,
     utterances: BTreeMap<u64, Utt>,
-    hints: VecDeque<ContextHint>,
+    hints: VecDeque<(ObservationId, ContextHint)>,
     counters: TranslationCounters,
     queue_ms: Reservoir,
     adapter_ms: Reservoir,
@@ -169,6 +175,14 @@ pub fn check_setup(setup: &ProcessorSetup) -> Result<(), CeError> {
 
 fn hint_from(o: &SemanticObservation) -> Option<ContextHint> {
     if o.status != ObservationStatus::Final {
+        return None;
+    }
+    // Only stated or user-confirmed claims become context; hypotheses and
+    // resolved interpretations are inferences (spoken vs inferred, CTX-4).
+    if !matches!(
+        o.epistemic,
+        Epistemic::Observation | Epistemic::UserConfirmedFact
+    ) {
         return None;
     }
     let ObservationPayload::Entity(e) = &o.payload else {
@@ -283,17 +297,19 @@ impl TranslationProcessor {
         });
     }
 
-    /// Admit a Phase 5 observation as a context hint (final entities only;
-    /// bounded; most recent kept).
+    /// Admit a Phase 5 observation as a context hint (final, stated
+    /// entities only; bounded; most recent kept). A newer version of an
+    /// observation replaces the older one; a retraction removes it.
     pub fn observe(&mut self, o: &SemanticObservation) {
         if !self.cfg.context.use_semantic || o.source.stream != self.stream {
             return;
         }
+        self.hints.retain(|(id, _)| *id != o.id);
         if let Some(h) = hint_from(o) {
             if self.hints.len() == MAX_STORED_HINTS {
                 self.hints.pop_front();
             }
-            self.hints.push_back(h);
+            self.hints.push_back((o.id.clone(), h));
         }
     }
 
@@ -314,13 +330,16 @@ impl TranslationProcessor {
     }
 
     fn withdraw(&mut self, u: u64, reason: WithdrawReason, out: &mut Vec<TranslationEvent>) {
-        let seq = self
+        let (seq, done) = self
             .utterances
             .get(&u)
-            .map(|s| s.next_sequence)
-            .unwrap_or(0);
-        if seq == 0 && reason != WithdrawReason::SourceCancelled {
+            .map(|s| (s.next_sequence, s.withdrawn_at))
+            .unwrap_or((0, 0));
+        if seq == done && reason != WithdrawReason::SourceCancelled {
             return;
+        }
+        if let Some(s) = self.utterances.get_mut(&u) {
+            s.withdrawn_at = seq;
         }
         self.counters.withdrawals += 1;
         out.push(TranslationEvent::Withdrawn {
@@ -401,7 +420,7 @@ impl TranslationProcessor {
         let lower = text.to_lowercase();
         let mut out = Vec::new();
         let mut chars = 0u32;
-        for h in self.hints.iter().rev() {
+        for (_, h) in self.hints.iter().rev() {
             let distance = utterance.saturating_sub(h.utterance);
             if h.utterance > utterance || distance > u64::from(c.max_utterance_distance) {
                 continue;
@@ -482,10 +501,15 @@ impl TranslationProcessor {
                 PartialPolicy::Full => (r.text.full(), TranslationState::Provisional),
             },
         };
+        // Mark the utterance finished only once its final was handled
+        // (translated or reported unavailable): if translation fails the
+        // processor (error limit, panic), `fail` must still withdraw the
+        // utterance's earlier results.
+        self.translate(r, &text, state_out, queued_ms, out)?;
         if r.status == RevisionStatus::Final {
             self.utt(u).finished = true;
         }
-        self.translate(r, &text, state_out, queued_ms, out)
+        Ok(())
     }
 
     #[allow(clippy::too_many_lines)]
@@ -730,7 +754,7 @@ impl TranslationProcessor {
                     config_fingerprint: self.fingerprint.clone(),
                     locality: caps.locality,
                     terminology: self.term_ref.clone(),
-                    terms_applied: applied + protected.terms,
+                    terms_applied: (if caps.terminology { applied } else { 0 }) + protected.terms,
                     context_hints: hints.len() as u32,
                     protected_spans: protected.spans.len() as u32,
                     fallback_from: (idx > 0).then(|| self.adapters[0].capabilities.adapter.clone()),
@@ -758,7 +782,14 @@ impl TranslationProcessor {
         for u in open {
             self.withdraw(u, WithdrawReason::Reset, out);
         }
-        self.utterances.clear();
+        // Forget revision state but keep each utterance's sequence counter,
+        // so later results never reuse a number a consumer has already seen
+        // or had withdrawn.
+        for s in self.utterances.values_mut() {
+            s.last_revision = None;
+            s.stable_chars = 0;
+            s.first_input = None;
+        }
         self.hints.clear();
         for a in &mut self.adapters {
             a.adapter.reset();
