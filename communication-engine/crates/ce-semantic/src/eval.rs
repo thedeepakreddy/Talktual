@@ -543,7 +543,7 @@ fn fingerprint_finals(f: &[Vec<SemanticObservation>]) -> String {
                         ObservationPayload::Act(a) => {
                             format!("{:?}|{:?}", a.decision, a.alternatives)
                         }
-                        ObservationPayload::Relation(r) => r.kind.clone(),
+                        ObservationPayload::Relation(r) => r.relation.clone(),
                     };
                     format!(
                         "{}:{}-{}:{}:{:?}",

@@ -138,7 +138,7 @@ try {
     console.log(`      log: ${lines.map((l) => `${JSON.stringify(l.text)} firstPartial=${l.firstPartialAfterUtteranceStartMs}ms afterRelease=${l.finalAfterReleaseMs ?? '–'}ms`).join('; ')}`);
   });
 
-  await step('Engine Lab: all four phases live from the real engine (hold to talk)', async () => {
+  await step('Engine Lab: all five phases live from the real engine (hold to talk)', async () => {
     const lab = await host.context.newPage();
     const labErrors = [];
     lab.on('pageerror', (e) => labErrors.push(e.message));
@@ -161,6 +161,13 @@ try {
     assert.match(text, /ce\.vad\.spectral/, 'Phase 3 detector shown');
     assert.match(text, /16000 Hz · 1 ch · i16|48000 Hz · 1 ch · i16|44100 Hz · 1 ch · i16/, 'Phase 2 negotiated format shown');
     assert.match(text, /healthy|running/, 'Phase 1 health shown');
+    const sem = lab.getByRole('list', { name: 'Semantic observations' });
+    await sem.waitFor({ timeout: 10000 });
+    const semText = await sem.innerText();
+    assert.match(semText, /act:/, 'Phase 5 act observation (or abstention) shown');
+    assert.match(semText, /final/, 'Phase 5 observations finalized with the utterance');
+    assert.match(text, /ce\.semantic\.rules/, 'Phase 5 adapter shown');
+    console.log(`      lab semantic: ${JSON.stringify(semText.split('\n').slice(0, 4).join(' | '))}`);
     const events = await lab.getByRole('list', { name: 'Events' }).locator('li').count();
     assert.ok(events > 10, `event log has ${events} entries`);
     console.log(`      lab finals: ${JSON.stringify(await finals.innerText())}`);

@@ -20,7 +20,11 @@ export interface EngineLab {
   url: string;
   connect(url?: string): void;
   disconnect(): void;
-  start(opts: { mode: LabMode; analysis: boolean; lang: string }): Promise<void>;
+  start(opts: { mode: LabMode; analysis: boolean; lang: string; semantics?: boolean }): Promise<void>;
+  /** Phase 5: clear the semantic context. */
+  resetContext(): void;
+  /** Phase 5: record that the user confirmed an observation. */
+  confirm(observation: string): void;
   stop(): void;
   abort(): void;
   reset(): void;
@@ -102,7 +106,7 @@ export function useEngineLab(deps: LabDeps = {}): EngineLab {
   }, [stopCapture]);
 
   const start = useCallback(
-    async ({ mode, analysis, lang }: { mode: LabMode; analysis: boolean; lang: string }) => {
+    async ({ mode, analysis, lang, semantics = false }: { mode: LabMode; analysis: boolean; lang: string; semantics?: boolean }) => {
       if (!ws.current || ws.current.readyState !== 1 || capture.current) return;
       dispatch({ type: 'session-start' });
       ready.current = false;
@@ -127,6 +131,7 @@ export function useEngineLab(deps: LabDeps = {}): EngineLab {
         segmentation: mode === 'hands-free' ? 'activity' : 'continuous',
         diagnostics: true,
         analysis,
+        semantics,
       });
       // Flush what was captured while the bridge was getting ready.
       const flush = () => {
@@ -157,11 +162,13 @@ export function useEngineLab(deps: LabDeps = {}): EngineLab {
 
   const reset = useCallback(() => send({ type: 'reset' }), [send]);
   const refreshHealth = useCallback(() => send({ type: 'health' }), [send]);
+  const resetContext = useCallback(() => send({ type: 'reset-context' }), [send]);
+  const confirm = useCallback((observation: string) => send({ type: 'confirm', observation }), [send]);
 
   useEffect(() => () => {
     capture.current?.stop();
     ws.current?.close();
   }, []);
 
-  return { state, url: urlRef.current, connect, disconnect, start, stop, abort, reset, refreshHealth };
+  return { state, url: urlRef.current, connect, disconnect, start, stop, abort, reset, refreshHealth, resetContext, confirm };
 }

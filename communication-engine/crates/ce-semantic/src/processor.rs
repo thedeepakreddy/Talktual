@@ -150,7 +150,7 @@ fn same_class(d: &Draft, o: &SemanticObservation) -> bool {
         (DraftPayload::Entity(a), ObservationPayload::Entity(b)) => a.category == b.category,
         (DraftPayload::Reference(_), ObservationPayload::Reference(_)) => true,
         (DraftPayload::Act(_), ObservationPayload::Act(_)) => true,
-        (DraftPayload::Relation { kind, .. }, ObservationPayload::Relation(r)) => *kind == r.kind,
+        (DraftPayload::Relation { kind, .. }, ObservationPayload::Relation(r)) => *kind == r.relation,
         _ => false,
     }
 }
@@ -301,7 +301,7 @@ impl SemanticProcessor {
                 matches!(&r.resolution, Resolution::Resolved { target } if items.contains(target))
             }
             ObservationPayload::Relation(r) => {
-                r.kind == "refers_to" && items.iter().any(|i| i.0 == r.to)
+                r.relation == "refers_to" && items.iter().any(|i| i.0 == r.to)
             }
             _ => false,
         };
@@ -669,7 +669,7 @@ impl SemanticProcessor {
                 DraftPayload::Act(a) => ObservationPayload::Act(a),
                 DraftPayload::Relation { kind, from, to } => {
                     ObservationPayload::Relation(Relation {
-                        kind,
+                        relation: kind,
                         from: ids[pos[&from]].clone(),
                         to: match to {
                             RelationTarget::Draft(t) => ids[pos[&t]].0.clone(),

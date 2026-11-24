@@ -270,7 +270,7 @@ pub struct Entity {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Relation {
     /// Relation type (e.g. `quantity_of`, `refers_to`).
-    pub kind: String,
+    pub relation: String,
     /// Source observation.
     pub from: ObservationId,
     /// Target observation or context item.
@@ -378,9 +378,10 @@ pub struct CommunicativeAct {
     pub alternatives: Vec<String>,
 }
 
-/// The payload of an observation.
+/// The payload of an observation (tagged `type`: payloads have their own
+/// `kind` fields).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "kind")]
+#[serde(rename_all = "snake_case", tag = "type")]
 pub enum ObservationPayload {
     /// Entity.
     Entity(Entity),
@@ -934,7 +935,7 @@ mod tests {
     fn observations_round_trip_with_explicit_tags() {
         let o = observation();
         let v = serde_json::to_value(&o).unwrap();
-        assert_eq!(v["payload"]["kind"], "entity");
+        assert_eq!(v["payload"]["type"], "entity");
         assert_eq!(v["payload"]["normalized"]["type"], "integer");
         assert_eq!(v["epistemic"], "observation");
         assert_eq!(v["uncertainty"]["level"], "high");
@@ -963,6 +964,36 @@ mod tests {
         assert_eq!(ctx.data_class(), DataClass::Operational);
         let text = serde_json::to_string(&ctx).unwrap();
         assert!(!text.contains("TWO"), "context events carry no content");
+    }
+
+    #[test]
+    fn every_payload_kind_round_trips_without_tag_clashes() {
+        let rel = ObservationPayload::Relation(Relation {
+            relation: "on_day".into(),
+            from: ObservationId("u1.entity.0".into()),
+            to: "u1.entity.1".into(),
+        });
+        let v = serde_json::to_value(&rel).unwrap();
+        assert_eq!(v["type"], "relation");
+        assert_eq!(v["relation"], "on_day");
+        assert_eq!(serde_json::from_value::<ObservationPayload>(v).unwrap(), rel);
+        let refr = ObservationPayload::Reference(ReferenceResolution {
+            mention: "IT".into(),
+            kind: ReferenceKind::Pronoun,
+            candidates: vec![],
+            resolution: Resolution::Unresolved { reason: "x".into() },
+        });
+        let text = serde_json::to_string(&refr).unwrap();
+        let back: ObservationPayload = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, refr, "{text}");
+        let act = ObservationPayload::Act(CommunicativeAct {
+            taxonomy: "ce.acts".into(),
+            taxonomy_version: "1.0.0".into(),
+            decision: ActDecision::Labeled { label: "request".into() },
+            alternatives: vec![],
+        });
+        let text = serde_json::to_string(&act).unwrap();
+        assert_eq!(serde_json::from_str::<ObservationPayload>(&text).unwrap(), act);
     }
 
     #[test]

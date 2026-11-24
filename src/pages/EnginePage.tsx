@@ -1,4 +1,4 @@
-// Engine Lab: test every Communication Engine phase from the browser.
+// Engine Lab: test every Communication Engine phase (1–5) from the browser.
 // Talks to the local Talktual ↔ CE bridge; the microphone is used only between
 // Start/hold and Stop/release, after the user has read what happens to it.
 
@@ -183,7 +183,60 @@ function Phase4({ s }: { s: LabState }) {
   );
 }
 
-const TOPICS = ['all', 'session', 'audio', 'analysis', 'speech'] as const;
+function Phase5({ s, onConfirm, onResetContext }: { s: LabState; onConfirm: (id: string) => void; onResetContext: () => void }) {
+  const st = s.semantic;
+  const c = st?.counters ?? {};
+  const current = s.observations.filter((o) => o.status !== 'retracted');
+  const retracted = s.observations.filter((o) => o.status === 'retracted');
+  return (
+    <Section title="Phase 5 · Semantic & contextual interpretation">
+      <p className="py-3 text-label text-fg-muted">
+        Interpretations are hypotheses from deterministic English rules running in the bridge, linked to the transcript revision they came from. They are not facts until you confirm one. Context lives only for this test session.
+      </p>
+      {s.observations.length === 0 ? (
+        <p className="pb-3 text-body text-fg-subtle">{st ? 'No observations yet. Try “set a timer for twenty five minutes” or “the total is forty dollars … can you split it”.' : 'Turn on “Interpret meaning” and start a test.'}</p>
+      ) : (
+        <ol className="space-y-2 py-3" aria-label="Semantic observations">
+          {[...current, ...retracted].slice(0, 20).map((o) => (
+            <li key={o.id} className="flex items-start justify-between gap-3 text-body">
+              <span className={o.status === 'retracted' ? 'text-fg-subtle line-through' : 'text-fg'}>
+                <span className="font-[600]">{o.label}</span>
+                {o.mention && <> · “{o.mention}”</>}
+                {o.value && <> · {o.value}</>}
+                <span className="block text-label text-fg-muted">
+                  #{o.utterance} rev {o.revision} · {o.status} · {o.epistemic.replace(/_/g, ' ')} · certainty {o.certainty} · v{o.version} ({o.change})
+                </span>
+              </span>
+              {o.kind === 'entity' && o.status !== 'retracted' && o.epistemic !== 'user_confirmed_fact' && (
+                <Button size="sm" variant="ghost" onClick={() => onConfirm(o.id)} aria-label={`Confirm ${o.label}`}>
+                  Confirm
+                </Button>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      <Grid>
+        <Stat label="Adapter" value={st ? `${st.capabilities?.adapter} ${st.capabilities?.version}` : null} />
+        <Stat label="Runs" value={st?.capabilities?.locality?.replace(/_/g, ' ')} hint="Where transcript text is processed" />
+        <Stat label="Context items" value={st?.context ? `${st.context.items} (${st.context.bytes} B)` : s.contextItems || null} />
+        <Stat label="Inputs / processed / coalesced" value={c.inputs != null ? `${c.inputs} / ${c.processed} / ${c.coalesced}` : null} />
+        <Stat label="New / updated / retracted" value={c.observations_new != null ? `${c.observations_new} / ${c.updated} / ${c.retracted}` : null} />
+        <Stat label="Stale rejected" value={c.stale_rejected} />
+        <Stat label="Processing per revision" value={ms(c.processing_ms)} />
+        <Stat label="First observation" value={ms(c.first_observation_ms)} hint="Audio time from utterance start" />
+        <Stat label="Config" value={st?.config_fingerprint} />
+      </Grid>
+      <div className="flex flex-wrap gap-2 pb-4">
+        <Button size="md" disabled={!s.running || !st} onClick={onResetContext}>
+          Clear context
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
+const TOPICS = ['all', 'session', 'audio', 'analysis', 'speech', 'semantic'] as const;
 type Topic = (typeof TOPICS)[number];
 
 function EventLog({ s }: { s: LabState }) {
@@ -220,12 +273,13 @@ export function EnginePage({ language, deps }: { language: { code: string; bcp47
   const [url, setUrl] = useState(CE_BRIDGE_URL);
   const [mode, setMode] = useState<LabMode>('push-to-talk');
   const [analysis, setAnalysis] = useState(true);
+  const [semantics, setSemantics] = useState(true);
   const connected = s.connection === 'connected';
   const english = language.code.toLowerCase().startsWith('en');
-  const startOpts = { mode, analysis: mode === 'hands-free' || analysis, lang: english ? language.bcp47 : 'en-US' };
+  const startOpts = { mode, analysis: mode === 'hands-free' || analysis, lang: english ? language.bcp47 : 'en-US', semantics };
 
   return (
-    <Page wide eyebrow="Communication Engine" title="Engine Lab" description="Test every engine phase on this computer: runtime, audio capture, audio intelligence, speech recognition and language.">
+    <Page wide eyebrow="Communication Engine" title="Engine Lab" description="Test every engine phase on this computer: runtime, audio capture, audio intelligence, speech recognition and language, and semantic interpretation.">
       <Section title="Bridge">
         <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-end">
           <label className="min-w-0 flex-1">
@@ -283,6 +337,13 @@ export function EnginePage({ language, deps }: { language: { code: string; bcp47
           disabled={mode === 'hands-free' || s.running}
           onChange={setAnalysis}
         />
+        <Switch
+          label="Interpret meaning (Phase 5)"
+          description="Numbers, times, dates, amounts, references like “it” and the kind of utterance, on the bridge with on-device rules."
+          checked={semantics}
+          disabled={s.running}
+          onChange={setSemantics}
+        />
         <p className="py-3 text-label text-fg-muted">
           Your microphone is used only while you hold the button (or between Start and Stop). Audio goes to the bridge on this computer, which transcribes it with an on-device English model. Nothing is stored unless the bridge was started with <code>--log-finals</code>.
         </p>
@@ -321,6 +382,7 @@ export function EnginePage({ language, deps }: { language: { code: string; bcp47
         {s.warnings.length > 0 && <p className="pb-3 text-label text-fg-muted">Warnings: {s.warnings.join(', ')}</p>}
       </Section>
 
+      <Phase5 s={s} onConfirm={lab.confirm} onResetContext={lab.resetContext} />
       <Phase4 s={s} />
       <Phase3 s={s} />
       <Phase2 s={s} />

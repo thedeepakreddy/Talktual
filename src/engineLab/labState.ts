@@ -5,6 +5,8 @@
 //   Phase 2 — the capture stream (state, negotiated format, counters)
 //   Phase 3 — audio intelligence (activity, segments, endpoints, quality, conditions)
 //   Phase 4 — recognition (partials, commits, finals) and language observations
+//   Phase 5 — semantic observations (entities, references, acts) linked to
+//             transcript revisions, their lifecycle and the context
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Json = any;
@@ -33,6 +35,23 @@ export interface SegmentLine {
   segment: number;
   durationMs: number;
   reason: string;
+}
+
+/** One semantic observation as the lab shows it (latest version). */
+export interface ObservationLine {
+  id: string;
+  utterance: number;
+  revision: number;
+  kind: string;
+  /** Category, act label or reference outcome. */
+  label: string;
+  mention: string;
+  value: string;
+  status: string;
+  epistemic: string;
+  certainty: string;
+  version: number;
+  change: string;
 }
 
 export interface LabState {
@@ -65,6 +84,10 @@ export interface LabState {
   streamLanguage: Json | null;
   recognition: Json | null;
   warnings: string[];
+  // Phase 5
+  observations: ObservationLine[];
+  semantic: Json | null;
+  contextItems: number;
 }
 
 export const MAX_EVENTS = 200;
@@ -96,6 +119,9 @@ export const initialLabState: LabState = {
   streamLanguage: null,
   recognition: null,
   warnings: [],
+  observations: [],
+  semantic: null,
+  contextItems: 0,
 };
 
 export type LabAction =
@@ -109,6 +135,76 @@ function decision(obs: Json): string {
   const d = obs?.decision;
   if (!d) return '—';
   return d.decision === 'identified' ? d.language : `abstained (${d.reason})`;
+}
+
+/** A compact rendering of a normalized value (content: shown in its panel, never in the log). */
+export function normalizedText(n: Json): string {
+  if (!n) return '';
+  const v = n.value;
+  switch (n.type) {
+    case 'time_of_day':
+      return `${String(v.hour).padStart(2, '0')}:${String(v.minute).padStart(2, '0')}${v.pm == null ? ' (am/pm unknown)' : v.pm ? ' pm' : ' am'}`;
+    case 'money':
+      return `${v.amount} ${v.currency}`;
+    case 'quantity':
+      return `${v.amount} ${v.unit}`;
+    case 'duration':
+      return `${v} s`;
+    case 'relative_day':
+      return v === 0 ? 'today' : `${v > 0 ? '+' : ''}${v} day(s)`;
+    case 'weekday':
+      return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][v] ?? String(v);
+    case 'date':
+      return [v.year ?? '????', v.month ?? '??', v.day ?? '??'].join('-');
+    case 'percentage':
+      return `${v}%`;
+    default:
+      return typeof v === 'object' ? JSON.stringify(v) : String(v);
+  }
+}
+
+function observationLine(change: string, o: Json): ObservationLine {
+  const p = o.payload ?? {};
+  let label = p.type;
+  let mention = '';
+  let value = '';
+  switch (p.type) {
+    case 'entity':
+      label = p.category;
+      mention = p.mention;
+      value = normalizedText(p.normalized);
+      break;
+    case 'reference': {
+      const r = p.resolution ?? {};
+      label = `reference: ${r.outcome}`;
+      mention = p.mention;
+      const target = r.outcome === 'resolved' ? p.candidates?.find((c: Json) => c.item === r.target) : null;
+      value = target ? `→ ${target.mention}` : r.outcome === 'ambiguous' ? `${p.candidates?.length ?? 0} candidates` : (r.reason ?? '').replace(/_/g, ' ');
+      break;
+    }
+    case 'act':
+      label = p.decision?.decision === 'labeled' ? `act: ${p.decision.label}` : `act: abstained (${String(p.decision?.reason ?? '').replace(/_/g, ' ')})`;
+      value = p.alternatives?.length ? `cues: ${p.alternatives.join(', ')}` : '';
+      break;
+    case 'relation':
+      label = `relation: ${p.relation}`;
+      value = `${p.from} → ${p.to}`;
+      break;
+  }
+  return {
+    id: o.id,
+    utterance: o.source?.utterance ?? 0,
+    revision: o.source?.revision ?? 0,
+    kind: p.type,
+    label,
+    mention,
+    value,
+    status: o.status,
+    epistemic: o.epistemic,
+    certainty: o.uncertainty?.level ?? '',
+    version: o.version,
+    change,
+  };
 }
 
 /** One-line, content-free summary for the event log (no transcript text). */
@@ -154,6 +250,22 @@ export function summarize(topic: string, kind: string, d: Json): string {
       return `${d.context?.context ?? 'gap'}, resumes at frame ${d.resume_frame}`;
     case 'queue_pressure':
       return `backlog ${d.backlog}, dropped ${d.dropped_total}`;
+    case 'observation': {
+      const o = d.observation ?? {};
+      const p = o.payload ?? {};
+      const what = p.type === 'entity' ? p.category : p.type === 'act' ? (p.decision?.label ?? 'abstained') : p.type === 'reference' ? p.resolution?.outcome : p.relation;
+      return `${d.change} ${p.type} ${what} · ${o.status}, ${o.epistemic?.replace(/_/g, ' ')}, ${o.uncertainty?.level} · u${o.source?.utterance} rev ${o.source?.revision}`;
+    }
+    case 'utterance_finalized':
+      return `utterance ${d.utterance}: ${d.observations} observation(s)`;
+    case 'utterance_cancelled':
+      return `utterance ${d.utterance}`;
+    case 'context':
+      return `${d.change}${d.item ? ` ${d.item}` : ''} · ${d.size?.items} item(s), ${d.size?.bytes} B`;
+    case 'input_rejected':
+      return `utterance ${d.utterance} rev ${d.revision}: ${d.reason}`;
+    case 'degraded':
+      return String(d.reason ?? '').replace(/_/g, ' ');
     case 'failed':
       return d.error?.code ?? 'failed';
     case 'stopped':
@@ -194,6 +306,16 @@ function ceEvent(s: LabState, m: Json, at: number): LabState {
       break;
     case 'language_observed':
       next.streamLanguage = d.observation;
+      break;
+    case 'observation': {
+      if (m.topic !== 'semantic') break;
+      const line = observationLine(d.change, d.observation ?? {});
+      const rest = s.observations.filter((o) => o.id !== line.id);
+      next.observations = [line, ...rest].slice(0, MAX_LINES);
+      break;
+    }
+    case 'context':
+      if (m.topic === 'semantic') next.contextItems = d.size?.items ?? 0;
       break;
     case 'transcript': {
       next.revisions = s.revisions + 1;
@@ -252,6 +374,9 @@ export function labReducer(s: LabState, a: LabAction): LabState {
         streamLanguage: null,
         warnings: [],
         error: null,
+        observations: [],
+        semantic: null,
+        contextItems: 0,
       };
     case 'message': {
       const m = a.msg;
@@ -265,7 +390,7 @@ export function labReducer(s: LabState, a: LabAction): LabState {
         case 'ce-event':
           return ceEvent(s, m, a.at);
         case 'status':
-          return { ...s, audio: m.audio ?? s.audio, analysis: m.analysis ?? s.analysis, recognition: m.recognition ?? s.recognition, metrics: m.metrics ?? s.metrics };
+          return { ...s, audio: m.audio ?? s.audio, analysis: m.analysis ?? s.analysis, recognition: m.recognition ?? s.recognition, semantic: m.semantic ?? s.semantic, metrics: m.metrics ?? s.metrics };
         case 'warning':
           return { ...s, warnings: [m.kind, ...s.warnings].slice(0, 10) };
         case 'error':

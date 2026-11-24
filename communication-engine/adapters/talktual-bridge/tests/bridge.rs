@@ -363,6 +363,10 @@ async fn semantics_interpret_the_session_transcripts_when_asked() {
     send_json(&mut ws, serde_json::json!({"type":"reset-context"})).await;
     send_json(&mut ws, serde_json::json!({"type":"stop"})).await;
     let msgs = collect(&mut ws).await;
+    if let Ok(path) = std::env::var("BRIDGE_SEMANTIC_SAMPLE_OUT") {
+        let lines: Vec<String> = msgs.iter().map(|m| m.to_string()).collect();
+        std::fs::write(path, lines.join("\n")).unwrap();
+    }
     assert!(
         msgs.iter().all(|m| m["type"] != "error"),
         "{:?}",
@@ -445,7 +449,7 @@ async fn the_real_model_and_semantics_find_the_time_in_a_fixture() {
     for o in &obs {
         println!(
             "final observation: {} {} {} {}",
-            o["payload"]["kind"],
+            o["payload"]["type"],
             o["payload"]["category"],
             o["payload"]["mention"],
             o["payload"]["normalized"]

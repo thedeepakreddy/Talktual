@@ -105,7 +105,7 @@ fn changes(ev: &[SemanticEvent]) -> Vec<(ObservationChange, String, String)> {
                     ObservationPayload::Entity(e) => format!("{}={}", e.category, e.mention),
                     ObservationPayload::Reference(r) => format!("ref={}", r.mention),
                     ObservationPayload::Act(_) => "act".into(),
-                    ObservationPayload::Relation(r) => format!("rel={}", r.kind),
+                    ObservationPayload::Relation(r) => format!("rel={}", r.relation),
                 },
             )),
             _ => None,
