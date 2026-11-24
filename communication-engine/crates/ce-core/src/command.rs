@@ -77,6 +77,24 @@ pub enum Command {
     },
     /// Report every audio stream that is not yet closed (Phase 2).
     ListAudioStreams,
+    /// Start audio analysis on a capture stream (Phase 3). `None` uses the
+    /// engine's default analysis configuration.
+    StartAnalysis {
+        /// The capture stream.
+        stream_id: AudioStreamId,
+        /// Configuration override.
+        config: Option<crate::intel::AnalysisConfig>,
+    },
+    /// Stop audio analysis on a stream (Phase 3).
+    StopAnalysis {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Report the analysis status of a stream (Phase 3).
+    QueryAnalysis {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
 }
 
 impl Command {
@@ -95,6 +113,9 @@ impl Command {
             Command::StopAudioStream { .. } => "stop_audio_stream",
             Command::CloseAudioStream { .. } => "close_audio_stream",
             Command::ListAudioStreams => "list_audio_streams",
+            Command::StartAnalysis { .. } => "start_analysis",
+            Command::StopAnalysis { .. } => "stop_analysis",
+            Command::QueryAnalysis { .. } => "query_analysis",
         }
     }
 
@@ -102,6 +123,10 @@ impl Command {
     pub fn validate(&self) -> Result<(), CeError> {
         match self {
             Command::CreateSession { config } => config.validate(),
+            Command::StartAnalysis {
+                config: Some(config),
+                ..
+            } => config.validate(),
             Command::ListCapabilities {
                 capability: None,
                 version: Some(_),
@@ -179,6 +204,11 @@ pub enum CommandOutcome {
     AudioStreams {
         /// Statuses.
         streams: Vec<AudioStreamStatus>,
+    },
+    /// Analysis status (Phase 3).
+    Analysis {
+        /// Status.
+        status: crate::intel::AnalysisStatus,
     },
 }
 

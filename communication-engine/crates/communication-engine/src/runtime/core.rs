@@ -35,11 +35,15 @@ use tokio::time::{Instant, sleep_until, timeout_at};
 use tokio_util::sync::CancellationToken;
 
 mod audio;
+mod intel;
 
 pub(crate) use audio::OpenedAudio;
 use audio::{AUDIO_SIGNAL_CAPACITY, AudioState};
 use ce_audio::{AudioBackend, AudioSignal, BackendNotifier};
+use ce_audio_intel::VoiceActivityDetector;
+use ce_audio_intel::worker::IntelSignal;
 use ce_core::audio::StreamRequest;
+use intel::{INTEL_SIGNAL_CAPACITY, IntelState};
 
 use super::actor::{ActorHandle, ActorReport, ActorSpec, Ctrl, Ingress, LifecycleOp, spawn_actor};
 use super::metrics::Metrics;
@@ -67,6 +71,13 @@ pub(crate) enum CoreMsg {
         request: StreamRequest,
         reply: oneshot::Sender<CeResult<OpenedAudio>>,
     },
+    /// Start analysis with a caller-supplied detector (not serializable).
+    StartAnalysisWith {
+        stream_id: ce_core::ids::AudioStreamId,
+        config: Option<ce_core::intel::AnalysisConfig>,
+        detector: Box<dyn VoiceActivityDetector>,
+        reply: oneshot::Sender<CeResult<CommandOutcome>>,
+    },
 }
 
 impl std::fmt::Debug for CoreMsg {
@@ -75,6 +86,7 @@ impl std::fmt::Debug for CoreMsg {
             CoreMsg::Command { envelope, .. } => write!(f, "Command({})", envelope.command.name()),
             CoreMsg::Register { .. } => f.write_str("Register"),
             CoreMsg::OpenAudio { .. } => f.write_str("OpenAudio"),
+            CoreMsg::StartAnalysisWith { .. } => f.write_str("StartAnalysisWith"),
         }
     }
 }
@@ -137,9 +149,11 @@ pub(crate) struct Core {
     audio: Option<AudioState>,
     audio_rx: Option<mpsc::Receiver<AudioSignal>>,
     audio_tick: Option<tokio::time::Interval>,
+    intel: Option<IntelState>,
+    intel_rx: Option<mpsc::Receiver<IntelSignal>>,
 }
 
-async fn recv_opt<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
+pub(super) async fn recv_opt<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
     match rx {
         Some(rx) => rx.recv().await,
         None => std::future::pending().await,
@@ -168,7 +182,15 @@ impl Core {
             }
             None => (None, None, None),
         };
+        let (intel, intel_rx) = if audio.is_some() {
+            let (tx, rx) = mpsc::channel(INTEL_SIGNAL_CAPACITY);
+            (Some(IntelState::new(tx)), Some(rx))
+        } else {
+            (None, None)
+        };
         Self {
+            intel,
+            intel_rx,
             audio,
             audio_rx,
             audio_tick,
@@ -220,7 +242,11 @@ impl Core {
                     self.handle_audio_signal(signal);
                     self.process_deferred_audio().await;
                 }
-                () = tick_opt(&mut self.audio_tick) => self.audio_housekeeping().await,
+                Some(signal) = recv_opt(&mut self.intel_rx) => self.handle_intel_signal(signal),
+                () = tick_opt(&mut self.audio_tick) => {
+                    self.intel_housekeeping();
+                    self.audio_housekeeping().await;
+                }
             }
         }
         self.log(Observation::log(Level::Debug, "runtime.core_exited"));
@@ -571,6 +597,7 @@ impl Core {
                 () = sleep_until(deadline) => return Err(WaitError::TimedOut),
                 Some(ingress) = self.ingress_rx.recv() => self.handle_ingress(ingress),
                 Some(signal) = recv_opt(&mut self.audio_rx) => self.handle_audio_signal(signal),
+                Some(signal) = recv_opt(&mut self.intel_rx) => self.handle_intel_signal(signal),
             }
         }
     }
@@ -674,6 +701,22 @@ impl Core {
                 let _ = reply.send(result);
                 false
             }
+            CoreMsg::StartAnalysisWith {
+                stream_id,
+                config,
+                detector,
+                reply,
+            } => {
+                let result = match config
+                    .as_ref()
+                    .map(ce_core::intel::AnalysisConfig::validate)
+                {
+                    Some(Err(e)) => Err(e),
+                    _ => self.start_analysis(stream_id, config, Some(detector)),
+                };
+                let _ = reply.send(result);
+                false
+            }
             CoreMsg::Command { envelope, reply } => {
                 self.current_correlation = Some(envelope.correlation_id);
                 self.log(
@@ -720,6 +763,11 @@ impl Core {
                             self.close_audio(stream_id).await
                         }
                         Command::ListAudioStreams => self.list_audio_streams(),
+                        Command::StartAnalysis { stream_id, config } => {
+                            self.start_analysis(stream_id, config, None)
+                        }
+                        Command::StopAnalysis { stream_id } => self.stop_analysis(stream_id).await,
+                        Command::QueryAnalysis { stream_id } => self.query_analysis(stream_id),
                         _ => Err(CeError::invalid_input(
                             "command.unsupported",
                             "command not supported by this runtime",
@@ -965,6 +1013,7 @@ impl Core {
             open_sessions: u32::try_from(self.sessions.len()).unwrap_or(u32::MAX),
             metrics: self.metrics.snapshot(),
             audio_streams: self.audio_statuses(),
+            analyses: self.analysis_statuses(),
         }
     }
 
@@ -1020,7 +1069,15 @@ impl Core {
 
     async fn close_session(&mut self, id: SessionId) -> CeResult<CommandOutcome> {
         self.set_session_state(id, SessionState::Closing)?;
-        // Release the session's audio devices before the session ends.
+        // End the session's analyses (their final events belong to the
+        // session), then release its audio devices.
+        let deadline = Instant::now() + self.config.audio.operation_timeout();
+        self.stop_analyses(
+            Some(id),
+            ce_core::intel::AnalysisEndReason::StreamClosed,
+            deadline,
+        )
+        .await;
         self.close_session_streams(id).await;
         self.set_session_state(id, SessionState::Closed)?;
         let session = self.sessions.remove(&id).ok_or_else(|| {
@@ -1129,6 +1186,9 @@ impl Core {
         let _ = self.set_runtime_state(RuntimeState::Stopping);
         self.emit(EventPayload::RuntimeStopping { reason }, None);
 
+        // Analyses end first, with an explicit Shutdown reason.
+        self.stop_analyses(None, ce_core::intel::AnalysisEndReason::Shutdown, deadline)
+            .await;
         let open: Vec<SessionId> = self.sessions.keys().copied().collect();
         let streams_before = self.audio_statuses().len();
         let mut sessions_closed = 0u32;
@@ -1142,7 +1202,7 @@ impl Core {
         let audio_streams_closed =
             u32::try_from(streams_before.saturating_sub(self.audio_statuses().len()))
                 .unwrap_or(u32::MAX);
-        let stuck = self.drain_zombies(deadline).await;
+        let stuck = self.drain_zombies(deadline).await + self.drain_intel(deadline).await;
         if stuck > 0 {
             self.log(
                 Observation::log(Level::Warn, "audio.workers_did_not_exit").field("count", stuck),

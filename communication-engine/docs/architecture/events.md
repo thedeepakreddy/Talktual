@@ -20,7 +20,10 @@ Payloads are a closed, typed, `#[non_exhaustive]` enum: `RuntimeStarting`,
 `RuntimeStarted`, `RuntimeStopping`, `RuntimeStopped`, `ShutdownCompleted`,
 `RuntimeStateChanged`, `ModuleRegistered`, `ModuleStateChanged`,
 `CapabilityRegistered`, `SessionCreated`, `SessionStateChanged`,
-`HealthChanged`, `RuntimeError`, `QueueSaturated`, and `Module(ModuleEvent)`.
+`HealthChanged`, `RuntimeError`, `QueueSaturated`, `Audio(AudioEvent)`
+(Phase 2, topic `Audio`), `Analysis(AnalysisEvent)` (Phase 3, topic
+`Analysis`, see [audio-intelligence.md](audio-intelligence.md)) and
+`Module(ModuleEvent)`.
 
 **Module events** (provisional) carry a namespaced `EventName`, a module-owned
 attribute schema version and structured attributes. Modules submit a

@@ -47,6 +47,7 @@ use std::sync::atomic::Ordering;
 
 pub use ce_audio as audio;
 use ce_audio::{AudioBackend, CaptureReader, PlaybackWriter, StreamEndpoint};
+pub use ce_audio_intel as audio_intel;
 pub use ce_core as contracts;
 use ce_core::CeResult;
 use ce_core::audio::{AudioDirection, AudioStreamStatus, DeviceCatalog, StreamRequest};
@@ -58,6 +59,7 @@ use ce_core::event::EventEnvelope;
 use ce_core::health::{MetricsSnapshot, RuntimeHealth};
 use ce_core::ids::AudioStreamId;
 use ce_core::ids::{CapabilityId, CommandId, CorrelationId, IdGenerator, SessionId};
+use ce_core::intel::{AnalysisConfig, AnalysisStatus};
 use ce_core::module::{ModuleDescriptor, ModuleFactory};
 use ce_core::observability::{NoopSink, ObservabilitySink};
 use ce_core::privacy::{ConsentPurpose, ConsentState};
@@ -94,6 +96,7 @@ pub mod prelude {
     pub use ce_core::health::{HealthStatus, RuntimeHealth};
     pub use ce_core::ids::AudioStreamId;
     pub use ce_core::ids::{CapabilityId, EventName, ModuleId, SessionId};
+    pub use ce_core::intel::{AnalysisConfig, AnalysisEvent, AnalysisStatus};
     pub use ce_core::lifecycle::{ModuleState, RuntimeState};
     pub use ce_core::module::{Module, ModuleContext, ModuleDescriptor, ModuleFactory};
     pub use ce_core::privacy::DataClass;
@@ -504,6 +507,61 @@ impl Engine {
             CommandOutcome::AudioStreams { streams } => Ok(streams),
             other => Err(unexpected(&other)),
         }
+    }
+
+    async fn analysis_command(&self, command: Command) -> CeResult<AnalysisStatus> {
+        match self.execute(command).await? {
+            CommandOutcome::Analysis { status } => Ok(status),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Start audio analysis (Phase 3) on a capture stream with the engine's
+    /// configured detector. `config` overrides `EngineConfig::analysis`.
+    /// Results arrive as `EventPayload::Analysis` events on the stream's
+    /// session. Analysis never delays capture: when it falls behind, its
+    /// own copy of the audio is dropped and reported as a discontinuity.
+    pub async fn start_analysis(
+        &self,
+        stream_id: AudioStreamId,
+        config: Option<AnalysisConfig>,
+    ) -> CeResult<AnalysisStatus> {
+        self.analysis_command(Command::StartAnalysis { stream_id, config })
+            .await
+    }
+
+    /// Start analysis with a caller-supplied voice-activity detector (a
+    /// replaceable adapter implementing [`audio_intel::VoiceActivityDetector`]).
+    pub async fn start_analysis_with(
+        &self,
+        stream_id: AudioStreamId,
+        config: Option<AnalysisConfig>,
+        detector: Box<dyn audio_intel::VoiceActivityDetector>,
+    ) -> CeResult<AnalysisStatus> {
+        let (reply, rx) = oneshot::channel();
+        self.submit(CoreMsg::StartAnalysisWith {
+            stream_id,
+            config,
+            detector,
+            reply,
+        })
+        .await?;
+        match rx.await.map_err(|_| stopped())?? {
+            CommandOutcome::Analysis { status } => Ok(status),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Stop analysis on a stream; returns its final status.
+    pub async fn stop_analysis(&self, stream_id: AudioStreamId) -> CeResult<AnalysisStatus> {
+        self.analysis_command(Command::StopAnalysis { stream_id })
+            .await
+    }
+
+    /// Current (or final) analysis status of a stream.
+    pub async fn analysis_status(&self, stream_id: AudioStreamId) -> CeResult<AnalysisStatus> {
+        self.analysis_command(Command::QueryAnalysis { stream_id })
+            .await
     }
 
     /// Current counters (no round trip to the core).

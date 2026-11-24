@@ -43,6 +43,7 @@ use crate::io::{BlockQueue, CaptureReader, PlaybackQueue, PlaybackWriter, PushOu
 use crate::rt::{
     CaptureDrain, CaptureEndpoint, PlaybackEndpoint, StreamFault, StreamShared, Terminal,
 };
+use crate::tap::{TapEnd, TapSender, TapSlot};
 
 /// Lifecycle commands from the runtime.
 #[derive(Debug)]
@@ -143,6 +144,7 @@ pub struct WorkerHandle {
     shared: Arc<StreamShared>,
     capture_queue: Option<Arc<BlockQueue>>,
     playback_queue: Option<Arc<PlaybackQueue>>,
+    tap: Option<Arc<TapSlot>>,
 }
 
 /// Control channel depth: the runtime sends one command at a time.
@@ -171,6 +173,9 @@ impl WorkerHandle {
     pub fn revoke(&self) {
         self.shared.gate_open.store(false, Release);
         self.shared.set_terminal(Terminal::Revoked);
+        if let Some(t) = &self.tap {
+            t.detach(TapEnd::Revoked);
+        }
         if let Some(q) = &self.capture_queue {
             q.purge_and_close();
         }
@@ -203,6 +208,35 @@ impl WorkerHandle {
         }
         if let Some(q) = &self.playback_queue {
             q.close();
+        }
+    }
+
+    /// Attach an analysis tap (capture streams only). Every block delivered
+    /// to the host queue from now on is also offered, without blocking, to
+    /// the tap. Replaces (and ends) a previously attached tap.
+    pub fn attach_tap(&self, tap: TapSender) -> Result<(), CeError> {
+        let Some(slot) = &self.tap else {
+            return Err(CeError::new(
+                ErrorCategory::InvalidInput,
+                "audio.tap_unsupported",
+                "analysis taps are only available on capture streams",
+            ));
+        };
+        if self.shared.terminal() != Terminal::None {
+            tap.end(TapEnd::from_terminal(self.shared.terminal()));
+            return Err(CeError::lifecycle(
+                "audio.stream_ended",
+                "the stream has already ended",
+            ));
+        }
+        slot.attach(tap);
+        Ok(())
+    }
+
+    /// Detach the analysis tap, if any; its receiver drains and ends.
+    pub fn detach_tap(&self) {
+        if let Some(t) = &self.tap {
+            t.detach(TapEnd::Closed);
         }
     }
 
@@ -251,7 +285,8 @@ pub fn spawn_stream(
                 CaptureEndpoint::new(device.channels, config.ring_frames, shared.clone());
             let queue = BlockQueue::new(config.queue_blocks);
             let reader = CaptureReader::new(context.info.clone(), queue.clone(), shared.clone());
-            let worker = CaptureWorker::new(
+            let tap = Arc::new(TapSlot::default());
+            let mut worker = CaptureWorker::new(
                 backend,
                 context,
                 &config,
@@ -261,6 +296,7 @@ pub fn spawn_stream(
                 shared.clone(),
                 reports,
             );
+            worker.tap = tap.clone();
             let thread = std::thread::Builder::new()
                 .name(name)
                 .spawn(move || supervise(worker, cmd_rx))
@@ -272,6 +308,7 @@ pub fn spawn_stream(
                     shared,
                     capture_queue: Some(queue),
                     playback_queue: None,
+                    tap: Some(tap),
                 },
                 StreamEndpoint::Capture(reader),
             ))
@@ -302,6 +339,7 @@ pub fn spawn_stream(
                     shared,
                     capture_queue: None,
                     playback_queue: Some(queue),
+                    tap: None,
                 },
                 StreamEndpoint::Playback(writer),
             ))
@@ -512,6 +550,7 @@ struct CaptureWorker {
     started_once: bool,
     last_timing: Option<crate::rt::TimingMarker>,
     counters: StreamCounters,
+    tap: Arc<TapSlot>,
 }
 
 impl CaptureWorker {
@@ -565,6 +604,7 @@ impl CaptureWorker {
             started_once: false,
             last_timing: None,
             counters: StreamCounters::default(),
+            tap: Arc::new(TapSlot::default()),
         }
     }
 
@@ -648,7 +688,9 @@ impl CaptureWorker {
                 self.base.pending_discontinuity = Some((sequence, d));
             }
         }
-        match self.queue.push(AudioBlock { meta, samples }, self.overflow) {
+        let block = AudioBlock { meta, samples };
+        self.tap.offer(&block);
+        match self.queue.push(block, self.overflow) {
             PushOutcome::Queued => {
                 self.counters.blocks += 1;
                 self.counters.frames += frames;
@@ -776,6 +818,7 @@ impl Pump for CaptureWorker {
 
     fn on_close(&mut self) {
         self.queue.close();
+        self.tap.detach(TapEnd::at_close(&self.base.shared));
     }
 }
 

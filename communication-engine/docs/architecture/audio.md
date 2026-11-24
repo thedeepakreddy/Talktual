@@ -150,6 +150,17 @@ transitions and errors with operational fields only. Metrics:
 counters in `audio_streams()` and `RuntimeHealth`. **Audio content is never
 logged, put in events or persisted.**
 
+## 8a. Analysis tap (Phase 3)
+
+`WorkerHandle::attach_tap` gives a capture stream a bounded, non-blocking
+copy of every delivered block for in-engine analysis (`ce_audio::tap`). The
+worker thread offers each block with `try_send`; a full tap drops the copy
+and counts it, never delaying the host queue. When the stream ends the tap
+ends with the exact reason (closed, revoked, invalidated, failed; a faulted
+stream drained before the runtime marks it resolves the reason from the
+fault). On revocation the reason is set first so queued copies are
+discarded. See [audio-intelligence.md](audio-intelligence.md).
+
 ## 9. Platform matrix (Phase 2)
 
 | Target | cpal host | Built | Run here | Capture permission source |

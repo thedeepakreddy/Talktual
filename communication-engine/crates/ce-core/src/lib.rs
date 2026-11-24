@@ -39,6 +39,7 @@ pub mod error;
 pub mod event;
 pub mod health;
 pub mod ids;
+pub mod intel;
 pub mod lifecycle;
 pub mod module;
 pub mod observability;

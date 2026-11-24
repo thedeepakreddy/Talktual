@@ -1,8 +1,10 @@
-# Communication Engine — Architecture (Phase 1)
+# Communication Engine — Architecture
 
-Status: Phase 1 foundation and Phase 2 audio foundation, implemented and
-verified on Linux x86_64 (see the [Phase 1](docs/phases/phase-1-report.md)
-and [Phase 2](docs/phases/phase-2-report.md) reports). APIs are
+Status: Phase 1 foundation, Phase 2 audio foundation and Phase 3 audio
+intelligence, implemented and verified on Linux x86_64 (see the
+[Phase 1](docs/phases/phase-1-report.md),
+[Phase 2](docs/phases/phase-2-report.md) and
+[Phase 3](docs/phases/phase-3-report.md) reports). APIs are
 **provisional**.
 
 The Communication Engine (CE) is a product-agnostic Rust foundation for a
@@ -12,9 +14,14 @@ flow, lifecycle, cancellation, sessions, a test kit, a public facade and a mock
 module. Phase 2 adds the audio foundation — device discovery, format
 negotiation, capture and playback streams, bounded real-time handoff,
 timestamps, device-change handling and a capture authorization gate (see
-[audio.md](docs/architecture/audio.md)). There is **no** VAD, DSP, ASR,
-translation, semantic, voice or TTS functionality, and no latency or device
-claims (no audio hardware has been tested).
+[audio.md](docs/architecture/audio.md)). Phase 3 adds signal analysis in
+`ce-audio-intel` — voice activity, candidate segments and endpoints,
+silence windows, quality, a closed set of signal conditions, adaptive and
+resource policy — fed by a bounded, non-blocking tap on capture streams (see
+[audio-intelligence.md](docs/architecture/audio-intelligence.md)). There is
+**no** ASR, language detection, diarization, translation, semantic, voice
+or TTS functionality, nothing that infers personal traits, and no latency or
+device claims (no audio hardware has been tested).
 
 ## 1. Crates and dependency direction
 
@@ -25,7 +32,12 @@ claims (no audio hardware has been tested).
   SDKs,     │  EventSubscription         │  feature `tracing`: TracingSink
   tests)    └─────────────┬──────────────┘
                           │ re-exports as `contracts`
-                          │ re-exports as `audio`
+                          │ re-exports as `audio`, `audio_intel`
+            ┌─────────────▼──────────────┐
+            │ ce-audio-intel (Phase 3)   │  framer/features, VAD adapters, hysteresis,
+            │                            │  segments, quality, conditions, policy,
+            │                            │  supervised analysis workers, eval/replay
+            └─────────────┬──────────────┘
             ┌─────────────▼──────────────┐
  adapters ► │ ce-audio (Phase 2)         │  AudioBackend trait, rt endpoints (rtrb),
             │                            │  conversion, stream workers; feature
@@ -127,4 +139,6 @@ ADRs in [docs/architecture/adr](docs/architecture/adr/):
 contract · 0004 event model · 0005 lifecycle · 0006 errors · 0007 privacy ·
 0008 real-time boundary · 0009 dependencies and licensing · 0010 audio
 backend selection · 0011 audio stream architecture · 0012 audio
-normalization contract · 0013 capture authorization gate.
+normalization contract · 0013 capture authorization gate · 0014 audio
+intelligence architecture · 0015 VAD selection · 0016 analysis results and
+units · 0017 analysis privacy · 0018 analysis resource policy.

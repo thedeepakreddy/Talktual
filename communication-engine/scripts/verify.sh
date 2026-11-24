@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 1 verification gates for the Communication Engine workspace.
+# Verification gates for the Communication Engine workspace (Phases 1-3).
 # Usage: scripts/verify.sh            (from anywhere)
 #        CE_SKIP_DENY=1 scripts/verify.sh   (skip cargo-deny if not installed)
 set -euo pipefail
@@ -29,17 +29,22 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 step "smoke examples"
 cargo run -p communication-engine --example runtime_smoke
 cargo run -p communication-engine --example audio_smoke
+cargo run -p communication-engine --example analysis_smoke
+
+step "audio intelligence: optimized replay, regression gate and stress"
+cargo test --release -p ce-audio-intel --test pipeline
+cargo run --release -p ce-audio-intel --example evaluate -- test
 
 step "cross-target check (compile only; targets installed via rustup only)"
 for target in aarch64-apple-ios aarch64-linux-android x86_64-pc-windows-msvc aarch64-apple-darwin; do
   if rustup target list --installed 2>/dev/null | grep -qx "$target"; then
-    cargo check -p ce-core -p ce-audio -p communication-engine --all-features --target "$target"
+    cargo check -p ce-core -p ce-audio -p ce-audio-intel -p communication-engine --all-features --target "$target"
   else
     echo "skip $target (not installed: rustup target add $target)"
   fi
 done
 if rustup target list --installed 2>/dev/null | grep -qx wasm32-unknown-unknown; then
-  cargo check -p ce-core -p ce-audio --target wasm32-unknown-unknown
+  cargo check -p ce-core -p ce-audio -p ce-audio-intel --target wasm32-unknown-unknown
 fi
 
 if [[ "${CE_SKIP_DENY:-0}" != "1" ]]; then

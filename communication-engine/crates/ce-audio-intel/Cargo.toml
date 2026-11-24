@@ -1,0 +1,18 @@
+[package]
+name = "ce-audio-intel"
+description = "Communication Engine audio intelligence: activity, segmentation, quality and conditions (Phase 3)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+ce-core = { workspace = true }
+ce-audio = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

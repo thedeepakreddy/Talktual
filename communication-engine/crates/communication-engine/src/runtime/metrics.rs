@@ -19,6 +19,8 @@ pub(crate) struct Metrics {
     pub(crate) audio_capture_revoked: AtomicU64,
     pub(crate) audio_streams_invalidated: AtomicU64,
     pub(crate) audio_streams_failed: AtomicU64,
+    pub(crate) analyses_started: AtomicU64,
+    pub(crate) analysis_failures: AtomicU64,
     /// Set by producers when a queue rejects; cleared by the core when it
     /// publishes the coalesced `QueueSaturated` event.
     pub(crate) ingress_saturated: AtomicBool,
@@ -45,6 +47,8 @@ impl Metrics {
             audio_capture_revoked: self.audio_capture_revoked.load(Relaxed),
             audio_streams_invalidated: self.audio_streams_invalidated.load(Relaxed),
             audio_streams_failed: self.audio_streams_failed.load(Relaxed),
+            analyses_started: self.analyses_started.load(Relaxed),
+            analysis_failures: self.analysis_failures.load(Relaxed),
         }
     }
 }

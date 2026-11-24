@@ -69,6 +69,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ce-audio-intel"
+version = "0.1.0"
+dependencies = [
+ "ce-audio",
+ "ce-core",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "ce-core"
 version = "0.1.0"
 dependencies = [
@@ -110,6 +120,7 @@ name = "communication-engine"
 version = "0.1.0"
 dependencies = [
  "ce-audio",
+ "ce-audio-intel",
  "ce-core",
  "ce-testkit",
  "serde_json",

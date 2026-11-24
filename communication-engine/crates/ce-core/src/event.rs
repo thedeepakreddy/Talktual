@@ -174,6 +174,8 @@ pub enum EventPayload {
     Module(ModuleEvent),
     /// An audio device, stream or authorization event (Phase 2).
     Audio(crate::audio::AudioEvent),
+    /// An audio-intelligence event (Phase 3).
+    Analysis(crate::intel::AnalysisEvent),
 }
 
 impl EventPayload {
@@ -196,6 +198,7 @@ impl EventPayload {
             EventPayload::QueueSaturated { .. } => "queue_saturated",
             EventPayload::Module(_) => "module",
             EventPayload::Audio(_) => "audio",
+            EventPayload::Analysis(_) => "analysis",
         }
     }
 
@@ -220,6 +223,7 @@ impl EventPayload {
             }
             EventPayload::Module(_) => EventTopic::ModuleEvents,
             EventPayload::Audio(_) => EventTopic::Audio,
+            EventPayload::Analysis(_) => EventTopic::Analysis,
         }
     }
 }
@@ -242,6 +246,8 @@ pub enum EventTopic {
     ModuleEvents,
     /// Audio device, stream and authorization events (Phase 2).
     Audio,
+    /// Audio-intelligence events (Phase 3).
+    Analysis,
 }
 
 /// The envelope every event travels in.

@@ -123,6 +123,25 @@ impl AudioState {
     pub(crate) fn statuses(&self) -> Vec<AudioStreamStatus> {
         self.streams.values().map(status_of).collect()
     }
+
+    /// Facts, state and "terminal pending" for one stream (Phase 3).
+    pub(crate) fn stream(
+        &self,
+        id: AudioStreamId,
+    ) -> Option<(&StreamInfo, AudioStreamState, bool)> {
+        self.streams
+            .get(&id)
+            .map(|s| (&s.info, s.state, s.terminal.is_some()))
+    }
+
+    /// Attach an analysis tap to a capture stream's worker (Phase 3).
+    pub(crate) fn attach_tap(&self, id: AudioStreamId, tap: ce_audio::TapSender) -> CeResult<()> {
+        self.streams
+            .get(&id)
+            .ok_or_else(|| unknown_stream(id))?
+            .handle
+            .attach_tap(tap)
+    }
 }
 
 fn status_of(slot: &StreamSlot) -> AudioStreamStatus {

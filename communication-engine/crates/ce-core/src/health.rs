@@ -102,10 +102,16 @@ pub struct MetricsSnapshot {
     /// Audio streams that failed.
     #[serde(default)]
     pub audio_streams_failed: u64,
+    /// Analyses started (Phase 3).
+    #[serde(default)]
+    pub analyses_started: u64,
+    /// Analyses that failed (panic or stall).
+    #[serde(default)]
+    pub analysis_failures: u64,
 }
 
 /// Health and status of the runtime and every module.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeHealth {
     /// Runtime lifecycle state.
     pub state: RuntimeState,
@@ -120,6 +126,9 @@ pub struct RuntimeHealth {
     /// Audio streams that are not closed (Phase 2).
     #[serde(default)]
     pub audio_streams: Vec<crate::audio::AudioStreamStatus>,
+    /// Running or recently ended analyses (Phase 3).
+    #[serde(default)]
+    pub analyses: Vec<crate::intel::AnalysisStatus>,
 }
 
 /// Aggregate runtime health from the runtime state and module statuses.

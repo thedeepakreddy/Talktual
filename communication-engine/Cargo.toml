@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ce-core", "crates/ce-audio", "crates/communication-engine", "crates/ce-testkit"]
+members = ["crates/ce-core", "crates/ce-audio", "crates/ce-audio-intel", "crates/communication-engine", "crates/ce-testkit"]
 
 [workspace.package]
 version = "0.1.0"
@@ -15,6 +15,7 @@ ce-core = { path = "crates/ce-core", version = "0.1.0" }
 communication-engine = { path = "crates/communication-engine", version = "0.1.0" }
 ce-testkit = { path = "crates/ce-testkit", version = "0.1.0" }
 ce-audio = { path = "crates/ce-audio", version = "0.1.0" }
+ce-audio-intel = { path = "crates/ce-audio-intel", version = "0.1.0" }
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.120"
 semver = { version = "1.0.23", features = ["serde"] }

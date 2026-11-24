@@ -60,6 +60,15 @@ processes data yet).
   catalog to the host, never in events or logs; events use opaque device ids.
 * On revocation, queued blocks are purged, not delivered.
 
+## Audio analysis (Phase 3)
+
+Analysis describes the signal, never the person (ADR-0017): no identity,
+emotion, health, personality or other trait inference; a closed set of six
+signal conditions; overlap detection not claimed. Analysis events are
+`Operational` and contain no samples. Analysis is local and ephemeral and
+runs only on authorized capture streams under `Capture` consent; revocation
+ends it and discards queued audio.
+
 ## Voice governance (no implementation)
 
 CE implements no voice enrollment, cloning, conversion or TTS. Before any

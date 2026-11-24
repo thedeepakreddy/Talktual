@@ -10,6 +10,8 @@
 //!   downmix.
 //! * [`worker`] — one supervised worker thread per stream: drains the ring,
 //!   assembles timestamped blocks, applies overflow policy, reports faults.
+//! * [`tap`] — a bounded, non-blocking analysis tap on capture streams
+//!   (copies for in-engine consumers; drops instead of blocking).
 //! * [`io`] — the host-facing data plane: [`CaptureReader`] and
 //!   [`PlaybackWriter`] over bounded queues.
 //! * `cpal_backend` (feature `cpal`) — the cross-platform adapter selected
@@ -25,6 +27,7 @@ pub mod backend;
 pub mod convert;
 pub mod io;
 pub mod rt;
+pub mod tap;
 pub mod worker;
 
 #[cfg(feature = "cpal")]
@@ -36,6 +39,7 @@ pub use backend::{
 };
 pub use io::{CaptureReader, PlaybackWriter, ReadError};
 pub use rt::{CaptureEndpoint, FaultReporter, PlaybackEndpoint, StreamFault};
+pub use tap::{TapEnd, TapReceiver, TapRecvError, TapSender, analysis_tap};
 pub use worker::{
     StreamContext, StreamEndpoint, WorkerCommand, WorkerConfig, WorkerHandle, WorkerReport,
     spawn_stream,
