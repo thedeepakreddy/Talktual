@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Search } from 'lucide-react';
+import { Check, Search } from './icons';
 import { Language, SUPPORTED_LANGUAGES } from '../types';
 import { Sheet } from './ui';
 import { cn } from '../utils';
@@ -26,8 +26,8 @@ export function LanguagePicker({ open, title = 'Your language', selected, onSele
 
   return (
     <Sheet open={open} onClose={onClose} title={title} tall>
-      <div className="sticky top-0 z-10 bg-raised pb-2">
-        <label className="flex h-11 items-center gap-2 rounded-md bg-surface px-3">
+      <div className="sticky top-0 z-10 pb-2 pt-1">
+        <label className="glass-strong flex h-12 items-center gap-2.5 rounded-full px-4 focus-within:shadow-[inset_0_0_0_1.5px_var(--focus)]">
           <Search className="h-4 w-4 shrink-0 text-fg-subtle" aria-hidden="true" />
           <input
             data-autofocus
@@ -40,7 +40,7 @@ export function LanguagePicker({ open, title = 'Your language', selected, onSele
         </label>
       </div>
       {results.length === 0 && <p className="py-10 text-center text-body text-fg-muted">No language matches “{query}”.</p>}
-      <ul className="divide-y divide-line">
+      <ul className="glass-clear mt-1 rounded-[26px] px-3 [&>*+*]:border-t [&>*+*]:border-[var(--glass-stroke)]">
         {results.map((language) => {
           const isSelected = language.code === selected.code;
           return (
@@ -52,12 +52,12 @@ export function LanguagePicker({ open, title = 'Your language', selected, onSele
                   onSelect(language);
                   onClose();
                 }}
-                className={cn('flex min-h-12 w-full items-center gap-3 py-2 text-left', isSelected && 'font-semibold')}
+                className={cn('flex min-h-[54px] w-full items-center gap-3 py-2.5 text-left', isSelected && 'font-[640]')}
               >
                 <span className="text-[1.25rem] leading-none" aria-hidden="true">
                   {language.flag}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-body text-fg">
+                <span className="min-w-0 flex-1 truncate text-body-lg text-fg">
                   {language.native}
                   {language.native !== language.name && <span className="font-normal text-fg-muted"> · {language.name}</span>}
                 </span>

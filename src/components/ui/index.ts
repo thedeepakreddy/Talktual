@@ -5,3 +5,4 @@ export { Switch } from './Switch';
 export { Segmented } from './Segmented';
 export { Row, Section } from './Row';
 export { Banner } from './Banner';
+export { Glyph } from './Glyph';
