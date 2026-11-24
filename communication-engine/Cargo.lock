@@ -147,6 +147,7 @@ dependencies = [
  "ce-audio",
  "ce-audio-intel",
  "ce-core",
+ "ce-semantic",
  "ce-speech",
  "ce-testkit",
  "serde_json",

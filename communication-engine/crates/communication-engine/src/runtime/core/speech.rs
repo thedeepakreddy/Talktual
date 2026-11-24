@@ -378,6 +378,14 @@ impl Core {
                         Observation::log(Level::Warn, "speech.failed").field("stream", stream),
                     );
                 }
+                // Phase 5: transcripts are handed to the stream's semantic
+                // worker (non-blocking) before publication; when the
+                // recognition stops, the worker drains and ends.
+                match &event {
+                    SpeechEvent::Transcript(rev) => self.forward_transcript(rev),
+                    SpeechEvent::Stopped { .. } => self.transcripts_ended(stream),
+                    _ => {}
+                }
                 let class = event.data_class();
                 self.emit_classified(EventPayload::Speech(event), class, session);
             }
@@ -502,6 +510,7 @@ impl Core {
                 biased;
                 () = tokio::time::sleep_until(deadline) => break,
                 Some(sig) = super::recv_opt(&mut self.speech_rx) => self.handle_speech_signal(sig),
+                Some(sig) = super::recv_opt(&mut self.semantic_rx) => self.handle_semantic_signal(sig),
                 Some(sig) = super::recv_opt(&mut self.intel_rx) => self.handle_intel_signal(sig),
                 Some(ingress) = self.ingress_rx.recv() => self.handle_ingress(ingress),
                 Some(signal) = super::recv_opt(&mut self.audio_rx) => self.handle_audio_signal(signal),

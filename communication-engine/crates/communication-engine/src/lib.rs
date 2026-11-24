@@ -64,10 +64,13 @@ use ce_core::module::{ModuleDescriptor, ModuleFactory};
 use ce_core::observability::{NoopSink, ObservabilitySink};
 use ce_core::privacy::{ConsentPurpose, ConsentState};
 use ce_core::resource::{AdmissionPolicy, QueueKind};
+use ce_core::semantic::{ObservationId, SemanticCapabilities, SemanticConfig, SemanticStatus};
 use ce_core::session::{SessionConfig, SessionInfo};
 use ce_core::speech::{AsrCapabilities, RecognitionConfig, RecognitionStatus};
 use ce_core::time::{Clock, SystemClock};
 use ce_core::version::VersionReq;
+pub use ce_semantic as semantic;
+use ce_semantic::{RulesFactory, SemanticFactory};
 pub use ce_speech as speech;
 use ce_speech::{AsrFactory, LanguageIdentifier, WhichlangIdentifier};
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -75,7 +78,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use runtime::actor::Ingress;
-use runtime::core::{Core, CoreDeps, CoreMsg, SpeechProviders};
+use runtime::core::{Core, CoreDeps, CoreMsg, SemanticProviders, SpeechProviders};
 use runtime::metrics::Metrics;
 #[cfg(feature = "tracing")]
 pub use tracing_sink::TracingSink;
@@ -104,6 +107,10 @@ pub mod prelude {
     pub use ce_core::module::{Module, ModuleContext, ModuleDescriptor, ModuleFactory};
     pub use ce_core::privacy::DataClass;
     pub use ce_core::privacy::{ConsentPurpose, ConsentState};
+    pub use ce_core::semantic::{
+        ObservationChange, ObservationId, ObservationPayload, SemanticConfig, SemanticEvent,
+        SemanticObservation, SemanticStatus,
+    };
     pub use ce_core::session::{SessionConfig, SessionInfo, SessionState};
     pub use ce_core::speech::{
         LanguageObservation, RecognitionConfig, RecognitionStatus, RevisionStatus, SpeechEvent,
@@ -133,6 +140,8 @@ pub struct EngineBuilder {
     audio: Option<Arc<dyn AudioBackend>>,
     speech: SpeechProviders,
     no_identifier: bool,
+    semantic: SemanticProviders,
+    no_default_semantic: bool,
 }
 
 impl EngineBuilder {
@@ -197,6 +206,23 @@ impl EngineBuilder {
         self
     }
 
+    /// Register a semantic adapter (Phase 5). Registered adapters come
+    /// before the built-in deterministic rule adapter (`ce.semantic.rules`,
+    /// always registered last unless [`Self::without_default_semantic_adapter`]);
+    /// the first is the default and `SemanticConfig::adapter` selects
+    /// another by id. Remote and local-service adapters run only when the
+    /// configuration's locality policy allows them.
+    pub fn semantic_adapter(mut self, factory: impl SemanticFactory + 'static) -> Self {
+        self.semantic.adapters.push(Arc::new(factory));
+        self
+    }
+
+    /// Do not register the built-in rule adapter.
+    pub fn without_default_semantic_adapter(mut self) -> Self {
+        self.no_default_semantic = true;
+        self
+    }
+
     /// Validate the configuration and spawn the runtime core.
     ///
     /// Must be called from within a Tokio runtime.
@@ -223,6 +249,10 @@ impl EngineBuilder {
         if speech.identifier.is_none() && !self.no_identifier {
             speech.identifier = Some(Arc::new(WhichlangIdentifier));
         }
+        let mut semantic = self.semantic;
+        if !self.no_default_semantic {
+            semantic.adapters.push(Arc::new(RulesFactory));
+        }
         let core = Core::new(CoreDeps {
             config: config.clone(),
             clock: self.clock.unwrap_or_else(|| Arc::new(SystemClock::new())),
@@ -236,6 +266,7 @@ impl EngineBuilder {
             ingress_rx,
             audio_backend: self.audio,
             speech,
+            semantic,
         });
         let core = handle.spawn(core.run());
         Ok(Engine {
@@ -654,6 +685,72 @@ impl Engine {
     pub async fn recognizers(&self) -> CeResult<Vec<AsrCapabilities>> {
         match self.execute(Command::ListRecognizers).await? {
             CommandOutcome::Recognizers { adapters } => Ok(adapters),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    async fn semantic_command(&self, command: Command) -> CeResult<SemanticStatus> {
+        match self.execute(command).await? {
+            CommandOutcome::Semantics { status } => Ok(*status),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Start semantic interpretation (Phase 5) of a capture stream's
+    /// transcripts. `config` overrides `EngineConfig::semantic`. Results
+    /// arrive as `EventPayload::Semantic` events on the stream's session:
+    /// observations (`Content`) that reference transcript revisions and
+    /// spans, and context/lifecycle events (`Operational`). Works with a
+    /// recognition started before or after; ends (draining) when the
+    /// stream's recognition stops.
+    pub async fn start_semantics(
+        &self,
+        stream_id: AudioStreamId,
+        config: Option<SemanticConfig>,
+    ) -> CeResult<SemanticStatus> {
+        self.semantic_command(Command::StartSemantics { stream_id, config })
+            .await
+    }
+
+    /// Stop semantic interpretation (queued revisions are discarded).
+    pub async fn stop_semantics(&self, stream_id: AudioStreamId) -> CeResult<SemanticStatus> {
+        self.semantic_command(Command::StopSemantics { stream_id })
+            .await
+    }
+
+    /// Clear the stream's semantic context.
+    pub async fn reset_semantic_context(
+        &self,
+        stream_id: AudioStreamId,
+    ) -> CeResult<SemanticStatus> {
+        self.semantic_command(Command::ResetSemanticContext { stream_id })
+            .await
+    }
+
+    /// Record that the user confirmed an observation (it is re-emitted as a
+    /// `UserConfirmedFact`, change `Confirmed`).
+    pub async fn confirm_observation(
+        &self,
+        stream_id: AudioStreamId,
+        observation: ObservationId,
+    ) -> CeResult<SemanticStatus> {
+        self.semantic_command(Command::ConfirmObservation {
+            stream_id,
+            observation,
+        })
+        .await
+    }
+
+    /// Current (or final) semantic status.
+    pub async fn semantic_status(&self, stream_id: AudioStreamId) -> CeResult<SemanticStatus> {
+        self.semantic_command(Command::QuerySemantics { stream_id })
+            .await
+    }
+
+    /// Capabilities of the registered semantic adapters.
+    pub async fn semantic_adapters(&self) -> CeResult<Vec<SemanticCapabilities>> {
+        match self.execute(Command::ListSemanticAdapters).await? {
+            CommandOutcome::SemanticAdapters { adapters } => Ok(adapters),
             other => Err(unexpected(&other)),
         }
     }

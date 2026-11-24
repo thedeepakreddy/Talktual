@@ -18,7 +18,8 @@
 //!   * a heartbeat lets the runtime detect a hung adapter and abandon it
 //!     (an abandoned worker sends nothing more);
 //!   * stop, reset and confirmation requests are checked between inputs.
-//!     `SourceEnded` drains the queue first; other stop reasons discard it.
+//!     `SourceEnded` and `Shutdown` drain the queue first (final transcripts
+//!     are interpreted); `Stopped` and `Failed` discard it.
 
 use std::collections::VecDeque;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -264,6 +265,8 @@ pub fn spawn_semantic(
 ) -> Result<SemanticHandle, CeError> {
     let stream = processor.stream();
     let budget = processor.config().budget.clone();
+    let mut initial = processor.status();
+    initial.running = true;
     let shared = Arc::new(Shared {
         queue: Mutex::new(Queue::default()),
         cv: Condvar::new(),
@@ -272,7 +275,7 @@ pub fn spawn_semantic(
         resets: AtomicU32::new(0),
         abandoned: AtomicBool::new(false),
         heartbeat_ms: AtomicU64::new(0),
-        status: Mutex::new(processor.status()),
+        status: Mutex::new(initial),
         origin: Instant::now(),
     });
     let s2 = shared.clone();
@@ -395,7 +398,9 @@ fn run(
             }
             let stop = from_code(shared.stop.load(Acquire));
             let next = match stop {
-                Some(SemanticEndReason::SourceEnded) | None => q.items.pop_front(),
+                Some(SemanticEndReason::SourceEnded | SemanticEndReason::Shutdown) | None => {
+                    q.items.pop_front()
+                }
                 Some(_) => {
                     let n = q.items.len() as u64;
                     q.items.clear();
