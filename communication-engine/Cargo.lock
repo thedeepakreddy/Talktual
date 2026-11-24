@@ -89,6 +89,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "ce-semantic"
+version = "0.1.0"
+dependencies = [
+ "ce-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "ce-speech"
+version = "0.1.0"
+dependencies = [
+ "ce-audio",
+ "ce-audio-intel",
+ "ce-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+ "whichlang",
+]
+
+[[package]]
 name = "ce-testkit"
 version = "0.1.0"
 dependencies = [
@@ -122,6 +147,8 @@ dependencies = [
  "ce-audio",
  "ce-audio-intel",
  "ce-core",
+ "ce-semantic",
+ "ce-speech",
  "ce-testkit",
  "serde_json",
  "tokio",
@@ -895,6 +922,12 @@ dependencies = [
  "js-sys",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "whichlang"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b9aa3ad29c3d08283ac6b769e3ec15ad1ddb88af7d2e9bc402c574973b937e7"
 
 [[package]]
 name = "winapi-util"

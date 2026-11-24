@@ -7,7 +7,7 @@ import type { CallHandlers, CallHandle } from '../lib/webrtc';
 
 // --- Speech recognition --------------------------------------------------------
 
-export type AsrEngine = 'webspeech' | 'server-stt';
+export type AsrEngine = 'webspeech' | 'server-stt' | 'ce-local';
 
 export interface RecognizedSegment {
   text: string;

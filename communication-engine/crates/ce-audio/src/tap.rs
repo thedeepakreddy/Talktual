@@ -221,36 +221,68 @@ pub fn analysis_tap(capacity: usize) -> (TapSender, TapReceiver) {
     )
 }
 
-/// The worker-side slot holding the attached tap.
+/// Most taps one capture stream can feed at once (analysis, recognition,
+/// and headroom). Each tap is bounded and drops independently.
+pub const MAX_TAPS: usize = 4;
+
+/// Identifies one attached tap on its stream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TapId(pub(crate) u64);
+
+#[derive(Debug, Default)]
+struct Taps {
+    next: u64,
+    taps: Vec<(TapId, TapSender)>,
+}
+
+/// The worker-side slot holding the attached taps (at most [`MAX_TAPS`]).
 #[derive(Debug, Default)]
 pub(crate) struct TapSlot {
-    inner: Mutex<Option<TapSender>>,
+    inner: Mutex<Taps>,
 }
 
 impl TapSlot {
-    pub(crate) fn attach(&self, tap: TapSender) {
-        let old = self.lock().replace(tap);
-        if let Some(old) = old {
-            old.end(TapEnd::Closed);
+    /// Attach; `Err(tap)` when [`MAX_TAPS`] are already attached.
+    pub(crate) fn attach(&self, tap: TapSender) -> Result<TapId, TapSender> {
+        let mut g = self.lock();
+        if g.taps.len() >= MAX_TAPS {
+            return Err(tap);
+        }
+        g.next += 1;
+        let id = TapId(g.next);
+        g.taps.push((id, tap));
+        Ok(id)
+    }
+
+    /// End one tap.
+    pub(crate) fn detach_one(&self, id: TapId, end: TapEnd) {
+        let mut g = self.lock();
+        if let Some(i) = g.taps.iter().position(|(t, _)| *t == id) {
+            let (_, tap) = g.taps.remove(i);
+            tap.end(end);
         }
     }
 
+    /// End every tap.
     pub(crate) fn detach(&self, end: TapEnd) {
-        let old = self.lock().take();
-        if let Some(old) = old {
-            old.end(end);
+        let taps = std::mem::take(&mut self.lock().taps);
+        for (_, t) in taps {
+            t.end(end);
         }
     }
 
     pub(crate) fn offer(&self, block: &AudioBlock) {
         let mut g = self.lock();
-        let gone = g.as_ref().is_some_and(|t| !t.offer(block));
-        if gone {
-            *g = None;
-        }
+        // A tap whose receiver is gone detaches itself.
+        g.taps.retain(|(_, t)| t.offer(block));
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Option<TapSender>> {
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.lock().taps.len()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Taps> {
         // A poisoned slot only means a panic elsewhere while holding it; the
         // Option inside is still valid.
         self.inner
@@ -293,7 +325,7 @@ mod tests {
     fn full_taps_drop_and_count_without_blocking() {
         let (tx, rx) = analysis_tap(2);
         let slot = TapSlot::default();
-        slot.attach(tx);
+        slot.attach(tx).unwrap();
         for s in 0..5 {
             slot.offer(&block(s));
         }
@@ -319,15 +351,43 @@ mod tests {
     fn revocation_discards_queued_blocks_and_dropped_receivers_detach() {
         let (tx, rx) = analysis_tap(4);
         let slot = TapSlot::default();
-        slot.attach(tx);
+        slot.attach(tx).unwrap();
         slot.offer(&block(0));
         slot.detach(TapEnd::Revoked);
         assert_eq!(rx.try_recv(), Err(TapRecvError::Ended(TapEnd::Revoked)));
         assert_eq!(rx.backlog(), 0);
         let (tx, rx) = analysis_tap(1);
-        slot.attach(tx);
+        slot.attach(tx).unwrap();
         drop(rx);
         slot.offer(&block(1));
-        assert!(slot.lock().is_none(), "a gone receiver detaches the tap");
+        assert_eq!(slot.len(), 0, "a gone receiver detaches the tap");
+    }
+
+    #[test]
+    fn several_taps_are_independent_and_bounded() {
+        let slot = TapSlot::default();
+        let (fast_tx, fast) = analysis_tap(8);
+        let (slow_tx, slow) = analysis_tap(1);
+        let a = slot.attach(fast_tx).unwrap();
+        slot.attach(slow_tx).unwrap();
+        for s in 0..4 {
+            slot.offer(&block(s));
+        }
+        assert_eq!(
+            (fast.backlog(), fast.dropped()),
+            (4, 0),
+            "a slow tap does not affect a fast one"
+        );
+        assert_eq!((slow.backlog(), slow.dropped()), (1, 3));
+        slot.detach_one(a, TapEnd::Closed);
+        assert_eq!(slot.len(), 1);
+        while fast.try_recv().is_ok() {}
+        assert_eq!(fast.try_recv(), Err(TapRecvError::Ended(TapEnd::Closed)));
+        for _ in 0..MAX_TAPS - 1 {
+            slot.attach(analysis_tap(1).0).unwrap();
+        }
+        assert!(slot.attach(analysis_tap(1).0).is_err(), "at most MAX_TAPS");
+        slot.detach(TapEnd::Revoked);
+        assert_eq!(slow.try_recv(), Err(TapRecvError::Ended(TapEnd::Revoked)));
     }
 }

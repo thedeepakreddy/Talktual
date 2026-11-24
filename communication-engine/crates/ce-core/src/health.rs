@@ -108,6 +108,22 @@ pub struct MetricsSnapshot {
     /// Analyses that failed (panic or stall).
     #[serde(default)]
     pub analysis_failures: u64,
+    /// Recognitions started (Phase 4).
+    #[serde(default)]
+    pub recognitions_started: u64,
+    /// Recognitions that failed (load failure, panic or stall).
+    #[serde(default)]
+    pub recognition_failures: u64,
+    /// Semantic workers started (Phase 5).
+    #[serde(default)]
+    pub semantics_started: u64,
+    /// Semantic workers that failed (panic, stall, repeated adapter errors).
+    #[serde(default)]
+    pub semantic_failures: u64,
+    /// Transcript revisions the runtime could not hand to a semantic worker
+    /// (queue at its hard bound or worker gone).
+    #[serde(default)]
+    pub semantic_inputs_dropped: u64,
 }
 
 /// Health and status of the runtime and every module.
@@ -129,6 +145,12 @@ pub struct RuntimeHealth {
     /// Running or recently ended analyses (Phase 3).
     #[serde(default)]
     pub analyses: Vec<crate::intel::AnalysisStatus>,
+    /// Running or recently ended recognitions (Phase 4).
+    #[serde(default)]
+    pub recognitions: Vec<crate::speech::RecognitionStatus>,
+    /// Running or recently ended semantic workers (Phase 5).
+    #[serde(default)]
+    pub semantics: Vec<crate::semantic::SemanticStatus>,
 }
 
 /// Aggregate runtime health from the runtime state and module statuses.

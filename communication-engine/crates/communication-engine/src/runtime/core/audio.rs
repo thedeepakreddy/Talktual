@@ -134,8 +134,13 @@ impl AudioState {
             .map(|s| (&s.info, s.state, s.terminal.is_some()))
     }
 
-    /// Attach an analysis tap to a capture stream's worker (Phase 3).
-    pub(crate) fn attach_tap(&self, id: AudioStreamId, tap: ce_audio::TapSender) -> CeResult<()> {
+    /// Attach a tap to a capture stream's worker (Phase 3 analysis,
+    /// Phase 4 recognition).
+    pub(crate) fn attach_tap(
+        &self,
+        id: AudioStreamId,
+        tap: ce_audio::TapSender,
+    ) -> CeResult<ce_audio::TapId> {
         self.streams
             .get(&id)
             .ok_or_else(|| unknown_stream(id))?

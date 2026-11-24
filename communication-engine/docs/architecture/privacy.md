@@ -69,6 +69,43 @@ signal conditions; overlap detection not claimed. Analysis events are
 runs only on authorized capture streams under `Capture` consent; revocation
 ends it and discards queued audio.
 
+## Speech and language (Phase 4)
+
+Transcript events are classified `Content` and language observations
+`Personal` on the event envelope (`SpeechEvent::data_class`); everything
+else is `Operational` (ADR-0022). Raw audio and transcript text are never
+logged: runtime observations carry stream ids, adapter ids, configuration
+fingerprints and end reasons only. Nothing is persisted or uploaded.
+Language observations describe the language of the text, never the
+speaker — no nationality, ethnicity, identity, location, emotion or health
+inference. Recognition runs only on authorized capture streams; revocation
+cancels the open utterance and discards queued audio.
+
+## Semantic interpretation (Phase 5)
+
+* **Classes.** Semantic observations carry mentions and normalized
+  values, so they are `Content`. Lifecycle, context, rejection and
+  degradation events carry ids, sizes and reasons only, so they are
+  `Operational` (`SemanticEvent::data_class`).
+* **Context** is ephemeral by default:
+  * session scope per stream, bounded by items, bytes, TTL and utterance
+    distance;
+  * cleared at reset, stop, cancellation, session close and shutdown;
+  * never persisted, never shared between streams or sessions.
+
+  Only committed, `medium`-or-better entity observations enter it.
+* **Locality.** Remote and local-service adapters are refused unless
+  `policy.allow_remote` / `allow_local_service` is set by the host. The
+  locality is disclosed in status, provenance and logs. The only adapter
+  shipped runs in process.
+* **Logs, health and metrics** never contain transcript or observation
+  text (tested).
+* **No inference about people.** Categories describe what was said
+  (numbers, times, amounts, terms), never the speaker. There is no name,
+  identity, emotion, health, nationality or location inference, and no
+  autonomous action is taken on an observation. A `user_confirmed_fact`
+  exists only after the host reports the user's confirmation.
+
 ## Voice governance (no implementation)
 
 CE implements no voice enrollment, cloning, conversion or TTS. Before any

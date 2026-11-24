@@ -157,7 +157,7 @@ impl Core {
         let attached = self
             .audio
             .as_ref()
-            .map(|a| a.attach_tap(id, tap_tx))
+            .map(|a| a.attach_tap(id, tap_tx).map(|_| ()))
             .unwrap_or_else(|| {
                 Err(CeError::internal(
                     "analysis.no_audio",
@@ -204,6 +204,13 @@ impl Core {
         self.query_analysis(id)
     }
 
+    /// Whether an analysis is running on `id`.
+    pub(super) fn analysis_running(&self, id: AudioStreamId) -> bool {
+        self.intel
+            .as_ref()
+            .is_some_and(|i| i.running.contains_key(&id))
+    }
+
     /// Current or final status.
     pub(super) fn query_analysis(&mut self, id: AudioStreamId) -> CeResult<CommandOutcome> {
         let intel = self.intel_mut()?;
@@ -230,6 +237,7 @@ impl Core {
                         .map(|r| r.session)
                         .or_else(|| i.finished.get(&stream).map(|f| f.0))
                 });
+                self.forward_hint(&event);
                 if matches!(event, AnalysisEvent::Failed { .. }) {
                     Metrics::inc(&self.metrics.analysis_failures, 1);
                     self.log(
@@ -328,6 +336,7 @@ impl Core {
                 biased;
                 () = tokio::time::sleep_until(deadline) => break,
                 Some(sig) = super::recv_opt(&mut self.intel_rx) => self.handle_intel_signal(sig),
+                Some(sig) = super::recv_opt(&mut self.speech_rx) => self.handle_speech_signal(sig),
                 Some(ingress) = self.ingress_rx.recv() => self.handle_ingress(ingress),
                 Some(signal) = super::recv_opt(&mut self.audio_rx) => self.handle_audio_signal(signal),
             }

@@ -22,7 +22,12 @@ Payloads are a closed, typed, `#[non_exhaustive]` enum: `RuntimeStarting`,
 `CapabilityRegistered`, `SessionCreated`, `SessionStateChanged`,
 `HealthChanged`, `RuntimeError`, `QueueSaturated`, `Audio(AudioEvent)`
 (Phase 2, topic `Audio`), `Analysis(AnalysisEvent)` (Phase 3, topic
-`Analysis`, see [audio-intelligence.md](audio-intelligence.md)) and
+`Analysis`, see [audio-intelligence.md](audio-intelligence.md)),
+`Speech(SpeechEvent)` (Phase 4, topic `Speech`, see [speech.md](speech.md);
+the envelope's `privacy` is `Content` for transcripts and `Personal` for
+language observations), `Semantic(SemanticEvent)` (Phase 5, topic
+`Semantic`, see [semantic.md](semantic.md); `Content` for observations,
+`Operational` for lifecycle, context and rejection events) and
 `Module(ModuleEvent)`.
 
 **Module events** (provisional) carry a namespaced `EventName`, a module-owned

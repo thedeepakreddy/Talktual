@@ -176,6 +176,10 @@ pub enum EventPayload {
     Audio(crate::audio::AudioEvent),
     /// An audio-intelligence event (Phase 3).
     Analysis(crate::intel::AnalysisEvent),
+    /// A speech-recognition or language event (Phase 4).
+    Speech(crate::speech::SpeechEvent),
+    /// A semantic event (Phase 5).
+    Semantic(crate::semantic::SemanticEvent),
 }
 
 impl EventPayload {
@@ -199,6 +203,8 @@ impl EventPayload {
             EventPayload::Module(_) => "module",
             EventPayload::Audio(_) => "audio",
             EventPayload::Analysis(_) => "analysis",
+            EventPayload::Speech(_) => "speech",
+            EventPayload::Semantic(_) => "semantic",
         }
     }
 
@@ -224,6 +230,8 @@ impl EventPayload {
             EventPayload::Module(_) => EventTopic::ModuleEvents,
             EventPayload::Audio(_) => EventTopic::Audio,
             EventPayload::Analysis(_) => EventTopic::Analysis,
+            EventPayload::Speech(_) => EventTopic::Speech,
+            EventPayload::Semantic(_) => EventTopic::Semantic,
         }
     }
 }
@@ -248,6 +256,10 @@ pub enum EventTopic {
     Audio,
     /// Audio-intelligence events (Phase 3).
     Analysis,
+    /// Speech-recognition and language events (Phase 4).
+    Speech,
+    /// Semantic observations and context lifecycle (Phase 5).
+    Semantic,
 }
 
 /// The envelope every event travels in.

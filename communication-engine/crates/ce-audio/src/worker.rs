@@ -43,7 +43,7 @@ use crate::io::{BlockQueue, CaptureReader, PlaybackQueue, PlaybackWriter, PushOu
 use crate::rt::{
     CaptureDrain, CaptureEndpoint, PlaybackEndpoint, StreamFault, StreamShared, Terminal,
 };
-use crate::tap::{TapEnd, TapSender, TapSlot};
+use crate::tap::{MAX_TAPS, TapEnd, TapId, TapSender, TapSlot};
 
 /// Lifecycle commands from the runtime.
 #[derive(Debug)]
@@ -211,10 +211,11 @@ impl WorkerHandle {
         }
     }
 
-    /// Attach an analysis tap (capture streams only). Every block delivered
-    /// to the host queue from now on is also offered, without blocking, to
-    /// the tap. Replaces (and ends) a previously attached tap.
-    pub fn attach_tap(&self, tap: TapSender) -> Result<(), CeError> {
+    /// Attach a tap (capture streams only). Every block delivered to the
+    /// host queue from now on is also offered, without blocking, to every
+    /// attached tap (at most [`MAX_TAPS`]); each tap is bounded and drops
+    /// independently.
+    pub fn attach_tap(&self, tap: TapSender) -> Result<TapId, CeError> {
         let Some(slot) = &self.tap else {
             return Err(CeError::new(
                 ErrorCategory::InvalidInput,
@@ -229,14 +230,21 @@ impl WorkerHandle {
                 "the stream has already ended",
             ));
         }
-        slot.attach(tap);
-        Ok(())
+        slot.attach(tap).map_err(|tap| {
+            tap.end(TapEnd::Closed);
+            CeError::new(
+                ErrorCategory::QueueSaturated,
+                "audio.too_many_taps",
+                "this capture stream already feeds the maximum number of taps",
+            )
+            .with_context("max", MAX_TAPS.to_string())
+        })
     }
 
-    /// Detach the analysis tap, if any; its receiver drains and ends.
-    pub fn detach_tap(&self) {
+    /// Detach one tap; its receiver drains and ends with `Closed`.
+    pub fn detach_tap(&self, id: TapId) {
         if let Some(t) = &self.tap {
-            t.detach(TapEnd::Closed);
+            t.detach_one(id, TapEnd::Closed);
         }
     }
 

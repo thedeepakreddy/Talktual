@@ -1401,7 +1401,7 @@ export class CommunicationSession {
     };
     const pairOk = peerLang ? reg.canTranslate(lang, peerLang) : false;
     const caps: CapabilityRow[] = [
-      row('asr', 'speech-input', reg.hasLocalAsr(lang), Boolean(this.snap.features.stt), 'on this device', this.snap.features.route === 'server-stt' ? 'Talktual server → ElevenLabs' : 'your browser’s cloud speech service'),
+      row('asr', 'speech-input', reg.hasLocalAsr(lang), Boolean(this.snap.features.stt), 'on this device', this.snap.features.route === 'server-stt' ? 'Talktual server → ElevenLabs' : this.snap.features.route === 'ce-local' ? 'Communication Engine on this computer (English)' : 'your browser’s cloud speech service'),
       row('translate', 'translation', pairOk, true, 'on this device — common phrases only', `Talktual server → ${this.server?.translator ?? 'translation service'}`),
       row('caption', 'captions', pairOk, this.snap.features.liveCaptions, 'on this device — common phrases only', `Talktual server → ${this.server?.translator ?? 'translation service'}`),
       row('tts', 'speech-output', reg.hasLocalVoice(lang), true, 'on-device voice', this.server?.tts ? 'Talktual server → ElevenLabs (or a browser voice)' : 'browser voice (may be a cloud voice)'),

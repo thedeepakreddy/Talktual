@@ -1,10 +1,14 @@
 # Communication Engine — Architecture
 
-Status: Phase 1 foundation, Phase 2 audio foundation and Phase 3 audio
-intelligence, implemented and verified on Linux x86_64 (see the
+Status: Phase 1 foundation, Phase 2 audio foundation, Phase 3 audio
+intelligence, Phase 4 speech recognition & language intelligence pipeline
+and Phase 5 semantic & contextual intelligence, implemented and verified on
+Linux x86_64 (see the
 [Phase 1](docs/phases/phase-1-report.md),
-[Phase 2](docs/phases/phase-2-report.md) and
-[Phase 3](docs/phases/phase-3-report.md) reports). APIs are
+[Phase 2](docs/phases/phase-2-report.md),
+[Phase 3](docs/phases/phase-3-report.md),
+[Phase 4](docs/phases/phase-4-report.md) and
+[Phase 5](docs/phases/phase-5-report.md) reports). APIs are
 **provisional**.
 
 The Communication Engine (CE) is a product-agnostic Rust foundation for a
@@ -18,10 +22,31 @@ timestamps, device-change handling and a capture authorization gate (see
 `ce-audio-intel` — voice activity, candidate segments and endpoints,
 silence windows, quality, a closed set of signal conditions, adaptive and
 resource policy — fed by a bounded, non-blocking tap on capture streams (see
-[audio-intelligence.md](docs/architecture/audio-intelligence.md)). There is
-**no** ASR, language detection, diarization, translation, semantic, voice
-or TTS functionality, nothing that infers personal traits, and no latency or
-device claims (no audio hardware has been tested).
+[audio-intelligence.md](docs/architecture/audio-intelligence.md)). Phase 4
+adds `ce-speech` — the ASR adapter boundary, revisioned streaming
+transcripts with stable/committed text and finalization, Phase 3 hint
+integration, text language observations with explicit scope and
+abstention, supervised bounded recognition workers, and replay/evaluation
+(see [speech.md](docs/architecture/speech.md)). A real English recognizer
+(sherpa-onnx streaming Zipformer INT8) is an optional adapter in
+`adapters/ce-asr-sherpa`. It is built outside the workspace because it
+links native libraries and needs Rust ≥ 1.89, and it has been evaluated on
+synthetic speech only. Tests use a scripted adapter, and pipeline
+evaluation uses an oracle adapter.
+Phase 5 adds `ce-semantic`:
+* typed, versioned observations (entities, relations, references,
+  optional acts) linked to transcript revisions and spans, with epistemic
+  status, uncertainty, evidence and provenance;
+* stable identity across revisions; stale rejection; stabilization,
+  finalization, retraction and correction cascades;
+* scoped, bounded, expiring, ephemeral context; locality policy; domain
+  profiles as validated data;
+* a supervised coalescing worker and a deterministic English rule adapter.
+
+See [semantic.md](docs/architecture/semantic.md). There is no
+diarization, translation, voice or TTS functionality, nothing that infers
+personal traits, and no latency or device claims (no audio hardware has
+been tested).
 
 ## 1. Crates and dependency direction
 
@@ -32,7 +57,17 @@ device claims (no audio hardware has been tested).
   SDKs,     │  EventSubscription         │  feature `tracing`: TracingSink
   tests)    └─────────────┬──────────────┘
                           │ re-exports as `contracts`
-                          │ re-exports as `audio`, `audio_intel`
+                          │ re-exports as `audio`, `audio_intel`, `speech`, `semantic`
+            ┌─────────────▼──────────────┐
+            │ ce-semantic (Phase 5)      │  semantic adapter boundary, rule/scripted
+            │                            │  adapters, context, processor, worker, eval
+            │                            │  (deps: ce-core only)
+            └────────────────────────────┘
+            ┌─────────────▼──────────────┐
+            │ ce-speech (Phase 4)        │  ASR adapter boundary, scripted/oracle
+            │                            │  adapters, transcript revisions, LID
+            │                            │  (whichlang), recognizer, workers, eval
+            └─────────────┬──────────────┘
             ┌─────────────▼──────────────┐
             │ ce-audio-intel (Phase 3)   │  framer/features, VAD adapters, hysteresis,
             │                            │  segments, quality, conditions, policy,
@@ -115,6 +150,9 @@ engine.capabilities().await?;                           // discovery (+ find_cap
 engine.start().await?;                                  // resolve → validate → init → start
 let s = engine.create_session(SessionConfig::default()).await?;
 engine.health().await?;                                 // probes modules
+engine.start_analysis(stream, None).await?;             // Phase 3
+engine.start_recognition(stream, None).await?;          // Phase 4 (adapters via builder.asr_adapter)
+engine.start_semantics(stream, None).await?;            // Phase 5 (rule adapter by default; builder.semantic_adapter)
 engine.execute(Command::…).await?;                      // typed, serializable commands
 engine.shutdown().await?;                               // bounded, reports per module
 ```
@@ -141,4 +179,8 @@ contract · 0004 event model · 0005 lifecycle · 0006 errors · 0007 privacy ·
 backend selection · 0011 audio stream architecture · 0012 audio
 normalization contract · 0013 capture authorization gate · 0014 audio
 intelligence architecture · 0015 VAD selection · 0016 analysis results and
-units · 0017 analysis privacy · 0018 analysis resource policy.
+units · 0017 analysis privacy · 0018 analysis resource policy · 0019
+speech architecture · 0020 ASR and language-ID selection · 0021 transcript
+revision semantics · 0022 language observations · 0023 real-ASR baseline
+(sherpa-onnx) · 0024 Talktual ↔ CE bridge · 0025 semantic layer and
+contracts · 0026 rule baseline and semantic evaluation.

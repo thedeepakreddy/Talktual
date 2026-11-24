@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "example.home",
+  "version": "1.0.0",
+  "language": "en",
+  "categories": ["device", "room"],
+  "terms": [
+    {"canonical": "kitchen light", "category": "device"},
+    {"canonical": "thermostat", "category": "device", "aliases": ["thermo stat"]},
+    {"canonical": "garage door", "category": "device"},
+    {"canonical": "front door", "category": "device"},
+    {"canonical": "heater", "category": "device"},
+    {"canonical": "kitchen", "category": "room"},
+    {"canonical": "bedroom", "category": "room", "aliases": ["bed room"]},
+    {"canonical": "living room", "category": "room"}
+  ],
+  "hints": [
+    {"category": "device", "referents": ["it", "that", "this", "them"]},
+    {"category": "room", "referents": ["there", "here"]}
+  ],
+  "evaluation": "ce.semantic.corpus.v1"
+}

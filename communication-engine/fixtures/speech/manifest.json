@@ -1,0 +1,99 @@
+{
+ "schema": "ce.speech-manifest.v1",
+ "description": "Reference transcripts for the synthetic (TTS) speech fixtures. Each reference is the exact text given to the synthesizer in generate.sh (reference-label method: tts-input-text). Synthetic speech: no person's voice.",
+ "provenance": "PROVENANCE.md",
+ "license": "CMU Flite voices (BSD-style); texts authored for CE",
+ "scoring": "WER/CER after normalize(): lowercase, punctuation removed except word-internal apostrophes, whitespace collapsed. A case/punctuation-sensitive WER is computed on whitespace tokens of the raw text.",
+ "items": [
+  {
+   "id": "dev_kal16_station",
+   "file": "dev_kal16_station.wav",
+   "split": "dev",
+   "voice": "kal16",
+   "tempo": 1.0,
+   "language": "en",
+   "reference": "Good morning, could you tell me where the train station is"
+  },
+  {
+   "id": "dev_slt_coffee",
+   "file": "dev_slt_coffee.wav",
+   "split": "dev",
+   "voice": "slt",
+   "tempo": 1.0,
+   "language": "en",
+   "reference": "I would like a cup of coffee and a glass of water, please"
+  },
+  {
+   "id": "dev_rms_meeting",
+   "file": "dev_rms_meeting.wav",
+   "split": "dev",
+   "voice": "rms",
+   "tempo": 1.0,
+   "language": "en",
+   "reference": "The meeting starts at nine thirty tomorrow"
+  },
+  {
+   "id": "dev_awb_yes",
+   "file": "dev_awb_yes.wav",
+   "split": "dev",
+   "voice": "awb",
+   "tempo": 1.0,
+   "language": "en",
+   "reference": "Yes"
+  },
+  {
+   "id": "test_slt_thanks",
+   "file": "test_slt_thanks.wav",
+   "split": "test",
+   "voice": "slt",
+   "tempo": 1.0,
+   "language": "en",
+   "reference": "Thank you very much for your help today"
+  },
+  {
+   "id": "test_kal16_slowly",
+   "file": "test_kal16_slowly.wav",
+   "split": "test",
+   "voice": "kal16",
+   "tempo": 1.0,
+   "language": "en",
+   "reference": "Can you please speak a little more slowly, I am still learning"
+  },
+  {
+   "id": "test_awb_directions",
+   "file": "test_awb_directions.wav",
+   "split": "test",
+   "voice": "awb",
+   "tempo": 1.0,
+   "language": "en",
+   "reference": "Turn left at the second corner and walk straight for two blocks"
+  },
+  {
+   "id": "test_rms_no",
+   "file": "test_rms_no.wav",
+   "split": "test",
+   "voice": "rms",
+   "tempo": 1.0,
+   "language": "en",
+   "reference": "No"
+  },
+  {
+   "id": "test_slt_long",
+   "file": "test_slt_long.wav",
+   "split": "test",
+   "voice": "slt",
+   "tempo": 1.0,
+   "language": "en",
+   "reference": "We should leave early, because the traffic will be heavy in the evening, and the road near the bridge is closed for repairs"
+  },
+  {
+   "id": "test_kal16_fast",
+   "file": "test_kal16_fast.wav",
+   "split": "test",
+   "voice": "kal16",
+   "tempo": 1.5,
+   "language": "en",
+   "reference": "How much does this cost, and do you accept cards"
+  }
+ ]
+}

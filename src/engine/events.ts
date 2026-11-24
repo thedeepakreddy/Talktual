@@ -19,7 +19,7 @@ export type Activity = 'idle' | 'permission-pending' | 'ready' | 'listening' | '
 
 export type ListeningMode = 'push-to-talk' | 'continuous';
 /** Where captured audio is processed — what the user consents to. */
-export type ProcessingRoute = 'browser-speech' | 'server-stt';
+export type ProcessingRoute = 'browser-speech' | 'server-stt' | 'ce-local';
 export type Transport = 'p2p' | 'relay' | 'none';
 export type PermissionState = 'unknown' | 'prompt' | 'granted' | 'denied';
 

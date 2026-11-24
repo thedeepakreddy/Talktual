@@ -73,6 +73,29 @@ npm run dev
 
 Speech recognition requires a secure context: `localhost` is fine, but any other host needs HTTPS.
 
+## Communication Engine speech recognition (optional)
+
+Talktual can recognize speech with the Communication Engine (the Rust engine
+in `communication-engine/`) on your own computer instead of the browser's
+cloud recognizer. It uses the sherpa-onnx streaming Zipformer English model;
+your audio goes to a local bridge, not to a cloud speech service.
+
+```bash
+communication-engine/adapters/ce-asr-sherpa/scripts/fetch-model.sh ~/ce-models   # once
+export CE_SHERPA_MODEL_DIR=~/ce-models/sherpa-onnx-streaming-zipformer-en-2023-06-26
+communication-engine/adapters/talktual-bridge/scripts/run-talktual-ce.sh          # bridge + server + app
+```
+
+Then open http://localhost:5173 in two windows and talk in English, or open
+**http://localhost:5173/#/engine** (Settings › Engine Lab) to test every engine
+phase live: semantic interpretation — numbers, times, dates, amounts,
+references and utterance types with their certainty and revision (Phase 5) —
+transcript and language (Phase 4), voice activity and quality
+(Phase 3), audio capture (Phase 2), and runtime health and events (Phase 1). Details,
+a step-by-step human test and scoring are in
+[`communication-engine/adapters/talktual-bridge/README.md`](communication-engine/adapters/talktual-bridge/README.md).
+Without `VITE_ASR_ENGINE=ce`, Talktual behaves exactly as before.
+
 ## Testing
 
 | Command | What it runs |

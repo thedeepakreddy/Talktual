@@ -40,7 +40,9 @@ export function disclosureFor(route: ProcessingRoute, translator: string | null,
   const speech =
     route === 'browser-speech'
       ? 'Your browser’s speech-recognition service turns your voice into text. In Chrome and Edge that is a Google/Microsoft cloud service; in Safari, Apple’s. Audio is sent to it only while you are talking.'
-      : 'Your voice is recorded only while you hold the button, then sent through the Talktual server to ElevenLabs for transcription.';
+      : route === 'ce-local'
+        ? 'Your voice is streamed only while you are talking to the Communication Engine bridge running on this computer, which turns it into text with an on-device English speech model. Your audio is not sent to a cloud speech service.'
+        : 'Your voice is recorded only while you hold the button, then sent through the Talktual server to ElevenLabs for transcription.';
   return {
     route,
     title: 'Before you talk',

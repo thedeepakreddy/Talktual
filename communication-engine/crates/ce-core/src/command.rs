@@ -95,6 +95,65 @@ pub enum Command {
         /// The stream.
         stream_id: AudioStreamId,
     },
+    /// Start speech recognition on a capture stream (Phase 4). `None` uses
+    /// the engine's default recognition configuration.
+    StartRecognition {
+        /// The capture stream.
+        stream_id: AudioStreamId,
+        /// Configuration override.
+        config: Option<crate::speech::RecognitionConfig>,
+    },
+    /// Stop recognition (the open utterance is finalized) (Phase 4).
+    StopRecognition {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Reset recognition: the open utterance is cancelled and the adapter
+    /// reset; recognition continues (Phase 4).
+    ResetRecognition {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Report the recognition status of a stream (Phase 4).
+    QueryRecognition {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// List registered ASR adapters without loading any model (Phase 4).
+    ListRecognizers,
+    /// Start semantic interpretation of a stream's transcripts (Phase 5).
+    /// `None` uses the engine's default semantic configuration.
+    StartSemantics {
+        /// The capture stream.
+        stream_id: AudioStreamId,
+        /// Configuration override.
+        config: Option<crate::semantic::SemanticConfig>,
+    },
+    /// Stop semantic interpretation; queued revisions are discarded (Phase 5).
+    StopSemantics {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Clear the stream's semantic context (Phase 5).
+    ResetSemanticContext {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// The user confirmed an observation (Phase 5): it becomes a
+    /// `UserConfirmedFact`.
+    ConfirmObservation {
+        /// The stream.
+        stream_id: AudioStreamId,
+        /// The observation.
+        observation: crate::semantic::ObservationId,
+    },
+    /// Report the semantic status of a stream (Phase 5).
+    QuerySemantics {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// List registered semantic adapters (Phase 5).
+    ListSemanticAdapters,
 }
 
 impl Command {
@@ -116,6 +175,17 @@ impl Command {
             Command::StartAnalysis { .. } => "start_analysis",
             Command::StopAnalysis { .. } => "stop_analysis",
             Command::QueryAnalysis { .. } => "query_analysis",
+            Command::StartRecognition { .. } => "start_recognition",
+            Command::StopRecognition { .. } => "stop_recognition",
+            Command::ResetRecognition { .. } => "reset_recognition",
+            Command::QueryRecognition { .. } => "query_recognition",
+            Command::ListRecognizers => "list_recognizers",
+            Command::StartSemantics { .. } => "start_semantics",
+            Command::StopSemantics { .. } => "stop_semantics",
+            Command::ResetSemanticContext { .. } => "reset_semantic_context",
+            Command::ConfirmObservation { .. } => "confirm_observation",
+            Command::QuerySemantics { .. } => "query_semantics",
+            Command::ListSemanticAdapters => "list_semantic_adapters",
         }
     }
 
@@ -127,6 +197,22 @@ impl Command {
                 config: Some(config),
                 ..
             } => config.validate(),
+            Command::StartRecognition {
+                config: Some(config),
+                ..
+            } => config.validate(),
+            Command::StartSemantics {
+                config: Some(config),
+                ..
+            } => config.validate(),
+            Command::ConfirmObservation { observation, .. }
+                if observation.0.is_empty() || observation.0.len() > 128 =>
+            {
+                Err(CeError::invalid_input(
+                    "command.observation_id_invalid",
+                    "observation ids are 1..=128 characters",
+                ))
+            }
             Command::ListCapabilities {
                 capability: None,
                 version: Some(_),
@@ -209,6 +295,26 @@ pub enum CommandOutcome {
     Analysis {
         /// Status.
         status: crate::intel::AnalysisStatus,
+    },
+    /// Recognition status (Phase 4).
+    Recognition {
+        /// Status.
+        status: Box<crate::speech::RecognitionStatus>,
+    },
+    /// Registered ASR adapters (Phase 4).
+    Recognizers {
+        /// Capabilities of each, in registration order.
+        adapters: Vec<crate::speech::AsrCapabilities>,
+    },
+    /// Semantic status (Phase 5).
+    Semantics {
+        /// Status.
+        status: Box<crate::semantic::SemanticStatus>,
+    },
+    /// Registered semantic adapters (Phase 5).
+    SemanticAdapters {
+        /// Capabilities of each, in registration order.
+        adapters: Vec<crate::semantic::SemanticCapabilities>,
     },
 }
 

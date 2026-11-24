@@ -85,3 +85,54 @@ record DR-8.5-1 (web-first vs. native shell):
 
 In every path the boundary is the facade plus serialized commands and events;
 Talktual-specific concepts (rooms, peers, push-to-talk UI) stay in Talktual.
+
+## Phase 4: Talktual uses CE recognition (implemented, opt-in)
+
+ADR-0024. Talktual can now run its calls on CE speech recognition: build it
+with `VITE_ASR_ENGINE=ce` and run the local bridge
+(`communication-engine/adapters/talktual-bridge`). It works as follows:
+* the browser streams the call's microphone as PCM over a localhost
+  WebSocket;
+* the bridge feeds it into a CE `Engine` through a network-fed audio
+  backend, so CE's own capture, Phase 3 and Phase 4 pipeline run;
+* transcript revisions come back as Talktual `AsrCallbacks`.
+
+Translation, transport and TTS are unchanged. The default build still uses
+the browser recognizer. Verified with unit tests (`src/lib/ceSpeech.test.ts`),
+the bridge's protocol and real-model tests, and a two-browser e2e
+(`e2e/ce-bridge.mjs`, real model, synthetic microphone). The guide for a
+human test is in the bridge README.
+
+## Phase 5: semantic interpretation in the Engine Lab (implemented, opt-in)
+
+* `{"type":"start", …, "semantics": true}` makes the bridge start CE
+  semantic interpretation (the in-process rule adapter) on the session's
+  stream before recognition.
+  * With `diagnostics`, every `SemanticEvent` reaches the client as a
+    `ce-event` with topic `semantic`.
+  * `status` gains `semantic` (`SemanticStatus`).
+  * `{"type":"reset-context"}` clears the context.
+  * `{"type":"confirm","observation":"…"}` records a user confirmation.
+  * The session's `end` is sent after interpretation of the last
+    transcripts has drained.
+
+  Clients that do not set `semantics` see the unchanged v1 protocol.
+* **Engine Lab** (`#/engine`).
+  * The switch "Interpret meaning (Phase 5)" is on by default.
+  * The Phase 5 panel lists each observation by id:
+    * label (category, act or reference outcome), mention and normalized
+      value;
+    * status, epistemic kind and certainty;
+    * version and the revision it came from.
+  * Entities have a Confirm button, and the panel has Clear context.
+  * The event log summaries stay content-free.
+* **Talktual's call flow is unchanged.** Semantic observations are not
+  used by translation or the product UI. Only minimal integration testing
+  is in scope (Phase 5 §2).
+* **Evidence**:
+  * bridge tests `semantics_interpret_the_session_transcripts_when_asked`
+    (scripted ASR) and `the_real_model_and_semantics_find_the_time_in_a_fixture`
+    (real model, synthetic speech);
+  * Engine Lab unit tests on a recorded bridge session;
+  * `e2e/ce-bridge.mjs`, Engine Lab case.
+

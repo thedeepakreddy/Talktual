@@ -1,0 +1,469 @@
+//! Bridge tests over a real WebSocket on 127.0.0.1.
+//!
+//! * Protocol tests use CE's **scripted** adapter (no model).
+//! * `#[ignore]`d tests use the **real model** (`CE_SHERPA_MODEL_DIR`) on the
+//!   synthetic TTS fixtures; run with `cargo test -- --ignored`.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use ce_core::speech::{LanguageSupport, LanguageTag};
+use ce_speech::AsrFactory;
+use ce_speech::fake::{ScriptedFactory, UtteranceScript};
+use futures_util::{SinkExt, StreamExt};
+use serde_json::Value;
+use talktual_bridge::{Bridge, BridgeConfig};
+use tokio::net::TcpListener;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn serve(factory: impl AsrFactory + 'static) -> (String, Arc<Bridge>) {
+    let bridge = Bridge::start(factory, BridgeConfig::default())
+        .await
+        .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("ws://{}", listener.local_addr().unwrap());
+    tokio::spawn(bridge.clone().serve(listener));
+    (url, bridge)
+}
+
+async fn connect(
+    url: &str,
+    origin: Option<&str>,
+) -> Result<Ws, tokio_tungstenite::tungstenite::Error> {
+    let mut req = url.into_client_request().unwrap();
+    if let Some(o) = origin {
+        req.headers_mut().insert("origin", o.parse().unwrap());
+    }
+    tokio_tungstenite::connect_async(req)
+        .await
+        .map(|(ws, _)| ws)
+}
+
+async fn send_json(ws: &mut Ws, v: Value) {
+    ws.send(Message::Text(v.to_string().into())).await.unwrap();
+}
+
+/// Send `samples` as 20 ms little-endian i16 frames (as fast as possible).
+async fn send_pcm(ws: &mut Ws, samples: &[f32], rate: u32) {
+    send_pcm_paced(ws, samples, rate, false).await;
+}
+
+/// Send 20 ms frames, optionally in real time like Talktual's AudioWorklet.
+async fn send_pcm_paced(ws: &mut Ws, samples: &[f32], rate: u32, realtime: bool) {
+    let frame = (rate / 50) as usize;
+    let mut tick = tokio::time::interval(Duration::from_millis(20));
+    for chunk in samples.chunks(frame) {
+        if realtime {
+            tick.tick().await;
+        }
+        let bytes: Vec<u8> = chunk
+            .iter()
+            .flat_map(|v| ((v.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
+            .collect();
+        ws.send(Message::Binary(bytes.into())).await.unwrap();
+    }
+}
+
+/// Read messages until `end` (or a timeout); returns them all.
+async fn collect(ws: &mut Ws) -> Vec<Value> {
+    let mut out = Vec::new();
+    loop {
+        let m = tokio::time::timeout(Duration::from_secs(30), ws.next())
+            .await
+            .expect("bridge answers in time");
+        let Some(Ok(Message::Text(t))) = m else {
+            break;
+        };
+        let v: Value = serde_json::from_str(&t).unwrap();
+        let end = v["type"] == "end";
+        out.push(v);
+        if end {
+            break;
+        }
+    }
+    out
+}
+
+async fn ready(ws: &mut Ws) -> Value {
+    let m = tokio::time::timeout(Duration::from_secs(30), ws.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    serde_json::from_str(m.to_text().unwrap()).unwrap()
+}
+
+fn scripted() -> ScriptedFactory {
+    ScriptedFactory::new(vec![UtteranceScript::progressive("hello world again", 200)])
+        .with_capabilities(|c| {
+            c.languages = LanguageSupport::Fixed(vec![LanguageTag::parse("en").unwrap()]);
+        })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_push_streams_through_ce_and_returns_partials_and_a_final() {
+    let (url, _b) = serve(scripted()).await;
+    let mut ws = connect(&url, Some("http://localhost:5173")).await.unwrap();
+    send_json(
+        &mut ws,
+        serde_json::json!({"type":"start","lang":"en-US","sampleRate":48000}),
+    )
+    .await;
+    let r = ready(&mut ws).await;
+    assert_eq!(r["type"], "ready");
+    assert_eq!(r["adapter"], "ce.asr.scripted");
+    assert_eq!(r["segmentation"], "continuous");
+    // 1.2 s of audio at 48 kHz, then a graceful stop.
+    send_pcm(&mut ws, &vec![0.01; 57_600], 48_000).await;
+    send_json(&mut ws, serde_json::json!({"type":"stop"})).await;
+    let msgs = collect(&mut ws).await;
+    let kinds: Vec<&str> = msgs.iter().map(|m| m["type"].as_str().unwrap()).collect();
+    assert!(kinds.contains(&"utterance"), "{kinds:?}");
+    assert!(kinds.contains(&"partial"), "{kinds:?}");
+    let fin = msgs.iter().find(|m| m["type"] == "final").expect("a final");
+    assert_eq!(fin["text"], "hello world again");
+    assert_eq!(fin["reason"], "streamend");
+    assert!(fin["durationMs"].as_u64().unwrap() >= 1_000, "{fin}");
+    assert_eq!(kinds.last(), Some(&"end"));
+    assert_eq!(msgs.last().unwrap()["aborted"], false);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn origins_languages_rates_and_abort_are_enforced() {
+    let (url, _b) = serve(scripted()).await;
+    // A foreign web page cannot connect.
+    assert!(connect(&url, Some("https://evil.example")).await.is_err());
+    // Unsupported language: fatal error, nothing is opened.
+    let mut ws = connect(&url, Some("http://127.0.0.1:5173")).await.unwrap();
+    send_json(
+        &mut ws,
+        serde_json::json!({"type":"start","lang":"fr-FR","sampleRate":48000}),
+    )
+    .await;
+    let e = ready(&mut ws).await;
+    assert_eq!(
+        (e["type"].as_str(), e["code"].as_str(), e["fatal"].as_bool()),
+        (Some("error"), Some("language-unsupported"), Some(true))
+    );
+    // Bad rate.
+    let mut ws = connect(&url, None).await.unwrap();
+    send_json(
+        &mut ws,
+        serde_json::json!({"type":"start","lang":"en","sampleRate":1000}),
+    )
+    .await;
+    assert_eq!(ready(&mut ws).await["code"], "bridge.bad_rate");
+    // Abort discards: no final, an aborted end.
+    let mut ws = connect(&url, None).await.unwrap();
+    send_json(
+        &mut ws,
+        serde_json::json!({"type":"start","lang":"en","sampleRate":16000}),
+    )
+    .await;
+    assert_eq!(ready(&mut ws).await["type"], "ready");
+    send_pcm(&mut ws, &vec![0.0; 8_000], 16_000).await;
+    send_json(&mut ws, serde_json::json!({"type":"abort"})).await;
+    let msgs = collect(&mut ws).await;
+    assert_eq!(msgs.last().unwrap()["aborted"], true);
+    // Malformed messages are reported, not fatal.
+    let mut ws = connect(&url, None).await.unwrap();
+    send_json(&mut ws, serde_json::json!({"type":"nope"})).await;
+    let e = ready(&mut ws).await;
+    assert_eq!(
+        (e["code"].as_str(), e["fatal"].as_bool()),
+        (Some("bridge.bad_message"), Some(false))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_pushes_are_independent_sessions() {
+    let (url, _b) = serve(scripted()).await;
+    let mut tasks = Vec::new();
+    for _ in 0..3 {
+        let url = url.clone();
+        tasks.push(tokio::spawn(async move {
+            let mut ws = connect(&url, None).await.unwrap();
+            send_json(
+                &mut ws,
+                serde_json::json!({"type":"start","lang":"en","sampleRate":16000}),
+            )
+            .await;
+            assert_eq!(ready(&mut ws).await["type"], "ready");
+            send_pcm(&mut ws, &vec![0.01; 16_000], 16_000).await;
+            send_json(&mut ws, serde_json::json!({"type":"stop"})).await;
+            let msgs = collect(&mut ws).await;
+            msgs.iter().filter(|m| m["type"] == "final").count()
+        }));
+    }
+    for t in tasks {
+        assert_eq!(t.await.unwrap(), 1);
+    }
+}
+
+fn real() -> ce_asr_sherpa::SherpaFactory {
+    let dir =
+        ce_asr_sherpa::model_dir_from_env().expect("CE_SHERPA_MODEL_DIR must point at the model");
+    ce_asr_sherpa::SherpaFactory::new(ce_asr_sherpa::SherpaConfig::zipformer_en_2023_06_26_int8(
+        dir,
+    ))
+}
+
+fn fixture(id: &str) -> Vec<f32> {
+    let (_, s) = ce_speech::eval::load_split(ce_speech::eval::Split::Dev)
+        .unwrap()
+        .into_iter()
+        .chain(ce_speech::eval::load_split(ce_speech::eval::Split::Test).unwrap())
+        .find(|(m, _)| m.id == id)
+        .unwrap();
+    s
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs the sherpa-onnx model (CE_SHERPA_MODEL_DIR)"]
+async fn the_real_model_recognizes_a_fixture_streamed_like_talktual_does() {
+    let (url, _b) = serve(real()).await;
+    for (seg, rate) in [("continuous", 16_000u32), ("activity", 48_000)] {
+        let mut ws = connect(&url, Some("http://localhost:5173")).await.unwrap();
+        send_json(
+            &mut ws,
+            serde_json::json!({"type":"start","lang":"en-US","sampleRate":rate,"segmentation":seg}),
+        )
+        .await;
+        let r = ready(&mut ws).await;
+        assert_eq!(r["adapter"], "ce.asr.sherpa-zipformer", "{r}");
+        let mut audio = vec![0.0f32; 8_000];
+        audio.extend(fixture("dev_kal16_station"));
+        audio.extend(vec![0.0f32; 16_000]);
+        let audio = ce_audio_intel::synth::resample_linear(&audio, 16_000, rate);
+        send_pcm_paced(&mut ws, &audio, rate, true).await;
+        send_json(&mut ws, serde_json::json!({"type":"stop"})).await;
+        let msgs = collect(&mut ws).await;
+        let text: Vec<&str> = msgs
+            .iter()
+            .filter(|m| m["type"] == "final")
+            .filter_map(|m| m["text"].as_str())
+            .collect();
+        let joined = text.join(" ");
+        assert!(
+            joined.contains("TRAIN STATION"),
+            "{seg} @ {rate}: {joined:?}"
+        );
+        assert!(
+            msgs.iter().any(|m| m["type"] == "partial"),
+            "{seg}: partials"
+        );
+        if seg == "activity" {
+            assert!(
+                msgs.iter().any(|m| m["type"] == "activity"),
+                "Phase 3 activity reported"
+            );
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn diagnostics_expose_every_phase_for_the_engine_lab() {
+    let (url, _b) = serve(scripted()).await;
+    let mut ws = connect(&url, Some("http://localhost:5173")).await.unwrap();
+    // Phase 1: engine info without any audio.
+    send_json(&mut ws, serde_json::json!({"type":"info"})).await;
+    let info = ready(&mut ws).await;
+    assert_eq!(info["type"], "info");
+    assert_eq!(info["recognizers"][0]["adapter"], "ce.asr.scripted");
+    assert_eq!(info["health"]["state"], "running");
+    send_json(
+        &mut ws,
+        serde_json::json!({"type":"start","lang":"en","sampleRate":16000,"diagnostics":true,"analysis":true}),
+    )
+    .await;
+    assert_eq!(ready(&mut ws).await["type"], "ready");
+    // 1.5 s of a speech-like signal in real time so status ticks arrive.
+    let sig = ce_audio_intel::synth::speechlike(7, 16_000, 0.3, 24_000);
+    send_pcm_paced(&mut ws, &sig, 16_000, true).await;
+    send_json(&mut ws, serde_json::json!({"type":"reset"})).await;
+    send_json(&mut ws, serde_json::json!({"type":"stop"})).await;
+    let msgs = collect(&mut ws).await;
+    if let Ok(dir) = std::env::var("BRIDGE_SAMPLE_OUT") {
+        let lines: Vec<String> = msgs.iter().map(|m| m.to_string()).collect();
+        std::fs::write(dir, lines.join("\n")).unwrap();
+    }
+    let topics: std::collections::BTreeSet<String> = msgs
+        .iter()
+        .filter(|m| m["type"] == "ce-event")
+        .map(|m| {
+            format!(
+                "{}:{}",
+                m["topic"].as_str().unwrap(),
+                m["kind"].as_str().unwrap()
+            )
+        })
+        .collect();
+    for want in [
+        "session_created:session_created",
+        "audio:stream_state_changed",
+        "analysis:started",
+        "speech:started",
+        "speech:reset",
+    ] {
+        assert!(topics.contains(want), "missing {want} in {topics:?}");
+    }
+    assert!(
+        !topics.iter().any(|t| t.starts_with("semantic:")),
+        "semantics run only when asked for"
+    );
+    let status = msgs
+        .iter()
+        .rev()
+        .find(|m| m["type"] == "status")
+        .expect("a status snapshot");
+    assert!(
+        status["audio"]["counters"]["frames"].as_u64().unwrap() > 0,
+        "{status}"
+    );
+    assert!(
+        status["analysis"]["counters"]["hops"].as_u64().is_some(),
+        "{status}"
+    );
+    assert!(
+        status["recognition"]["counters"]["blocks"]
+            .as_u64()
+            .is_some(),
+        "{status}"
+    );
+    assert!(status["metrics"]["recognitions_started"].as_u64().unwrap() >= 1);
+    // Transcript content events carry their privacy class.
+    assert!(msgs.iter().any(|m| m["type"] == "ce-event"
+        && m["kind"] == "transcript"
+        && m["privacy"] == "content"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn semantics_interpret_the_session_transcripts_when_asked() {
+    let asr = ScriptedFactory::new(vec![UtteranceScript::progressive(
+        "set a timer for twenty five minutes",
+        150,
+    )])
+    .with_capabilities(|c| {
+        c.languages = LanguageSupport::Fixed(vec![LanguageTag::parse("en").unwrap()]);
+    });
+    let (url, _b) = serve(asr).await;
+    let mut ws = connect(&url, Some("http://localhost:5173")).await.unwrap();
+    send_json(
+        &mut ws,
+        serde_json::json!({"type":"start","lang":"en","sampleRate":16000,"diagnostics":true,"semantics":true}),
+    )
+    .await;
+    assert_eq!(ready(&mut ws).await["type"], "ready");
+    let sig = ce_audio_intel::synth::speechlike(3, 16_000, 0.3, 24_000);
+    send_pcm_paced(&mut ws, &sig, 16_000, true).await;
+    send_json(&mut ws, serde_json::json!({"type":"reset-context"})).await;
+    send_json(&mut ws, serde_json::json!({"type":"stop"})).await;
+    let msgs = collect(&mut ws).await;
+    if let Ok(path) = std::env::var("BRIDGE_SEMANTIC_SAMPLE_OUT") {
+        let lines: Vec<String> = msgs.iter().map(|m| m.to_string()).collect();
+        std::fs::write(path, lines.join("\n")).unwrap();
+    }
+    assert!(
+        msgs.iter().all(|m| m["type"] != "error"),
+        "{:?}",
+        msgs.iter()
+            .filter(|m| m["type"] == "error")
+            .collect::<Vec<_>>()
+    );
+    let sem: Vec<&Value> = msgs
+        .iter()
+        .filter(|m| m["type"] == "ce-event" && m["topic"] == "semantic")
+        .collect();
+    let kinds: std::collections::BTreeSet<&str> =
+        sem.iter().map(|m| m["kind"].as_str().unwrap()).collect();
+    for want in ["started", "observation", "utterance_finalized", "stopped"] {
+        assert!(kinds.contains(want), "missing {want} in {kinds:?}");
+    }
+    let fin = sem
+        .iter()
+        .find(|m| {
+            m["kind"] == "observation"
+                && m["data"]["observation"]["status"] == "final"
+                && m["data"]["observation"]["payload"]["category"] == "duration"
+        })
+        .expect("a final duration observation");
+    assert_eq!(fin["privacy"], "content");
+    assert_eq!(
+        fin["data"]["observation"]["payload"]["normalized"]["value"],
+        1500
+    );
+    assert_eq!(
+        fin["data"]["observation"]["payload"]["mention"],
+        "twenty five minutes"
+    );
+    // Context events are operational and carry no text.
+    for m in sem.iter().filter(|m| m["kind"] == "context") {
+        assert_eq!(m["privacy"], "operational");
+        assert!(!m.to_string().contains("twenty"), "{m}");
+    }
+    let status = msgs
+        .iter()
+        .rev()
+        .find(|m| m["type"] == "status" && !m["semantic"].is_null())
+        .expect("a status with semantics");
+    assert_eq!(
+        status["semantic"]["capabilities"]["adapter"],
+        "ce.semantic.rules"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs the sherpa-onnx model (CE_SHERPA_MODEL_DIR)"]
+async fn the_real_model_and_semantics_find_the_time_in_a_fixture() {
+    let (url, _b) = serve(real()).await;
+    let mut ws = connect(&url, Some("http://localhost:5173")).await.unwrap();
+    send_json(
+        &mut ws,
+        serde_json::json!({"type":"start","lang":"en-US","sampleRate":16000,"segmentation":"activity","diagnostics":true,"semantics":true}),
+    )
+    .await;
+    assert_eq!(ready(&mut ws).await["type"], "ready");
+    let mut audio = vec![0.0f32; 8_000];
+    audio.extend(fixture("dev_rms_meeting"));
+    audio.extend(vec![0.0f32; 16_000]);
+    send_pcm_paced(&mut ws, &audio, 16_000, true).await;
+    send_json(&mut ws, serde_json::json!({"type":"stop"})).await;
+    let msgs = collect(&mut ws).await;
+    let finals: Vec<&str> = msgs
+        .iter()
+        .filter(|m| m["type"] == "final")
+        .filter_map(|m| m["text"].as_str())
+        .collect();
+    let obs: Vec<&Value> = msgs
+        .iter()
+        .filter(|m| m["topic"] == "semantic" && m["kind"] == "observation")
+        .map(|m| &m["data"]["observation"])
+        .filter(|o| o["status"] == "final")
+        .collect();
+    // Evidence for the report (real model output; synthetic speech).
+    println!("finals: {finals:?}");
+    for o in &obs {
+        println!(
+            "final observation: {} {} {} {}",
+            o["payload"]["type"],
+            o["payload"]["category"],
+            o["payload"]["mention"],
+            o["payload"]["normalized"]
+        );
+    }
+    let time = obs
+        .iter()
+        .find(|o| o["payload"]["category"] == "time_of_day")
+        .unwrap_or_else(|| panic!("a final time observation in {finals:?}"));
+    assert_eq!(time["payload"]["normalized"]["value"]["hour"], 9);
+    assert_eq!(time["payload"]["normalized"]["value"]["minute"], 30);
+    assert!(
+        time["payload"]["normalized"]["value"]["pm"].is_null(),
+        "am/pm was not said"
+    );
+    assert!(msgs.iter().any(|m| m["type"] == "end"));
+}

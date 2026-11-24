@@ -24,7 +24,7 @@ const SECONDARY: Dest[] = [
   { route: 'settings', label: 'Settings', icon: Settings },
 ];
 
-const MOOD: Record<Route, FieldMood> = { home: 'rich', air: 'session', connect: 'session', lens: 'calm', rewind: 'calm', voice: 'calm', settings: 'calm' };
+const MOOD: Record<Route, FieldMood> = { home: 'rich', air: 'session', connect: 'session', lens: 'calm', rewind: 'calm', voice: 'calm', settings: 'calm', engine: 'calm' };
 
 /** Navigation around pages; hidden during active sessions (AIR, a call). The molten field sits behind everything. */
 export function AppShell({ route, go, showNav, children }: { route: Route; go: (r: Route) => void; showNav: boolean; children: ReactNode }) {

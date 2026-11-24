@@ -120,7 +120,13 @@ async fn open_failures_clean_up_and_leave_nothing_open() {
 
 #[tokio::test]
 async fn a_panic_in_the_backend_is_contained_and_reported() {
-    let mut h = audio_harness().await;
+    // The worker's reply is dropped only after the panic hook has run
+    // (with RUST_BACKTRACE set it symbolizes a backtrace first). Keep the
+    // open deadline far from that so this test checks panic containment,
+    // not timing; timeout classification has its own test below.
+    let mut config = audio_config();
+    config.audio.open_timeout_ms = 10_000;
+    let mut h = audio_harness_with(config, FakeDriver::Manual).await;
     h.fake.panic_on_open();
     let err = h
         .engine
