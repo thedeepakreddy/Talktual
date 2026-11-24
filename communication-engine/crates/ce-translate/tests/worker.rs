@@ -286,6 +286,7 @@ fn a_hang_is_visible_to_the_stall_detector() {
 }
 
 #[test]
+#[allow(clippy::print_stderr)] // reports the measured run time
 fn long_streams_stay_bounded() {
     let f = ScriptedFactory::echo(scripted_capabilities("t", &[("en", "es")]));
     let (h, mut rx) = spawn(&f, cfg(PartialPolicy::Committed, 64));

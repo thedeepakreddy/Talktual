@@ -213,6 +213,12 @@ async fn transcripts_are_translated_end_to_end_with_exact_linkage_and_no_upstrea
         }
     }
     assert_eq!(finals, vec![0, 1]);
+    // Phase 5 hints reached translation through the runtime: utterance 1's
+    // final was given the final entities of utterance 0 ("forty dollars").
+    let hinted = all.iter().any(|(e, _, _)| {
+        matches!(e, TranslationEvent::Result(r) if r.source.utterance == 1 && r.state == TranslationState::Final && r.provenance.context_hints >= 1)
+    });
+    assert!(hinted, "no Phase 5 hint reached the final of utterance 1");
     // Upstream immutability: the transcripts are exactly what the ASR said.
     let final_texts: Vec<&str> = transcripts
         .iter()
@@ -554,4 +560,50 @@ async fn streams_are_isolated_and_shutdown_drains() {
         ),
         "{end:?}"
     );
+}
+
+#[tokio::test]
+async fn logs_health_and_metrics_carry_no_translation_content() {
+    let sink = std::sync::Arc::new(ce_testkit::RecordingSink::default());
+    let s2 = sink.clone();
+    let mut h = audio_harness_custom(audio_config(), FakeDriver::Manual, move |b| {
+        b.asr_adapter(two_utterances())
+            .translation_adapter(echo())
+            .observability(s2)
+    })
+    .await;
+    h.grant_capture().await;
+    let (mut reader, id) = open(&h).await;
+    h.engine.start_semantics(id, None).await.unwrap();
+    h.engine
+        .start_translation(id, Some(en_es(PartialPolicy::Full)))
+        .await
+        .unwrap();
+    h.engine
+        .start_recognition(id, Some(continuous()))
+        .await
+        .unwrap();
+    feed(&h, &mut [&mut reader], 120).await;
+    wait_tr(&mut h, |e| final_result(e, 1)).await;
+    h.engine.stop_recognition(id).await.unwrap();
+    wait_tr(&mut h, |e| matches!(e, TranslationEvent::Stopped { .. })).await;
+    let logs = sink.rendered();
+    assert!(
+        logs.contains("translation.started") && logs.contains("translation.ended"),
+        "{logs}"
+    );
+    // Source words and their (uppercased) translations never appear.
+    for word in ["forty", "dollars", "split", "total"] {
+        assert!(
+            !logs.to_lowercase().contains(word),
+            "{word} leaked into logs"
+        );
+    }
+    let health = serde_json::to_string(&h.engine.health().await.unwrap()).unwrap();
+    for word in ["FORTY", "SPLIT", "forty", "split"] {
+        assert!(!health.contains(word), "{word} leaked into health");
+    }
+    let metrics = serde_json::to_string(&h.engine.metrics()).unwrap();
+    assert!(!metrics.to_lowercase().contains("forty"));
+    h.engine.shutdown().await.unwrap();
 }

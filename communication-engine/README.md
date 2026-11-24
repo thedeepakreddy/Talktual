@@ -3,7 +3,8 @@
 A product-agnostic Rust foundation for a communication intelligence engine.
 Talktual is its first consumer, not its boundary.
 
-**Status: Phase 5 — semantic & contextual intelligence** on top of the
+**Status: Phase 6 — translation intelligence** on top of Phase 5
+semantic & contextual intelligence, the
 Phase 4 speech recognition & language intelligence pipeline, Phase 3 audio intelligence, the Phase 2 audio foundation and the
 Phase 1 foundation. Capture and playback infrastructure
 exists (device discovery, negotiation, bounded real-time handoff,
@@ -25,14 +26,23 @@ interpretation of transcript revisions (`ce-semantic`):
 
 It ships a deterministic English rule adapter, evaluated on a small
 synthetic corpus only. ML and hosted adapters are deferred pending
-approval. There is no diarization, translation, voice or TTS,
+approval. Phase 6 adds translation of transcript revisions
+(`ce-translate`): revision-linked results (provisional, stable, final,
+withdrawn, typed unavailable outcomes), explicit language and adapter
+selection with policy-controlled fallback, bounded Phase 5 hints,
+terminology profiles with protected spans, and a supervised bounded
+worker. It ships a deterministic offline translation-memory baseline and
+a scripted adapter; **a real machine-translation adapter is blocked
+pending approval of a model download**, so translation quality is not
+established. There is no diarization, voice or TTS,
 and **no audio hardware has been tested** — no latency or device claims.
 All APIs are provisional (facade API `0.1`). See the
 [Phase 1](docs/phases/phase-1-report.md),
 [Phase 2](docs/phases/phase-2-report.md),
 [Phase 3](docs/phases/phase-3-report.md),
-[Phase 4](docs/phases/phase-4-report.md) and
-[Phase 5](docs/phases/phase-5-report.md) reports.
+[Phase 4](docs/phases/phase-4-report.md),
+[Phase 5](docs/phases/phase-5-report.md) and
+[Phase 6](docs/phases/phase-6-report.md) reports.
 
 ## What Phase 1 provides
 
@@ -64,6 +74,8 @@ communication-engine/
   fixtures/language/                   authored language-ID corpus + provenance (Phase 4)
   crates/ce-semantic/                  semantics: adapter boundary, rule/scripted adapters, context, processor, worker, eval
   fixtures/semantic/                   authored + real-ASR semantic corpus, example profile, provenance (Phase 5)
+  crates/ce-translate/                 translation: adapter boundary, memory/scripted adapters, fidelity, processor, worker, eval
+  fixtures/translation/                authored parallel corpus, dev-only memory, terminology profile, provenance (Phase 6)
   adapters/ce-asr-sherpa/              optional real ASR adapter (sherpa-onnx; outside the workspace)
   adapters/talktual-bridge/            Talktual ↔ CE bridge: Talktual uses CE recognition end to end
   crates/communication-engine/         runtime (private) + public facade
@@ -86,6 +98,7 @@ cargo run --release -p ce-audio-intel --example evaluate -- test   # fixture eva
 cargo run -p communication-engine --example speech_smoke    # speech recognition on the fake backend (scripted adapter)
 cargo run --release -p ce-speech --example evaluate_speech -- all  # Phase 4 evaluation tables
 cargo run --release -p ce-semantic --example evaluate_semantic -- all --errors  # Phase 5 evaluation
+cargo run --release -p ce-translate --example evaluate_translation -- test      # Phase 6 evaluation
 cargo run --release -p communication-engine --features cpal --example audio_probe -- --seconds 5   # real device
 cargo test --workspace --all-targets                         # tests
 scripts/verify.sh                                            # all gates

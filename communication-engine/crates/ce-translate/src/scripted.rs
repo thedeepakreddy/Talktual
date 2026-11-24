@@ -93,7 +93,7 @@ impl ScriptedFactory {
         }
     }
 
-    /// Uppercases the text and tags it with the target ("[es] HELLO").
+    /// Uppercases the text and tags it with the target (`"[es] HELLO"`).
     /// Placeholders are kept.
     pub fn echo(caps: TranslationCapabilities) -> Self {
         Self::new(caps, |r| AdapterOutcome::Translated {

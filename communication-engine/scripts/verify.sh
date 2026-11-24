@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verification gates for the Communication Engine workspace (Phases 1-5).
+# Verification gates for the Communication Engine workspace (Phases 1-6).
 # Usage: scripts/verify.sh            (from anywhere)
 #        CE_SKIP_DENY=1 scripts/verify.sh   (skip cargo-deny if not installed)
 set -euo pipefail
@@ -44,16 +44,20 @@ step "semantics: replay regression gate (pinned scores) and evaluation report"
 cargo test --release -p ce-semantic --test evaluation
 cargo run --release -p ce-semantic --example evaluate_semantic -- all
 
+step "translation: pinned evaluation gate and pair-level report"
+cargo test --release -p ce-translate --test evaluation
+cargo run --release -p ce-translate --example evaluate_translation -- test
+
 step "cross-target check (compile only; targets installed via rustup only)"
 for target in aarch64-apple-ios aarch64-linux-android x86_64-pc-windows-msvc aarch64-apple-darwin; do
   if rustup target list --installed 2>/dev/null | grep -qx "$target"; then
-    cargo check -p ce-core -p ce-audio -p ce-audio-intel -p ce-speech -p ce-semantic -p communication-engine --all-features --target "$target"
+    cargo check -p ce-core -p ce-audio -p ce-audio-intel -p ce-speech -p ce-semantic -p ce-translate -p communication-engine --all-features --target "$target"
   else
     echo "skip $target (not installed: rustup target add $target)"
   fi
 done
 if rustup target list --installed 2>/dev/null | grep -qx wasm32-unknown-unknown; then
-  cargo check -p ce-core -p ce-audio -p ce-audio-intel -p ce-speech -p ce-semantic --target wasm32-unknown-unknown
+  cargo check -p ce-core -p ce-audio -p ce-audio-intel -p ce-speech -p ce-semantic -p ce-translate --target wasm32-unknown-unknown
 fi
 
 if [[ "${CE_SKIP_DENY:-0}" != "1" ]]; then

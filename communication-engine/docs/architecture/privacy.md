@@ -106,6 +106,23 @@ cancels the open utterance and discards queued audio.
   autonomous action is taken on an observation. A `user_confirmed_fact`
   exists only after the host reports the user's confirmation.
 
+## Translation (Phase 6)
+
+* **Classes.** Translation results carry text, so they are `Content`;
+  withdrawal, unavailable, rejection, degradation and lifecycle events
+  carry ids, reasons and counts only (`TranslationEvent::data_class`;
+  tested in the runtime tests).
+* **Local-first.** Shipped adapters run in process. An adapter that
+  declares `remote` locality is refused at start unless
+  `privacy.allow_remote` is set, and is never used as an implicit
+  fallback. No transcript or semantic context leaves the device by
+  default.
+* **No storage.** Results, hints and terminology live only in the worker
+  for the stream's lifetime; nothing is persisted or logged.
+* **No inference about people, no action.** Translation does not infer
+  identity, gender, intent or emotion, and a translated request is not
+  executed.
+
 ## Voice governance (no implementation)
 
 CE implements no voice enrollment, cloning, conversion or TTS. Before any

@@ -70,6 +70,33 @@ fn main() {
         );
         return;
     }
+    if args.get(1).map(String::as_str) == Some("overhead") {
+        // Engine overhead per final through the processor with a trivial
+        // adapter (no translation work): validation, protection, fidelity
+        // checks, event construction. Wall clock, this machine only.
+        let corpus = eval::load_corpus().expect("corpus");
+        let items: Vec<&Item> = corpus
+            .iter()
+            .filter(|i| i.source_language == "en" && i.target_language == "es")
+            .collect();
+        let echo = ScriptedFactory::echo(scripted_capabilities("echo", &[("en", "es")]));
+        let term = eval::load_terminology().expect("terminology");
+        let mut runs = Vec::new();
+        for _ in 0..200 {
+            let t0 = std::time::Instant::now();
+            let _ = eval::replay(&echo, &items, Some(term.clone())).expect("replay");
+            runs.push(t0.elapsed().as_secs_f64() * 1e6 / items.len() as f64);
+        }
+        runs.sort_by(f64::total_cmp);
+        println!(
+            "per-request engine overhead over {} requests x 200 runs: p50 {:.1} us, p95 {:.1} us, max {:.1} us",
+            items.len(),
+            runs[100],
+            runs[190],
+            runs[199]
+        );
+        return;
+    }
     let split = args.get(1).cloned().unwrap_or_else(|| "test".into());
     let dump = args
         .iter()
