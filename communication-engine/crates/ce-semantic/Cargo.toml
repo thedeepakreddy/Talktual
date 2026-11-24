@@ -13,9 +13,9 @@ ce-core = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
-uuid = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt", "macros", "time"] }
 
 [lints]
