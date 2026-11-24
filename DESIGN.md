@@ -1,7 +1,7 @@
 ---
 name: Talktual
 direction: Molten glass — iOS 27-style liquid glass over a slow molten field, in iPhone 17 Pro Cosmic Orange
-version: 3.1.0
+version: 3.2.0
 status: current (supersedes 2.1.0 "Futuristic Audio"); owner brief of 2026-11-24 overrides the Phase 7 constitution's "no glass / gradients / glow / pills" rules
 source: src/index.css (tokens + materials), src/components/ui/* (primitives), src/components/icons.tsx (icon set), src/three/* (Three.js scenes), src/components/voice/* (Sujit wave)
 themes: [dark (Obsidian, showcase), light (Daylight)] — system by default, user-selectable (Settings › Appearance)
@@ -122,44 +122,45 @@ A full-screen shader: low-frequency domain-warped flow, with light pooling at th
 - a still frame under reduced motion
 - CSS gradient fallback
 
-### Liquid Orb (`src/three/LiquidOrb.tsx`) — the voice visual
-Inspired by the owner's reference: a luminous glass sphere holding a twisting ribbon, in Cosmic Orange.
+### Logo Wave (`src/three/LogoWave.tsx`) — the voice visual
+The Talktual mark itself, as living liquid glass.
 
-**The orb:**
-- **Body:** milky glass that glows from within.
-- **Colour:** saturated orange and ember pools at the poles, drifting slowly.
-- **Edge:** the limb takes on colour, and the very edge is a crisp luminous line.
-- **Light around it:** a prismatic fringe, two speculars, and a *tight* bloom that hugs the silhouette (no corona), plus fine horizontal lens streaks.
-- **Ribbon:** an S-shaped frosted band with fine ember edge lines, floating inside.
-
-**Orb ↔ wave:**
-- **Trigger:** sustained reported speech (> 0.3 for 140 ms) turns the orb into the **Sujit wave**.
-- **The change:**
-  - The sphere flattens into a lens, then a line of light.
-  - The ribbon unfurls across the full width.
-  - Thirteen strands fan out in 3D around a white-hot lead.
-  - It swirls and ripples halfway through.
-- **Return:** after 1.1 s of calm (< 0.1) it springs back.
+**The mark:**
+- **Two slabs of orange glass**, the logo's two waves: the upper a big crest then a small one; the lower a small trough then a big one.
+- **Colour:** the brand gradient (`#E2560C → #FF7A1A → #FFB070`), lit from within and deepening toward the split line.
+- **Light:**
+  - a glossy liquid cap and a crisp crest line
+  - drifting caustic lines inside
+  - iridescent thin-film **RGB reflections** on the rims
+  - a reflection band sweeping across with a chromatic split
+  - a tight bloom that hugs the edges
 
 **Physics:**
-- the morph spring: k 24, ζ 0.6, with a slight overshoot
-- a jelly squash spring kicked by rising level
-- attack/release level smoothing
-- fixed 120 Hz sub-steps, for stability at any frame rate
+- Each wave's edge is an elastic string: 128 masses with spring, tension and damping, at 240 Hz semi-implicit sub-steps.
+- Tension acts on the deviation from the target shape, so at rest it holds the logo **exactly**, while disturbances travel, reflect at the ends and settle.
+- The voice drives the strings and kicks splashes where it jumps.
+- **RGB dispersion:** three colour copies of each edge follow the liquid at different rates (red slowest). Still, they merge into white; in motion, they fan apart.
 
-**Honesty:** ripples, squash, glow and the morph come **only** from `ActivityLevel` (real recognizer events or real mic loudness). While listening in silence, only the light inside flows (a true state). When not listening, it is still and dimmed.
+**Logo ↔ waveform:**
+- **Trigger:** sustained reported speech (> 0.3 for 140 ms).
+- **The change:** the mark widens to the full width and becomes a living waveform with the same interleaved crests. The split line becomes a line of light, with a 3D swirl halfway.
+- **Morph spring:** k 24, ζ 0.6, with a slight overshoot.
+- **Return:** after 1.1 s of calm it folds back into the logo.
+
+**Honesty:** splashes, ripples, the waveform and the morph come **only** from `ActivityLevel` (real recognizer events or real mic). While listening in silence, a faint travelling breath shows the true listening state. When not listening, it is the still logo, dimmed.
 
 **Uses:**
-- **AIR:** centred in the middle of the screen until translations arrive, then compact above them.
-- **Home hero:** decorative, with a slow drift, and it never becomes a wave there.
+- **AIR:** in the middle of the screen until translations arrive, then compact above them.
+- **Home hero:** decorative breath only; it never becomes a waveform there.
 
 **Robustness:**
-- Three.js is lazy-loaded.
-- One renderer per orb; the GPU context is released on unmount.
-- Device pixel ratio ≤ 2; it sleeps when settled or hidden.
-- The morph snaps without travel under reduced motion.
-- Fallbacks: a CSS orb when WebGL is missing or the context is lost.
-- The browser test asserts no page errors, console errors or Three.js/WebGL warnings.
+- Lazy Three.js; the GPU context is released on unmount.
+- Context-loss and no-WebGL fallback: the static SVG mark.
+- Reduced motion: no drive, breath or sweep; the morph snaps.
+- The browser test visits Home and AIR and fails on any page error, console error or Three.js/WebGL warning.
+
+### Background smoke
+The molten field adds rising orange smoke (ridged noise tendrils) in the top-left and bottom-right corners, opposite the existing light pools. The centre stays dark for contrast.
 
 ### Sujit wave, canvas (`src/components/voice/SujitWaveform.tsx`)
 The 2D canvas version of the wave, used in calls above the dock, with the same honest level source.

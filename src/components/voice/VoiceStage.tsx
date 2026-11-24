@@ -1,5 +1,5 @@
 import { useRecognizerLevel } from './useRecognizerLevel';
-import { LiquidOrb } from '../../three/LiquidOrb';
+import { LogoWave } from '../../three/LogoWave';
 import { cn } from '../../utils';
 
 interface VoiceStageProps {
@@ -14,9 +14,9 @@ interface VoiceStageProps {
 }
 
 /**
- * The Liquid Orb as the voice stage: an orb in silence that becomes the Sujit
- * wave when speech is reported and returns when it stops. One level source,
- * fed only by real recognizer events.
+ * The Talktual mark as the voice stage: the logo's liquid-glass waves in
+ * silence, a living waveform when speech is reported, back to the logo when it
+ * stops. One level source, fed only by real recognizer events.
  */
 export function VoiceStage({ capturing, hearing, partial, settled, size = 'hero', className }: VoiceStageProps) {
   const level = useRecognizerLevel(capturing, hearing, partial);
@@ -32,7 +32,7 @@ export function VoiceStage({ capturing, hearing, partial, settled, size = 'hero'
         className
       )}
     >
-      <LiquidOrb level={level} active={capturing} label={label} className="absolute inset-0" />
+      <LogoWave level={level} active={capturing} label={label} className="absolute inset-0" />
     </div>
   );
 }
