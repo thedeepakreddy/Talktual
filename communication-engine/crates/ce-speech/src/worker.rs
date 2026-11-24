@@ -379,7 +379,18 @@ fn run(
     let mut since_status = 0u64;
     loop {
         shared.beat();
+        // Requests are honoured in order: a reset requested before a stop
+        // happens first.
+        let resets = shared.resets.load(Acquire);
+        if resets != resets_seen {
+            resets_seen = resets;
+            rec.reset(out);
+        }
         if let Some(reason) = from_code(shared.stop.load(Acquire)) {
+            // A reset requested just before the stop is still honoured.
+            if shared.resets.load(Acquire) != resets_seen {
+                rec.reset(out);
+            }
             if reason == RecognitionEndReason::Revoked {
                 tap.mark_end(TapEnd::Revoked);
                 let _ = tap.try_recv(); // discards the queue
@@ -387,11 +398,6 @@ fn run(
             rec.finish(reason, out);
             send_all(sink, shared, out);
             return;
-        }
-        let resets = shared.resets.load(Acquire);
-        if resets != resets_seen {
-            resets_seen = resets;
-            rec.reset(out);
         }
         while let Ok(h) = hints.try_recv() {
             if let Err(e) = rec.push_hint(&h, out) {

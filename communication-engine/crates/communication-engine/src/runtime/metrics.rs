@@ -21,6 +21,8 @@ pub(crate) struct Metrics {
     pub(crate) audio_streams_failed: AtomicU64,
     pub(crate) analyses_started: AtomicU64,
     pub(crate) analysis_failures: AtomicU64,
+    pub(crate) recognitions_started: AtomicU64,
+    pub(crate) recognition_failures: AtomicU64,
     /// Set by producers when a queue rejects; cleared by the core when it
     /// publishes the coalesced `QueueSaturated` event.
     pub(crate) ingress_saturated: AtomicBool,
@@ -49,9 +51,8 @@ impl Metrics {
             audio_streams_failed: self.audio_streams_failed.load(Relaxed),
             analyses_started: self.analyses_started.load(Relaxed),
             analysis_failures: self.analysis_failures.load(Relaxed),
-            // Phase 4 recognition is not wired into the runtime yet.
-            recognitions_started: 0,
-            recognition_failures: 0,
+            recognitions_started: self.recognitions_started.load(Relaxed),
+            recognition_failures: self.recognition_failures.load(Relaxed),
         }
     }
 }

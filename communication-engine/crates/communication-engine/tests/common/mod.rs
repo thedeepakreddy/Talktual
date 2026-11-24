@@ -158,15 +158,27 @@ pub fn audio_config() -> EngineConfig {
 
 /// A started engine with a fake backend and one session (no consent yet).
 pub async fn audio_harness_with(config: EngineConfig, driver: FakeDriver) -> AudioHarness {
+    audio_harness_custom(config, driver, |b| b).await
+}
+
+/// Like [`audio_harness_with`], with extra builder configuration (e.g.
+/// speech adapters).
+pub async fn audio_harness_custom(
+    config: EngineConfig,
+    driver: FakeDriver,
+    customize: impl FnOnce(EngineBuilder) -> EngineBuilder,
+) -> AudioHarness {
     let fake = FakeAudioBackend::new(driver);
     let clock = Arc::new(ManualClock::default());
-    let engine = Engine::builder()
-        .config(config)
-        .clock(clock.clone())
-        .id_generator(Arc::new(SequentialIds::default()))
-        .audio_backend(Arc::new(fake.clone()))
-        .build()
-        .expect("engine builds");
+    let engine = customize(
+        Engine::builder()
+            .config(config)
+            .clock(clock.clone())
+            .id_generator(Arc::new(SequentialIds::default()))
+            .audio_backend(Arc::new(fake.clone())),
+    )
+    .build()
+    .expect("engine builds");
     let events = EventRecorder::new(engine.subscribe().expect("subscribe"));
     engine.start().await.expect("start");
     let session = engine

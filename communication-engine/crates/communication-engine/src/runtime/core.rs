@@ -36,6 +36,7 @@ use tokio_util::sync::CancellationToken;
 
 mod audio;
 mod intel;
+mod speech;
 
 pub(crate) use audio::OpenedAudio;
 use audio::{AUDIO_SIGNAL_CAPACITY, AudioState};
@@ -43,7 +44,10 @@ use ce_audio::{AudioBackend, AudioSignal, BackendNotifier};
 use ce_audio_intel::VoiceActivityDetector;
 use ce_audio_intel::worker::IntelSignal;
 use ce_core::audio::StreamRequest;
+use ce_speech::worker::SpeechSignal;
 use intel::{INTEL_SIGNAL_CAPACITY, IntelState};
+pub(crate) use speech::SpeechProviders;
+use speech::{SPEECH_SIGNAL_CAPACITY, SpeechState};
 
 use super::actor::{ActorHandle, ActorReport, ActorSpec, Ctrl, Ingress, LifecycleOp, spawn_actor};
 use super::metrics::Metrics;
@@ -104,6 +108,7 @@ pub(crate) struct CoreDeps {
     pub(crate) ingress_tx: mpsc::Sender<Ingress>,
     pub(crate) ingress_rx: mpsc::Receiver<Ingress>,
     pub(crate) audio_backend: Option<Arc<dyn AudioBackend>>,
+    pub(crate) speech: SpeechProviders,
 }
 
 #[derive(Debug)]
@@ -151,6 +156,9 @@ pub(crate) struct Core {
     audio_tick: Option<tokio::time::Interval>,
     intel: Option<IntelState>,
     intel_rx: Option<mpsc::Receiver<IntelSignal>>,
+    speech: Option<SpeechState>,
+    speech_rx: Option<mpsc::Receiver<SpeechSignal>>,
+    providers: SpeechProviders,
 }
 
 pub(super) async fn recv_opt<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
@@ -188,9 +196,18 @@ impl Core {
         } else {
             (None, None)
         };
+        let (speech, speech_rx) = if audio.is_some() {
+            let (tx, rx) = mpsc::channel(SPEECH_SIGNAL_CAPACITY);
+            (Some(SpeechState::new(tx)), Some(rx))
+        } else {
+            (None, None)
+        };
         Self {
             intel,
             intel_rx,
+            speech,
+            speech_rx,
+            providers: deps.speech,
             audio,
             audio_rx,
             audio_tick,
@@ -243,7 +260,9 @@ impl Core {
                     self.process_deferred_audio().await;
                 }
                 Some(signal) = recv_opt(&mut self.intel_rx) => self.handle_intel_signal(signal),
+                Some(signal) = recv_opt(&mut self.speech_rx) => self.handle_speech_signal(signal),
                 () = tick_opt(&mut self.audio_tick) => {
+                    self.speech_housekeeping();
                     self.intel_housekeeping();
                     self.audio_housekeeping().await;
                 }
@@ -265,6 +284,16 @@ impl Core {
 
     /// Publish a runtime-sourced event.
     fn emit(&mut self, payload: EventPayload, session_id: Option<SessionId>) -> EventId {
+        self.emit_classified(payload, DataClass::Operational, session_id)
+    }
+
+    /// Publish a runtime-sourced event with an explicit privacy class.
+    fn emit_classified(
+        &mut self,
+        payload: EventPayload,
+        privacy: DataClass,
+        session_id: Option<SessionId>,
+    ) -> EventId {
         let correlation = session_id
             .and_then(|s| self.sessions.get(&s).map(|i| i.correlation_id))
             .or(self.current_correlation);
@@ -272,7 +301,7 @@ impl Core {
             EventId::generate(self.ids.as_ref()),
             EventSource::Runtime,
             payload,
-            DataClass::Operational,
+            privacy,
             session_id,
             correlation,
             None,
@@ -598,6 +627,7 @@ impl Core {
                 Some(ingress) = self.ingress_rx.recv() => self.handle_ingress(ingress),
                 Some(signal) = recv_opt(&mut self.audio_rx) => self.handle_audio_signal(signal),
                 Some(signal) = recv_opt(&mut self.intel_rx) => self.handle_intel_signal(signal),
+                Some(signal) = recv_opt(&mut self.speech_rx) => self.handle_speech_signal(signal),
             }
         }
     }
@@ -768,6 +798,19 @@ impl Core {
                         }
                         Command::StopAnalysis { stream_id } => self.stop_analysis(stream_id).await,
                         Command::QueryAnalysis { stream_id } => self.query_analysis(stream_id),
+                        Command::StartRecognition { stream_id, config } => {
+                            self.start_recognition(stream_id, config)
+                        }
+                        Command::StopRecognition { stream_id } => {
+                            self.stop_recognition(stream_id).await
+                        }
+                        Command::ResetRecognition { stream_id } => {
+                            self.reset_recognition(stream_id)
+                        }
+                        Command::QueryRecognition { stream_id } => {
+                            self.query_recognition(stream_id)
+                        }
+                        Command::ListRecognizers => Ok(self.list_recognizers()),
                         _ => Err(CeError::invalid_input(
                             "command.unsupported",
                             "command not supported by this runtime",
@@ -1014,7 +1057,7 @@ impl Core {
             metrics: self.metrics.snapshot(),
             audio_streams: self.audio_statuses(),
             analyses: self.analysis_statuses(),
-            recognitions: Vec::new(), // Phase 4: not wired yet
+            recognitions: self.recognition_statuses(),
         }
     }
 
@@ -1070,9 +1113,16 @@ impl Core {
 
     async fn close_session(&mut self, id: SessionId) -> CeResult<CommandOutcome> {
         self.set_session_state(id, SessionState::Closing)?;
-        // End the session's analyses (their final events belong to the
-        // session), then release its audio devices.
+        // End the session's recognitions (final transcripts), then its
+        // analyses (their final events belong to the session), then release
+        // its audio devices.
         let deadline = Instant::now() + self.config.audio.operation_timeout();
+        self.stop_recognitions(
+            Some(id),
+            ce_core::speech::RecognitionEndReason::StreamClosed,
+            deadline,
+        )
+        .await;
         self.stop_analyses(
             Some(id),
             ce_core::intel::AnalysisEndReason::StreamClosed,
@@ -1187,7 +1237,14 @@ impl Core {
         let _ = self.set_runtime_state(RuntimeState::Stopping);
         self.emit(EventPayload::RuntimeStopping { reason }, None);
 
-        // Analyses end first, with an explicit Shutdown reason.
+        // Recognitions end first (final transcripts), then analyses, with an
+        // explicit Shutdown reason.
+        self.stop_recognitions(
+            None,
+            ce_core::speech::RecognitionEndReason::Shutdown,
+            deadline,
+        )
+        .await;
         self.stop_analyses(None, ce_core::intel::AnalysisEndReason::Shutdown, deadline)
             .await;
         let open: Vec<SessionId> = self.sessions.keys().copied().collect();
@@ -1203,7 +1260,9 @@ impl Core {
         let audio_streams_closed =
             u32::try_from(streams_before.saturating_sub(self.audio_statuses().len()))
                 .unwrap_or(u32::MAX);
-        let stuck = self.drain_zombies(deadline).await + self.drain_intel(deadline).await;
+        let stuck = self.drain_zombies(deadline).await
+            + self.drain_intel(deadline).await
+            + self.drain_speech(deadline).await;
         if stuck > 0 {
             self.log(
                 Observation::log(Level::Warn, "audio.workers_did_not_exit").field("count", stuck),

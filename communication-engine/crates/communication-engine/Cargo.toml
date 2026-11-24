@@ -19,6 +19,7 @@ cpal = ["ce-audio/cpal"]
 ce-core = { workspace = true }
 ce-audio = { workspace = true }
 ce-audio-intel = { workspace = true }
+ce-speech = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 tokio-util = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
@@ -44,3 +45,6 @@ name = "audio_probe"
 
 [[example]]
 name = "analysis_smoke"
+
+[[example]]
+name = "speech_smoke"
