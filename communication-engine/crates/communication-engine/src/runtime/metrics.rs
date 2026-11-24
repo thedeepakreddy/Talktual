@@ -26,6 +26,9 @@ pub(crate) struct Metrics {
     pub(crate) semantics_started: AtomicU64,
     pub(crate) semantic_failures: AtomicU64,
     pub(crate) semantic_inputs_dropped: AtomicU64,
+    pub(crate) translations_started: AtomicU64,
+    pub(crate) translation_failures: AtomicU64,
+    pub(crate) translation_inputs_dropped: AtomicU64,
     /// Set by producers when a queue rejects; cleared by the core when it
     /// publishes the coalesced `QueueSaturated` event.
     pub(crate) ingress_saturated: AtomicBool,
@@ -59,6 +62,9 @@ impl Metrics {
             semantics_started: self.semantics_started.load(Relaxed),
             semantic_failures: self.semantic_failures.load(Relaxed),
             semantic_inputs_dropped: self.semantic_inputs_dropped.load(Relaxed),
+            translations_started: self.translations_started.load(Relaxed),
+            translation_failures: self.translation_failures.load(Relaxed),
+            translation_inputs_dropped: self.translation_inputs_dropped.load(Relaxed),
         }
     }
 }

@@ -27,7 +27,10 @@ Payloads are a closed, typed, `#[non_exhaustive]` enum: `RuntimeStarting`,
 the envelope's `privacy` is `Content` for transcripts and `Personal` for
 language observations), `Semantic(SemanticEvent)` (Phase 5, topic
 `Semantic`, see [semantic.md](semantic.md); `Content` for observations,
-`Operational` for lifecycle, context and rejection events) and
+`Operational` for lifecycle, context and rejection events),
+`Translation(TranslationEvent)` (Phase 6, topic `Translation`, see
+[translation.md](translation.md); `Content` for results, `Operational`
+for lifecycle, withdrawal, unavailable and rejection events) and
 `Module(ModuleEvent)`.
 
 **Module events** (provisional) carry a namespaced `EventName`, a module-owned

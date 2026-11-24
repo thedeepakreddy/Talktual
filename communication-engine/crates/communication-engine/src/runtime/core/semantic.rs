@@ -345,6 +345,11 @@ impl Core {
                         Observation::log(Level::Warn, "semantic.failed").field("stream", stream),
                     );
                 }
+                // Phase 6: final observations are offered to the stream's
+                // translation worker as bounded hints (read-only copies).
+                if let SemanticEvent::Observation { observation, .. } = &event {
+                    self.forward_observation_to_translation(observation);
+                }
                 let class = event.data_class();
                 self.emit_classified(EventPayload::Semantic(event), class, session);
             }
@@ -441,6 +446,7 @@ impl Core {
                 biased;
                 () = tokio::time::sleep_until(deadline) => break,
                 Some(sig) = super::recv_opt(&mut self.semantic_rx) => self.handle_semantic_signal(sig),
+                Some(sig) = super::recv_opt(&mut self.translation_rx) => self.handle_translation_signal(sig),
                 Some(sig) = super::recv_opt(&mut self.speech_rx) => self.handle_speech_signal(sig),
                 Some(sig) = super::recv_opt(&mut self.intel_rx) => self.handle_intel_signal(sig),
                 Some(ingress) = self.ingress_rx.recv() => self.handle_ingress(ingress),

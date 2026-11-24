@@ -124,6 +124,16 @@ pub struct MetricsSnapshot {
     /// (queue at its hard bound or worker gone).
     #[serde(default)]
     pub semantic_inputs_dropped: u64,
+    /// Translation workers started (Phase 6).
+    #[serde(default)]
+    pub translations_started: u64,
+    /// Translation workers that failed (panic, stall, repeated errors).
+    #[serde(default)]
+    pub translation_failures: u64,
+    /// Transcript revisions the runtime could not hand to a translation
+    /// worker (queue at its hard bound or worker gone).
+    #[serde(default)]
+    pub translation_inputs_dropped: u64,
 }
 
 /// Health and status of the runtime and every module.
@@ -151,6 +161,9 @@ pub struct RuntimeHealth {
     /// Running or recently ended semantic workers (Phase 5).
     #[serde(default)]
     pub semantics: Vec<crate::semantic::SemanticStatus>,
+    /// Running or recently ended translation workers (Phase 6).
+    #[serde(default)]
+    pub translations: Vec<crate::translation::TranslationStatus>,
 }
 
 /// Aggregate runtime health from the runtime state and module statuses.

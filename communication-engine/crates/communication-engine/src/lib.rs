@@ -68,17 +68,24 @@ use ce_core::semantic::{ObservationId, SemanticCapabilities, SemanticConfig, Sem
 use ce_core::session::{SessionConfig, SessionInfo};
 use ce_core::speech::{AsrCapabilities, RecognitionConfig, RecognitionStatus};
 use ce_core::time::{Clock, SystemClock};
+use ce_core::translation::{
+    TerminologyProfile, TranslationCapabilities, TranslationConfig, TranslationStatus,
+};
 use ce_core::version::VersionReq;
 pub use ce_semantic as semantic;
 use ce_semantic::{RulesFactory, SemanticFactory};
 pub use ce_speech as speech;
 use ce_speech::{AsrFactory, LanguageIdentifier, WhichlangIdentifier};
+pub use ce_translate as translation;
+use ce_translate::TranslationFactory;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use runtime::actor::Ingress;
-use runtime::core::{Core, CoreDeps, CoreMsg, SemanticProviders, SpeechProviders};
+use runtime::core::{
+    Core, CoreDeps, CoreMsg, SemanticProviders, SpeechProviders, TranslationProviders,
+};
 use runtime::metrics::Metrics;
 #[cfg(feature = "tracing")]
 pub use tracing_sink::TracingSink;
@@ -116,6 +123,9 @@ pub mod prelude {
         LanguageObservation, RecognitionConfig, RecognitionStatus, RevisionStatus, SpeechEvent,
         TranscriptRevision,
     };
+    pub use ce_core::translation::{
+        TranslationConfig, TranslationEvent, TranslationResult, TranslationState, TranslationStatus,
+    };
     pub use ce_core::version::{Version, VersionReq};
     pub use ce_core::{BoxFuture, CeResult};
 }
@@ -142,6 +152,7 @@ pub struct EngineBuilder {
     no_identifier: bool,
     semantic: SemanticProviders,
     no_default_semantic: bool,
+    translation: TranslationProviders,
 }
 
 impl EngineBuilder {
@@ -223,11 +234,32 @@ impl EngineBuilder {
         self
     }
 
+    /// Register a translation adapter (Phase 6). There is no built-in
+    /// default: translation needs an adapter (for example
+    /// `ce_translate::MemoryFactory` over a translation memory). The first
+    /// registered adapter that supports the pair and privacy policy is the
+    /// default; `TranslationConfig::adapter` selects one by id and
+    /// `TranslationConfig::fallback` lists explicit fallbacks.
+    pub fn translation_adapter(mut self, factory: impl TranslationFactory + 'static) -> Self {
+        self.translation.adapters.push(Arc::new(factory));
+        self
+    }
+
+    /// Register a terminology profile (validated at `build`), selectable
+    /// with `TranslationConfig::terminology`.
+    pub fn terminology_profile(mut self, profile: TerminologyProfile) -> Self {
+        self.translation.terminology.push(profile);
+        self
+    }
+
     /// Validate the configuration and spawn the runtime core.
     ///
     /// Must be called from within a Tokio runtime.
     pub fn build(self) -> CeResult<Engine> {
         self.config.validate()?;
+        for p in &self.translation.terminology {
+            p.validate()?;
+        }
         let handle = tokio::runtime::Handle::try_current().map_err(|_| {
             CeError::new(
                 ErrorCategory::Lifecycle,
@@ -267,6 +299,7 @@ impl EngineBuilder {
             audio_backend: self.audio,
             speech,
             semantic,
+            translation: self.translation,
         });
         let core = handle.spawn(core.run());
         Ok(Engine {
@@ -751,6 +784,59 @@ impl Engine {
     pub async fn semantic_adapters(&self) -> CeResult<Vec<SemanticCapabilities>> {
         match self.execute(Command::ListSemanticAdapters).await? {
             CommandOutcome::SemanticAdapters { adapters } => Ok(adapters),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    async fn translation_command(&self, command: Command) -> CeResult<TranslationStatus> {
+        match self.execute(command).await? {
+            CommandOutcome::Translation { status } => Ok(*status),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Start translating (Phase 6) a capture stream's transcripts.
+    /// `config` overrides `EngineConfig::translation` and must name a
+    /// target language. Results arrive as `EventPayload::Translation` on the
+    /// stream's session; they are derived from, and never modify, the
+    /// transcript. A translation is not an instruction to act on.
+    pub async fn start_translation(
+        &self,
+        stream_id: AudioStreamId,
+        config: Option<TranslationConfig>,
+    ) -> CeResult<TranslationStatus> {
+        self.translation_command(Command::StartTranslation { stream_id, config })
+            .await
+    }
+
+    /// Stop translating: queued inputs are discarded and results of
+    /// unfinished utterances withdrawn.
+    pub async fn stop_translation(&self, stream_id: AudioStreamId) -> CeResult<TranslationStatus> {
+        self.translation_command(Command::StopTranslation { stream_id })
+            .await
+    }
+
+    /// Reset translation: pending work is discarded and open results
+    /// withdrawn; translation continues.
+    pub async fn reset_translation(&self, stream_id: AudioStreamId) -> CeResult<TranslationStatus> {
+        self.translation_command(Command::ResetTranslation { stream_id })
+            .await
+    }
+
+    /// Current (or final) translation status.
+    pub async fn translation_status(
+        &self,
+        stream_id: AudioStreamId,
+    ) -> CeResult<TranslationStatus> {
+        self.translation_command(Command::QueryTranslation { stream_id })
+            .await
+    }
+
+    /// Capabilities of the registered translation adapters (no model is
+    /// loaded).
+    pub async fn translation_adapters(&self) -> CeResult<Vec<TranslationCapabilities>> {
+        match self.execute(Command::ListTranslationAdapters).await? {
+            CommandOutcome::TranslationAdapters { adapters } => Ok(adapters),
             other => Err(unexpected(&other)),
         }
     }

@@ -125,6 +125,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ce-translate"
+version = "0.1.0"
+dependencies = [
+ "ce-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -150,6 +161,7 @@ dependencies = [
  "ce-semantic",
  "ce-speech",
  "ce-testkit",
+ "ce-translate",
  "serde_json",
  "tokio",
  "tokio-util",

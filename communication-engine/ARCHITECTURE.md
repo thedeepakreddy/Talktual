@@ -2,13 +2,15 @@
 
 Status: Phase 1 foundation, Phase 2 audio foundation, Phase 3 audio
 intelligence, Phase 4 speech recognition & language intelligence pipeline
-and Phase 5 semantic & contextual intelligence, implemented and verified on
+Phase 5 semantic & contextual intelligence and Phase 6 translation
+intelligence, implemented and verified on
 Linux x86_64 (see the
 [Phase 1](docs/phases/phase-1-report.md),
 [Phase 2](docs/phases/phase-2-report.md),
 [Phase 3](docs/phases/phase-3-report.md),
-[Phase 4](docs/phases/phase-4-report.md) and
-[Phase 5](docs/phases/phase-5-report.md) reports). APIs are
+[Phase 4](docs/phases/phase-4-report.md),
+[Phase 5](docs/phases/phase-5-report.md) and
+[Phase 6](docs/phases/phase-6-report.md) reports). APIs are
 **provisional**.
 
 The Communication Engine (CE) is a product-agnostic Rust foundation for a
@@ -33,6 +35,14 @@ abstention, supervised bounded recognition workers, and replay/evaluation
 links native libraries and needs Rust ≥ 1.89, and it has been evaluated on
 synthetic speech only. Tests use a scripted adapter, and pipeline
 evaluation uses an oracle adapter.
+Phase 6 adds `ce-translate` (see
+[translation.md](docs/architecture/translation.md)): revision-linked
+translation results with explicit states, withdrawal and typed
+unavailable outcomes; capability-driven pair support; explicit
+source-language policy; policy-controlled fallback and privacy; bounded
+Phase 5 hints; terminology profiles with protected spans; a supervised
+bounded worker. Shipped adapters are a deterministic translation memory
+and a scripted adapter; real MT is blocked pending approval.
 Phase 5 adds `ce-semantic`:
 * typed, versioned observations (entities, relations, references,
   optional acts) linked to transcript revisions and spans, with epistemic
@@ -57,7 +67,12 @@ been tested).
   SDKs,     │  EventSubscription         │  feature `tracing`: TracingSink
   tests)    └─────────────┬──────────────┘
                           │ re-exports as `contracts`
-                          │ re-exports as `audio`, `audio_intel`, `speech`, `semantic`
+                          │ re-exports as `audio`, `audio_intel`, `speech`, `semantic`, `translation`
+            ┌─────────────▼──────────────┐
+            │ ce-translate (Phase 6)     │  translation adapter boundary, memory/scripted
+            │                            │  adapters, fidelity, processor, worker, eval
+            │                            │  (deps: ce-core only)
+            └────────────────────────────┘
             ┌─────────────▼──────────────┐
             │ ce-semantic (Phase 5)      │  semantic adapter boundary, rule/scripted
             │                            │  adapters, context, processor, worker, eval
@@ -153,6 +168,7 @@ engine.health().await?;                                 // probes modules
 engine.start_analysis(stream, None).await?;             // Phase 3
 engine.start_recognition(stream, None).await?;          // Phase 4 (adapters via builder.asr_adapter)
 engine.start_semantics(stream, None).await?;            // Phase 5 (rule adapter by default; builder.semantic_adapter)
+engine.start_translation(stream, Some(cfg)).await?;     // Phase 6 (needs builder.translation_adapter and a target)
 engine.execute(Command::…).await?;                      // typed, serializable commands
 engine.shutdown().await?;                               // bounded, reports per module
 ```
@@ -183,4 +199,6 @@ units · 0017 analysis privacy · 0018 analysis resource policy · 0019
 speech architecture · 0020 ASR and language-ID selection · 0021 transcript
 revision semantics · 0022 language observations · 0023 real-ASR baseline
 (sherpa-onnx) · 0024 Talktual ↔ CE bridge · 0025 semantic layer and
-contracts · 0026 rule baseline and semantic evaluation.
+contracts · 0026 rule baseline and semantic evaluation · 0027 translation
+layer and contracts · 0028 translation adapters and selection · 0029
+translation revisions, context precedence and privacy.
