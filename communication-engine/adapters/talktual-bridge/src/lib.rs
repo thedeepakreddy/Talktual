@@ -194,14 +194,31 @@ impl Bridge {
             Err(_) => return,
         };
         let mut deadline: Option<tokio::time::Instant> = None;
+        let mut status_tick = tokio::time::interval(Duration::from_secs(1));
+        status_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             let out: Vec<ServerMsg> = tokio::select! {
                 msg = rx.next() => match msg {
                     Some(Ok(Message::Text(t))) => {
                         match serde_json::from_str::<ClientMsg>(&t) {
-                            Ok(ClientMsg::Start { lang, sample_rate, segmentation }) => {
+                            Ok(ClientMsg::Start { lang, sample_rate, segmentation, diagnostics, analysis }) => {
+                                session.diagnostics = diagnostics;
+                                session.analysis = analysis;
                                 self.begin(&mut session, &lang, sample_rate, segmentation).await
                             }
+                            Ok(ClientMsg::Info) => vec![ServerMsg::Info {
+                                protocol: PROTOCOL,
+                                recognizers: to_json(&self.engine.recognizers().await.unwrap_or_default()),
+                                health: self.health_json().await,
+                            }],
+                            Ok(ClientMsg::Health) => vec![ServerMsg::Health { health: self.health_json().await }],
+                            Ok(ClientMsg::Reset) => match session.stream {
+                                Some(id) => match self.engine.reset_recognition(id).await {
+                                    Ok(_) => Vec::new(),
+                                    Err(e) => vec![error(e.code(), &e.to_string(), false)],
+                                },
+                                None => vec![error("bridge.not_started", "nothing to reset", false)],
+                            },
                             Ok(ClientMsg::Stop) => {
                                 if let Some(id) = session.stream {
                                     session.stop_at = Some(std::time::Instant::now());
@@ -239,10 +256,20 @@ impl Bridge {
                     Some(Ok(_)) => Vec::new(),
                 },
                 ev = events.recv(), if session.stream.is_some() => match ev {
-                    Ok(env) => self.translate(&mut session, &env),
+                    Ok(env) => {
+                        let mut out = Vec::new();
+                        if session.diagnostics && env.session_id.is_some() && env.session_id == session.session {
+                            out.push(ce_event(&env));
+                        }
+                        out.extend(self.translate(&mut session, &env));
+                        out
+                    }
                     Err(SubscriptionError::Lagged { .. }) => vec![ServerMsg::Warning { kind: "events_lagged".into() }],
                     Err(SubscriptionError::Closed) => vec![error("bridge.engine_stopped", "the engine stopped", true)],
                 },
+                _ = status_tick.tick(), if session.diagnostics && session.stream.is_some() => {
+                    self.status(&session).await
+                }
                 () = async {
                     match deadline {
                         Some(d) => tokio::time::sleep_until(d).await,
@@ -350,6 +377,12 @@ impl Bridge {
         // Absorb network bursts (10 s of 10 ms blocks) rather than drop.
         rcfg.budget.queue_blocks = rcfg.budget.queue_blocks.max(1_000);
         match seg {
+            Segmentation::Continuous if s.analysis => {
+                rcfg.segmentation = SegmentationMode::Continuous;
+                let mut acfg = AnalysisConfig::default();
+                acfg.budget.degrade = false;
+                self.engine.start_analysis(id, Some(acfg)).await?;
+            }
             Segmentation::Continuous => rcfg.segmentation = SegmentationMode::Continuous,
             Segmentation::Activity => {
                 rcfg.segmentation = SegmentationMode::ActivityHints;
@@ -436,6 +469,32 @@ impl Bridge {
         }
     }
 
+    async fn health_json(&self) -> serde_json::Value {
+        match self.engine.health().await {
+            Ok(h) => to_json(&h),
+            Err(e) => serde_json::json!({ "error": e.code() }),
+        }
+    }
+
+    /// One status snapshot of this session's stream, analysis and recognition.
+    async fn status(&self, s: &Session) -> Vec<ServerMsg> {
+        let Some(id) = s.stream else {
+            return Vec::new();
+        };
+        let audio = self
+            .engine
+            .audio_streams()
+            .await
+            .ok()
+            .and_then(|v| v.into_iter().find(|st| st.info.id == id));
+        vec![ServerMsg::Status {
+            audio: to_json(&audio),
+            analysis: to_json(&self.engine.analysis_status(id).await.ok()),
+            recognition: to_json(&self.engine.recognition_status(id).await.ok()),
+            metrics: to_json(&self.engine.metrics()),
+        }]
+    }
+
     /// Append a final to the opt-in transcript log.
     fn log_final(&self, s: &Session, r: &ce_core::speech::TranscriptRevision) {
         let Some(log) = &self.log else {
@@ -501,9 +560,40 @@ struct Session {
     slot: Option<push_backend::PushSlot>,
     rate: u32,
     warned_closed: bool,
+    diagnostics: bool,
+    analysis: bool,
     utterance_at: Option<std::time::Instant>,
     first_partial_ms: Option<u64>,
     stop_at: Option<std::time::Instant>,
+}
+
+fn to_json<T: serde::Serialize>(v: &T) -> serde_json::Value {
+    serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
+}
+
+/// Flatten an envelope for the browser: topic, inner kind, privacy, data.
+fn ce_event(env: &EventEnvelope) -> ServerMsg {
+    let payload = to_json(&env.payload);
+    let topic = payload["type"].as_str().unwrap_or("unknown").to_owned();
+    let data = payload
+        .get("data")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let kind = ["audio_event", "analysis_event", "speech_event"]
+        .iter()
+        .find_map(|k| data.get(*k).and_then(|v| v.as_str()))
+        .unwrap_or(&topic)
+        .to_owned();
+    ServerMsg::CeEvent {
+        sequence: env.sequence,
+        topic,
+        kind,
+        privacy: to_json(&env.privacy)
+            .as_str()
+            .unwrap_or("unknown")
+            .to_owned(),
+        data,
+    }
 }
 
 fn error(code: &str, message: &str, fatal: bool) -> ServerMsg {

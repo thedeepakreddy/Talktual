@@ -12,6 +12,13 @@
 //! client → {"type":"abort"}       (discard; the bridge replies {"type":"end","aborted":true})
 //! ```
 //!
+//! Optional diagnostics (the Engine Lab page): `{"type":"info"}` and
+//! `{"type":"health"}` at any time; `"diagnostics": true` in `start` adds every
+//! CE event of the session (`ce-event`) and a status snapshot every second
+//! (`status`); `"analysis": true` runs Phase 3 analysis in continuous mode
+//! too; `{"type":"reset"}` resets the recognizer. Clients that do not ask
+//! for diagnostics see exactly the v1 messages above.
+//!
 //! Text is the recognizer's own output (the sherpa-onnx model emits
 //! upper-case words without punctuation); presentation is the client's job.
 
@@ -46,11 +53,23 @@ pub enum ClientMsg {
         /// Delimitation.
         #[serde(default)]
         segmentation: Segmentation,
+        /// Stream every CE event of the session and periodic status.
+        #[serde(default)]
+        diagnostics: bool,
+        /// Run Phase 3 analysis even with continuous delimitation.
+        #[serde(default)]
+        analysis: bool,
     },
     /// Graceful end.
     Stop,
     /// Discard and end.
     Abort,
+    /// Recognizers, capabilities and runtime health (no audio needed).
+    Info,
+    /// Runtime health now.
+    Health,
+    /// Cancel the open utterance and reset the recognizer.
+    Reset,
 }
 
 /// Bridge → client messages.
@@ -129,6 +148,45 @@ pub enum ServerMsg {
         /// Ended by `abort` (results discarded).
         aborted: bool,
     },
+    /// Engine information (reply to `info`).
+    Info {
+        /// Protocol version.
+        protocol: u32,
+        /// Registered recognizers (`AsrCapabilities`, CE JSON).
+        recognizers: serde_json::Value,
+        /// Runtime health (`RuntimeHealth`, CE JSON).
+        health: serde_json::Value,
+    },
+    /// Runtime health (reply to `health`).
+    Health {
+        /// `RuntimeHealth`, CE JSON.
+        health: serde_json::Value,
+    },
+    /// One CE event of this session (diagnostics).
+    #[serde(rename = "ce-event")]
+    CeEvent {
+        /// Runtime sequence number.
+        sequence: u64,
+        /// Payload type (`audio`, `analysis`, `speech`, `session_created`, …).
+        topic: String,
+        /// Inner event kind (`transcript`, `activity_changed`, …) or the topic.
+        kind: String,
+        /// Privacy class of the payload.
+        privacy: String,
+        /// The event, CE JSON.
+        data: serde_json::Value,
+    },
+    /// Periodic snapshot (diagnostics).
+    Status {
+        /// `AudioStreamStatus`.
+        audio: serde_json::Value,
+        /// `AnalysisStatus`, if analysis runs.
+        analysis: serde_json::Value,
+        /// `RecognitionStatus`.
+        recognition: serde_json::Value,
+        /// Engine-wide `MetricsSnapshot`.
+        metrics: serde_json::Value,
+    },
 }
 
 /// Decode little-endian i16 PCM (an odd trailing byte is ignored).
@@ -171,6 +229,31 @@ mod tests {
             ClientMsg::Stop
         );
         assert!(serde_json::from_str::<ClientMsg>(r#"{"type":"bogus"}"#).is_err());
+        let m: ClientMsg = serde_json::from_str(
+            r#"{"type":"start","lang":"en","sampleRate":16000,"diagnostics":true,"analysis":true}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            m,
+            ClientMsg::Start {
+                diagnostics: true,
+                analysis: true,
+                ..
+            }
+        ));
+        assert_eq!(
+            serde_json::from_str::<ClientMsg>(r#"{"type":"info"}"#).unwrap(),
+            ClientMsg::Info
+        );
+        let e = serde_json::to_value(ServerMsg::CeEvent {
+            sequence: 3,
+            topic: "speech".into(),
+            kind: "transcript".into(),
+            privacy: "content".into(),
+            data: serde_json::json!({}),
+        })
+        .unwrap();
+        assert_eq!(e["type"], "ce-event");
         let s = serde_json::to_value(ServerMsg::Final {
             utterance: 1,
             text: "HELLO".into(),

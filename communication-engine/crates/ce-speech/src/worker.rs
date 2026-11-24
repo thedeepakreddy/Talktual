@@ -431,6 +431,10 @@ fn run(
             }
             Err(TapRecvError::Timeout) => {}
             Err(TapRecvError::Ended(e)) => {
+                // A reset requested just before the stream ended still happens.
+                if shared.resets.load(Acquire) != resets_seen {
+                    rec.reset(out);
+                }
                 rec.note_load(0.0, 0, tap.dropped(), out);
                 rec.finish(tap_reason(e), out);
                 send_all(sink, shared, out);

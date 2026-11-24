@@ -264,3 +264,75 @@ async fn the_real_model_recognizes_a_fixture_streamed_like_talktual_does() {
         }
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn diagnostics_expose_every_phase_for_the_engine_lab() {
+    let (url, _b) = serve(scripted()).await;
+    let mut ws = connect(&url, Some("http://localhost:5173")).await.unwrap();
+    // Phase 1: engine info without any audio.
+    send_json(&mut ws, serde_json::json!({"type":"info"})).await;
+    let info = ready(&mut ws).await;
+    assert_eq!(info["type"], "info");
+    assert_eq!(info["recognizers"][0]["adapter"], "ce.asr.scripted");
+    assert_eq!(info["health"]["state"], "running");
+    send_json(
+        &mut ws,
+        serde_json::json!({"type":"start","lang":"en","sampleRate":16000,"diagnostics":true,"analysis":true}),
+    )
+    .await;
+    assert_eq!(ready(&mut ws).await["type"], "ready");
+    // 1.5 s of a speech-like signal in real time so status ticks arrive.
+    let sig = ce_audio_intel::synth::speechlike(7, 16_000, 0.3, 24_000);
+    send_pcm_paced(&mut ws, &sig, 16_000, true).await;
+    send_json(&mut ws, serde_json::json!({"type":"reset"})).await;
+    send_json(&mut ws, serde_json::json!({"type":"stop"})).await;
+    let msgs = collect(&mut ws).await;
+    if let Ok(dir) = std::env::var("BRIDGE_SAMPLE_OUT") {
+        let lines: Vec<String> = msgs.iter().map(|m| m.to_string()).collect();
+        std::fs::write(dir, lines.join("\n")).unwrap();
+    }
+    let topics: std::collections::BTreeSet<String> = msgs
+        .iter()
+        .filter(|m| m["type"] == "ce-event")
+        .map(|m| {
+            format!(
+                "{}:{}",
+                m["topic"].as_str().unwrap(),
+                m["kind"].as_str().unwrap()
+            )
+        })
+        .collect();
+    for want in [
+        "session_created:session_created",
+        "audio:stream_state_changed",
+        "analysis:started",
+        "speech:started",
+        "speech:reset",
+    ] {
+        assert!(topics.contains(want), "missing {want} in {topics:?}");
+    }
+    let status = msgs
+        .iter()
+        .rev()
+        .find(|m| m["type"] == "status")
+        .expect("a status snapshot");
+    assert!(
+        status["audio"]["counters"]["frames"].as_u64().unwrap() > 0,
+        "{status}"
+    );
+    assert!(
+        status["analysis"]["counters"]["hops"].as_u64().is_some(),
+        "{status}"
+    );
+    assert!(
+        status["recognition"]["counters"]["blocks"]
+            .as_u64()
+            .is_some(),
+        "{status}"
+    );
+    assert!(status["metrics"]["recognitions_started"].as_u64().unwrap() >= 1);
+    // Transcript content events carry their privacy class.
+    assert!(msgs.iter().any(|m| m["type"] == "ce-event"
+        && m["kind"] == "transcript"
+        && m["privacy"] == "content"));
+}
