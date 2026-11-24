@@ -456,6 +456,17 @@ fn context_is_bounded_by_distance_ttl_items_and_bytes() {
     );
     assert!(p.context().size().bytes <= 256);
 
+    // Token limit (words of mentions).
+    let mut cfg = no_acts();
+    cfg.context.max_tokens = 4;
+    let mut p = rules(cfg, s);
+    run(
+        &mut p,
+        final_(s, 1, 0, "ONE DOLLAR TWO DOLLARS THREE DOLLARS", 1_000),
+    );
+    let size = p.context().size();
+    assert!(size.tokens <= 4 && size.items == 2, "{size:?}");
+
     // Weak hypotheses never become context; provisional text never does.
     let mut p = rules(no_acts(), s);
     run(&mut p, final_(s, 1, 0, "A HUNDRED POUNDS", 1_000));
@@ -577,7 +588,11 @@ fn contexts_are_isolated_between_streams_and_cleared_on_reset_and_stop() {
         out.as_slice(),
         [SemanticEvent::Context {
             change: ContextChange::Cleared,
-            size: ContextSize { items: 0, bytes: 0 },
+            size: ContextSize {
+                items: 0,
+                bytes: 0,
+                tokens: 0
+            },
             ..
         }]
     ));

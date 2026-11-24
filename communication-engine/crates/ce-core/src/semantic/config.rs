@@ -36,6 +36,8 @@ pub struct ContextConfig {
     pub max_items: u32,
     /// Most bytes of mentions and values kept. Default 8192.
     pub max_bytes: u32,
+    /// Most tokens (whitespace words of mentions) kept. Default 512.
+    pub max_tokens: u32,
     /// Item lifetime on the stream's audio timeline, ms. Default 120 000.
     pub ttl_ms: u64,
     /// Only items from this many most recent utterances are reference
@@ -52,6 +54,7 @@ impl Default for ContextConfig {
             scope: ContextScopeMode::Session,
             max_items: 32,
             max_bytes: 8_192,
+            max_tokens: 512,
             ttl_ms: 120_000,
             max_utterance_distance: 2,
             min_certainty: Certainty::Medium,
@@ -269,12 +272,13 @@ impl SemanticConfig {
         let c = &self.context;
         if !(1..=1_024).contains(&c.max_items)
             || !(256..=1_048_576).contains(&c.max_bytes)
+            || !(1..=65_536).contains(&c.max_tokens)
             || !(1_000..=3_600_000).contains(&c.ttl_ms)
             || c.max_utterance_distance > 64
         {
             return Err(bad(
                 "context",
-                "max_items 1..=1024, max_bytes 256..=1048576, ttl_ms 1000..=3600000, max_utterance_distance <= 64",
+                "max_items 1..=1024, max_bytes 256..=1048576, max_tokens 1..=65536, ttl_ms 1000..=3600000, max_utterance_distance <= 64",
             ));
         }
         let b = &self.budget;
@@ -377,6 +381,7 @@ mod tests {
             Box::new(|c| c.adapter = Some("bad id!".into())),
             Box::new(|c| c.context.max_items = 0),
             Box::new(|c| c.context.max_bytes = 10),
+            Box::new(|c| c.context.max_tokens = 0),
             Box::new(|c| c.context.ttl_ms = 10),
             Box::new(|c| c.context.max_utterance_distance = 1_000),
             Box::new(|c| c.budget.queue = 1),

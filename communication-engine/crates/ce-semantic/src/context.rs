@@ -7,7 +7,8 @@
 //! * **Admission**: only entity observations whose span is committed
 //!   (`Stable` or `Final`) and whose certainty is at least
 //!   `min_certainty` become context. Provisional text never does.
-//! * **Bounds**: `max_items` and `max_bytes` evict the oldest items first;
+//! * **Bounds**: `max_items`, `max_bytes` and `max_tokens` evict the
+//!   oldest items first;
 //!   `ttl_ms` expires items on the stream's audio timeline;
 //!   `max_utterance_distance` limits which utterances are candidates.
 //! * **Correction**: when a source observation is updated or retracted, its
@@ -36,6 +37,7 @@ pub struct ContextManager {
     config: ContextConfig,
     items: VecDeque<ContextItem>,
     bytes: u32,
+    tokens: u32,
     next: u64,
     utterances: VecDeque<u64>,
     evicted: u64,
@@ -50,6 +52,7 @@ impl ContextManager {
             config,
             items: VecDeque::new(),
             bytes: 0,
+            tokens: 0,
             next: 0,
             utterances: VecDeque::new(),
             evicted: 0,
@@ -62,6 +65,7 @@ impl ContextManager {
         ContextSize {
             items: self.items.len() as u32,
             bytes: self.bytes,
+            tokens: self.tokens,
         }
     }
 
@@ -121,7 +125,8 @@ impl ContextManager {
             return None;
         }
         let bytes = (e.mention.len() + e.category.len() + 64) as u32;
-        if bytes > self.config.max_bytes {
+        let tokens = e.mention.split_whitespace().count() as u32;
+        if bytes > self.config.max_bytes || tokens > self.config.max_tokens {
             return None;
         }
         self.next += 1;
@@ -147,14 +152,18 @@ impl ContextManager {
             created_at: now,
             expires_at: MonotonicTime::from_nanos(now.as_nanos().saturating_add(ttl)),
             bytes,
+            tokens,
         });
         self.bytes += bytes;
+        self.tokens += tokens;
         out.push(self.event(ContextChange::Added, Some(id.clone())));
         while self.items.len() > self.config.max_items as usize
             || self.bytes > self.config.max_bytes
+            || self.tokens > self.config.max_tokens
         {
             if let Some(old) = self.items.pop_front() {
                 self.bytes -= old.bytes;
+                self.tokens -= old.tokens;
                 self.evicted += 1;
                 out.push(self.event(ContextChange::Evicted, Some(old.id)));
             } else {
@@ -175,6 +184,7 @@ impl ContextManager {
         for i in self.items.drain(..) {
             if pred(&i) {
                 self.bytes -= i.bytes;
+                self.tokens -= i.tokens;
                 removed.push(i.id);
             } else {
                 keep.push_back(i);
@@ -238,6 +248,7 @@ impl ContextManager {
         let had = !self.items.is_empty();
         self.items.clear();
         self.bytes = 0;
+        self.tokens = 0;
         self.utterances.clear();
         if had {
             out.push(self.event(ContextChange::Cleared, None));

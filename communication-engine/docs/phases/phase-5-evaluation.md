@@ -1,7 +1,7 @@
 # Phase 5 evaluation — semantic interpretation
 
 Date: 2026-11-24. Adapter `ce.semantic.rules` 1.0.0, default
-`SemanticConfig` (config fingerprint `91e25ea7ddba4f99`; with the
+`SemanticConfig` (config fingerprint `e89669d1c69688b6`; with the
 `example.home` profile on profile dialogues). Host: Linux x86_64 cloud
 container, Intel Xeon @ 2.30 GHz, 4 logical CPUs, 16 GB; no GPU and no
 device hardware.
@@ -109,20 +109,28 @@ changed after scoring.
 
 | Split | Inputs (partials) | Events per input | Retracted before final | Finals first seen in a partial | First observation, synthetic audio ms (p50 / p95 / max) | Processor time per input, ms (p50 / p95 / p99 / max) |
 |---|---|---|---|---|---|---|
-| dev | 206 (167) | 1.70 | 22 | 61 of 82 | 1200 / 1800 / 1800 | 0.008 / 0.019 / 0.040 / 0.058 |
-| test | 247 (202) | 1.67 | 22 | 70 of 103 | 900 / 2100 / 2400 | 0.006 / 0.016 / 0.045 / 0.059 |
-| asr | 95 (85) | 1.10 | 1 | 10 of 12 | 1200 / 1500 / 1500 | 0.007 / 0.013 / 0.024 / 0.024 |
+| dev | 206 (167) | 1.70 | 22 | 61 of 82 | 1200 / 1800 / 1800 | 0.006 / 0.013 / 0.022 / 0.039 |
+| test | 247 (202) | 1.67 | 22 | 70 of 103 | 900 / 2100 / 2400 | 0.006 / 0.011 / 0.016 / 0.027 |
+| asr | 95 (85) | 1.10 | 1 | 10 of 12 | 1200 / 1500 / 1500 | 0.005 / 0.008 / 0.013 / 0.013 |
 
 * "Retracted before final" counts speculative output withdrawn, e.g. a
   provisional `number TWENTY` that became `duration TWENTY FIVE MINUTES`.
   The robustness replays show this never changes the finals.
-* Processor time per input is in the low microseconds: p95 ≤ 0.019 ms in
-  every split, max 0.059 ms. Timings vary between runs; the table is the
+* Processor time per input is in the low microseconds: p95 ≤ 0.013 ms in
+  every split, max 0.039 ms. Timings vary between runs; the table is the
   run printed below. That is far below the 250 ms deadline. Machine and load
   dependent.
-* Throughput: 120 000–140 000 inputs/s on one thread across runs (this run 122 078), including per-dialogue
-  processor setup. Peak RSS of the evaluation process is about 4 MB. Both
-  are from this container; there is no device measurement.
+* Output size: JSON bytes of the semantic events each input produces.
+  * p50 / p95 / max: dev 930 / 2729 / 4545; test 874 / 2846 / 4668;
+    asr 812 / 1692 / 2642.
+  * The bound is `max_observations` (64) per input.
+* Throughput:
+  * one thread: about 100 000–140 000 inputs/s across runs (this run
+    100 651, 9.9 µs per input including per-dialogue processor setup);
+  * 4 threads, each with its own processors: 328 482 inputs/s aggregate.
+
+  Peak RSS of the evaluation process is 4–6 MB. Both measurements are
+  from this container, with no device measurement.
 * Live latency through the runtime (real model, bridge test): the final
   semantic observation arrives with the final transcript. The bridge ends
   the session after semantics drain. Per-observation wall latency through
@@ -155,7 +163,7 @@ final observation: "act" null null null
 # Semantic replay evaluation
 
 * adapter: ce.semantic.rules 1.0.0 (in process, deterministic)
-* config fingerprint (default, no profile): 91e25ea7ddba4f99
+* config fingerprint (default, no profile): e89669d1c69688b6
 * corpus: fixtures/semantic/corpus.jsonl, fnv b84a9ab95c1ccfe2 (39 dialogues)
 * profile: example.home@1.0.0 file fnv 39955f82f9e39f80 profile fingerprint e8e8ada1a05bead4
 * host: linux x86_64 · 4 logical CPUs
@@ -245,7 +253,8 @@ utterances 39 · **macro-F1 0.975** · coverage 0.846 · selective accuracy 0.97
 ### Streaming (synthetic timeline: one revision per 300 ms)
 
 inputs 206 (partials 167) · observation events {"finalized": 61, "new": 104, "retracted": 22, "stabilized": 22, "updated": 141} · events per input 1.699 · retracted before final 22 · finals 82 (first seen in a partial: 61)
-first observation (audio ms) p50 1200 p95 1800 max 1800 (n=31) · processor time per input (ms) p50 0.008 p95 0.019 p99 0.040 max 0.058 (n=206)
+first observation (audio ms) p50 1200 p95 1800 max 1800 (n=31) · processor time per input (ms) p50 0.006 p95 0.013 p99 0.022 max 0.039 (n=206)
+output per input (JSON bytes of semantic events) p50 930 p95 2729 p99 4321 max 4545
 
 ### Robustness
 
@@ -348,7 +357,8 @@ utterances 45 · **macro-F1 0.929** · coverage 0.822 · selective accuracy 0.94
 ### Streaming (synthetic timeline: one revision per 300 ms)
 
 inputs 247 (partials 202) · observation events {"finalized": 70, "new": 125, "retracted": 22, "stabilized": 25, "updated": 171} · events per input 1.672 · retracted before final 22 · finals 103 (first seen in a partial: 70)
-first observation (audio ms) p50 900 p95 2100 max 2400 (n=38) · processor time per input (ms) p50 0.006 p95 0.016 p99 0.045 max 0.059 (n=247)
+first observation (audio ms) p50 900 p95 2100 max 2400 (n=38) · processor time per input (ms) p50 0.006 p95 0.011 p99 0.016 max 0.027 (n=247)
+output per input (JSON bytes of semantic events) p50 874 p95 2846 p99 4316 max 4668
 
 ### Robustness
 
@@ -442,7 +452,8 @@ utterances 10 · **macro-F1 0.810** · coverage 0.800 · selective accuracy 1.00
 ### Streaming (synthetic timeline: one revision per 300 ms)
 
 inputs 95 (partials 85) · observation events {"finalized": 10, "new": 13, "retracted": 1, "stabilized": 2, "updated": 78} · events per input 1.095 · retracted before final 1 · finals 12 (first seen in a partial: 10)
-first observation (audio ms) p50 1200 p95 1500 max 1500 (n=3) · processor time per input (ms) p50 0.007 p95 0.013 p99 0.024 max 0.024 (n=95)
+first observation (audio ms) p50 1200 p95 1500 max 1500 (n=3) · processor time per input (ms) p50 0.005 p95 0.008 p99 0.013 max 0.013 (n=95)
+output per input (JSON bytes of semantic events) p50 812 p95 1692 p99 2642 max 2642
 
 ### Robustness
 
@@ -456,5 +467,6 @@ duplicated + stale partials: 10/10 dialogues with identical finals (172 stale/du
 
 ## Throughput
 
-109600 inputs in 0.898 s on one thread (122078 inputs/s, 8.2 µs per input incl. processor setup) · peak RSS of this process 4024 KiB
+109600 inputs in 1.089 s on one thread (100651 inputs/s, 9.9 µs per input incl. processor setup) · peak RSS of this process 4112 KiB
+4 threads in parallel: 109600 inputs in 0.334 s (328482 inputs/s aggregate) · peak RSS 5672 KiB
 ```

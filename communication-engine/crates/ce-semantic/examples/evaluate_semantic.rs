@@ -152,6 +152,10 @@ fn print_split(r: &SplitReport, errors: bool) {
         s.processing_ms.max,
         s.processing_ms.count
     );
+    println!(
+        "output per input (JSON bytes of semantic events) p50 {} p95 {} p99 {} max {}",
+        s.output_bytes.p50, s.output_bytes.p95, s.output_bytes.p99, s.output_bytes.max
+    );
     let b = &r.robustness;
     println!(
         "\n### Robustness\n\nduplicated + stale partials: {}/{} dialogues with identical finals ({} stale/duplicate inputs rejected) · finals only: {}/{} identical finals",
@@ -248,6 +252,34 @@ fn main() {
         secs,
         inputs as f64 / secs,
         secs * 1e6 / inputs as f64,
+        peak_rss_kib().map_or("n/a".into(), |k| k.to_string())
+    );
+    // Concurrency: 4 threads, each with its own processors, 50 corpus passes.
+    let t0 = Instant::now();
+    let total: u64 = std::thread::scope(|sc| {
+        let hs: Vec<_> = (0..4)
+            .map(|_| {
+                sc.spawn(|| {
+                    let mut n = 0u64;
+                    for _ in 0..50 {
+                        for d in &corpus {
+                            n += replay(&factory, &config, &profiles, d, Delivery::Clean)
+                                .expect("replay")
+                                .input_ms
+                                .len() as u64;
+                        }
+                    }
+                    n
+                })
+            })
+            .collect();
+        hs.into_iter().map(|h| h.join().expect("thread")).sum()
+    });
+    let secs = t0.elapsed().as_secs_f64();
+    println!(
+        "4 threads in parallel: {total} inputs in {:.3} s ({:.0} inputs/s aggregate) · peak RSS {} KiB",
+        secs,
+        total as f64 / secs,
         peak_rss_kib().map_or("n/a".into(), |k| k.to_string())
     );
     if json {

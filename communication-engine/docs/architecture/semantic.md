@@ -195,6 +195,7 @@ streams close, so final transcripts are interpreted.
 * **Bounds**:
   * `max_items` (32), evicting the oldest;
   * `max_bytes` (8 KiB);
+  * `max_tokens` (512 whitespace words of mentions);
   * `ttl_ms` (120 s on the stream timeline);
   * `max_utterance_distance` (2).
 * **Teardown.** The context is cleared on `reset_semantic_context`,
@@ -369,6 +370,7 @@ certainty and never overrides other evidence. Example:
   * stale rejected, invalid rejected;
   * new, updated, stabilized, finalized, retracted, confirmed;
   * context evicted and expired;
+  * context size in items, bytes and tokens;
   * adapter errors and invalid drafts, below-threshold drafts, deadlines
     exceeded, cancellations, truncations;
   * processing, queue-delay and first-observation latency percentiles;

@@ -273,6 +273,8 @@ pub struct StreamingScores {
     /// Processor time per input (adapter + contract checks + diff +
     /// context) on this machine, ms.
     pub processing_ms: Percentiles,
+    /// JSON bytes of semantic events per input.
+    pub output_bytes: Percentiles,
 }
 
 /// Robustness checks.
@@ -411,6 +413,8 @@ pub struct Replay {
     pub counters: ce_core::semantic::SemanticCounters,
     /// Processor time per input (wall clock, this machine), ms.
     pub input_ms: Vec<f32>,
+    /// JSON bytes of the events each input produced.
+    pub output_bytes: Vec<f32>,
 }
 
 /// Replay one dialogue with a fresh processor.
@@ -445,6 +449,7 @@ pub fn replay(
     .map_err(|e| e.to_string())?;
     let mut events = Vec::new();
     let mut input_ms = Vec::new();
+    let mut output_bytes = Vec::new();
     p.start(&mut events);
     for (ui, u) in d.utterances.iter().enumerate() {
         let utt = ui as u64 + 1;
@@ -483,9 +488,15 @@ pub fn replay(
             seq.push(fin);
         }
         for i in seq {
+            let before = events.len();
             let t0 = std::time::Instant::now();
             p.process(i, 0.0, &mut events).map_err(|e| e.to_string())?;
             input_ms.push(t0.elapsed().as_secs_f32() * 1_000.0);
+            let bytes: usize = events[before..]
+                .iter()
+                .map(|e| serde_json::to_vec(e).map(|v| v.len()).unwrap_or(0))
+                .sum();
+            output_bytes.push(bytes as f32);
         }
     }
     let mut finals = vec![Vec::new(); d.utterances.len()];
@@ -512,6 +523,7 @@ pub fn replay(
         finals,
         counters,
         input_ms,
+        output_bytes,
     })
 }
 
@@ -912,6 +924,7 @@ fn streaming_scores(dialogues: &[Dialogue], replays: &[Replay]) -> StreamingScor
     let mut s = StreamingScores::default();
     let mut first = Reservoir::new(100_000);
     let mut proc = Reservoir::new(100_000);
+    let mut outb = Reservoir::new(100_000);
     for (d, r) in dialogues.iter().zip(replays) {
         s.inputs += r.counters.processed;
         s.partial_inputs += d
@@ -965,6 +978,9 @@ fn streaming_scores(dialogues: &[Dialogue], replays: &[Replay]) -> StreamingScor
         for v in &r.input_ms {
             proc.record(*v);
         }
+        for v in &r.output_bytes {
+            outb.record(*v);
+        }
     }
     let total: u64 = s.changes.values().sum();
     s.revision_rate = if s.inputs > 0 {
@@ -974,6 +990,7 @@ fn streaming_scores(dialogues: &[Dialogue], replays: &[Replay]) -> StreamingScor
     };
     s.first_observation_ms = first.summary();
     s.processing_ms = proc.summary();
+    s.output_bytes = outb.summary();
     s
 }
 

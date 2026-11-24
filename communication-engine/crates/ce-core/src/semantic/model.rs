@@ -499,6 +499,10 @@ pub struct ContextItem {
     pub expires_at: MonotonicTime,
     /// Approximate size in bytes (for limits).
     pub bytes: u32,
+    /// Size in tokens (whitespace words of the mention), for limits that
+    /// track what a downstream model would read.
+    #[serde(default)]
+    pub tokens: u32,
 }
 
 /// Current context size.
@@ -508,6 +512,9 @@ pub struct ContextSize {
     pub items: u32,
     /// Bytes.
     pub bytes: u32,
+    /// Tokens (whitespace words of mentions).
+    #[serde(default)]
+    pub tokens: u32,
 }
 
 /// What changed in the context.
