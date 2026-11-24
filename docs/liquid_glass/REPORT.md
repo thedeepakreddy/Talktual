@@ -84,3 +84,19 @@ The Liquid Orb replaced the earlier molten `VoiceOrb` on Home.
 | No Three.js / animation bugs | Found and fixed during QA: string tension flattening the logo, glow stubs on near-zero slabs, and a `Vector4.distanceTo` runtime error in the field (would have thrown every frame). The browser test now covers Home as well as AIR and fails on any error or WebGL warning |
 
 Evidence: `docs/voice_wave/logo-to-wave-sequence-dark.jpg` (fake-clock frames) and `logo-and-wave-dark-light.jpg`.
+
+## Round 5 — Home: "Conversation" choreography
+The Home mark now acts out what Talktual does on an 11 s loop (decorative; Home never listens):
+1. The top wave is plucked at its big crest: it speaks.
+2. The bottom wave answers from its big trough.
+3. Both answer once more.
+4. Together they flow into the full living waveform (3D swirl, lit split line, faster RGB sweep).
+5. They fold back into the logo with a spring overshoot and rest.
+
+**Touch:**
+- The glass tilts toward the pointer (spring-damped).
+- Brushing across a wave plucks it in the direction of the motion.
+- A tap or click splashes both waves.
+- Reduced motion turns all of this off.
+
+Evidence: `docs/voice_wave/home-conversation-sequence.jpg`.

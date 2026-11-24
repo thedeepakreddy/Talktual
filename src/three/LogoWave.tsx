@@ -318,6 +318,24 @@ export function LogoWave({ level, active = false, ambient = false, label, classN
         const tgt = new Float32Array(N);
         const envWave = (u: number) => Math.pow(Math.max(0, 1 - u * u), 1.3) * (0.25 + 0.75 * Math.exp(-((u / 0.45) ** 2)));
 
+        // ---- Home choreography ("Conversation") and touch ------------------------
+        // Decorative only (ambient): the mark acts out what Talktual does — one
+        // wave speaks, the other answers, together they flow into one waveform,
+        // then rest. Never used while listening; never driven by a microphone.
+        const LOOP = 11;
+        let cTime = 0;
+        const tilt = { x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0 };
+        let lastPluck = 0;
+        const pluck = (wi: number, u0: number, strength: number, width = 0.1) => {
+          const w = waves[wi];
+          for (let i = 1; i < N - 1; i++) w.v[i] += strength * Math.exp(-(((U[i] - u0) / width) ** 2));
+        };
+        const crossed = (prev: number, cur: number, t0: number) => (prev <= cur ? prev < t0 && cur >= t0 : prev < t0 || cur >= t0);
+        const smooth = (a: number, b: number, x: number) => {
+          const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+          return t * t * (3 - 2 * t);
+        };
+
         const simulate = (dt: number) => {
           const s = state.current;
           const now = performance.now();
@@ -338,12 +356,31 @@ export function LogoWave({ level, active = false, ambient = false, label, classN
             if (quietSince < 0) quietSince = now;
             if (now - quietSince > 1100) morph.target = 0;
           }
-          if (!s.active || s.ambient) morph.target = 0;
+          // Home: the choreography (honest by context — Home never listens).
+          let cl = 0;
+          if (s.ambient && !reduced) {
+            const prev = cTime;
+            cTime = (cTime + dt) % LOOP;
+            if (crossed(prev, cTime, 1.0)) pluck(0, -0.55, 5.2, 0.15); // the top wave speaks…
+            if (crossed(prev, cTime, 2.3)) pluck(1, 0.35, 5.2, 0.15); // …the bottom answers
+            if (crossed(prev, cTime, 3.3)) {
+              pluck(0, 0.45, 3.4, 0.13);
+              pluck(1, -0.6, 3.4, 0.13);
+            }
+            cl = 0.8 * smooth(3.9, 4.8, cTime) * (1 - smooth(6.3, 7.3, cTime)); // together they flow
+            morph.target = cTime >= 4.05 && cTime < 6.55 ? 1 : 0;
+          } else if (!s.active || s.ambient) morph.target = 0;
+
+          // Tilt toward the pointer (spring-damped).
+          tilt.vx += (60 * (tilt.tx - tilt.x) - 2 * 0.7 * Math.sqrt(60) * tilt.vx) * dt;
+          tilt.vy += (60 * (tilt.ty - tilt.y) - 2 * 0.7 * Math.sqrt(60) * tilt.vy) * dt;
+          tilt.x += tilt.vx * dt;
+          tilt.y += tilt.vy * dt;
 
           const k = reduced ? 260 : 24;
           const zeta = reduced ? 1 : 0.6;
           const flowing = !reduced && (s.active || s.ambient);
-          if (flowing) travel += dt * (1.6 + 3.4 * shown);
+          if (flowing) travel += dt * (1.6 + 3.4 * Math.max(shown, cl));
           time += dt;
 
           // Splash: a kick wherever the voice jumps.
@@ -364,7 +401,7 @@ export function LogoWave({ level, active = false, ambient = false, label, classN
           const m = Math.max(0, Math.min(1, morph.x));
           const me = m * m * (3 - 2 * m);
           const kWave = Math.PI * (3.2 + 1.6 * busy);
-          const ampWave = ((halfH * 0.8) / Lw) * Math.pow(slow, 0.5);
+          const ampWave = ((halfH * 0.8) / Lw) * Math.pow(Math.max(slow, cl), 0.5);
           const breath = s.ambient ? 0.016 : s.active ? 0.01 : 0;
           const drive = reduced ? 0 : shown * 46;
           const freq = 2 * Math.PI * (1.1 + 1.6 * busy);
@@ -403,8 +440,8 @@ export function LogoWave({ level, active = false, ambient = false, label, classN
           }
 
           fillUniforms.uTime.value = time;
-          fillUniforms.uLevel.value = shown;
-          if (flowing) fillUniforms.uSweep.value = ((time * (0.22 + 0.4 * shown)) % 3.2) - 1.6;
+          fillUniforms.uLevel.value = Math.max(shown, cl * 0.75);
+          if (flowing) fillUniforms.uSweep.value = ((time * (0.22 + 0.4 * Math.max(shown, cl))) % 3.2) - 1.6;
 
           const data = morph.x.toFixed(2);
           if (data !== lastData) {
@@ -416,7 +453,8 @@ export function LogoWave({ level, active = false, ambient = false, label, classN
           let energy = 0;
           for (const w of waves) for (let i = 0; i < N; i++) energy += w.v[i] * w.v[i] + (w.y[i] - w.rest[i]) ** 2 * (1 - me);
           const settled = energy < 1e-6 && Math.abs(morph.target - morph.x) < 0.002 && Math.abs(morph.v) < 0.002;
-          return { me, m, keep: s.active || flowing || shown > 0 || !settled };
+          const tilting = Math.abs(tilt.x - tilt.tx) + Math.abs(tilt.y - tilt.ty) + Math.abs(tilt.vx) + Math.abs(tilt.vy) > 1e-4;
+          return { me, m, keep: s.active || flowing || shown > 0 || !settled || tilting };
         };
 
         const build = (me: number, m: number) => {
@@ -424,8 +462,8 @@ export function LogoWave({ level, active = false, ambient = false, label, classN
           const gapHalf = Lw * (GAP_HALF + (0.012 - GAP_HALF) * me);
           const glowH = Lw * (0.1 + 0.06 * fillUniforms.uLevel.value);
           const mid = Math.sin(Math.PI * m);
-          group.rotation.x = mid * 0.55 * Math.sin(time * 2.3);
-          group.rotation.y = mid * 0.22 * Math.cos(time * 1.7);
+          group.rotation.x = mid * 0.55 * Math.sin(time * 2.3) + tilt.y;
+          group.rotation.y = mid * 0.22 * Math.cos(time * 1.7) + tilt.x;
           group.rotation.z = mid * 0.06 * Math.sin(time * 3.1);
 
           for (let wi = 0; wi < waves.length; wi++) {
@@ -517,6 +555,48 @@ export function LogoWave({ level, active = false, ambient = false, label, classN
         state.current.wake = loop.wake;
         loop.wake();
 
+        // Touch the glass (Home only): the mark tilts toward the pointer, brushing
+        // across a wave plucks it there, a tap splashes both.
+        let lastY = 0;
+        const toLocal = (e: PointerEvent) => {
+          const r = host.getBoundingClientRect();
+          const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
+          const ny = ((e.clientY - r.top) / r.height) * 2 - 1;
+          return { nx, ny, u: (nx * halfW) / Lw, yw: -ny * halfH };
+        };
+        const onMove = (e: PointerEvent) => {
+          if (!state.current.ambient || reduced) return;
+          const { nx, ny, u, yw } = toLocal(e);
+          tilt.tx = nx * 0.32;
+          tilt.ty = ny * 0.22;
+          const now = performance.now();
+          const dy = yw - lastY;
+          lastY = yw;
+          if (Math.abs(u) < 0.95 && now - lastPluck > 45 && Math.abs(dy) > 0.004) {
+            lastPluck = now;
+            // Push the way the finger moves: up raises the top wave, down deepens the bottom one.
+            const push = Math.min(1.2, (Math.abs(dy) / Lw) * 9) * Math.sign(dy) * (yw >= 0 ? 1 : -1);
+            pluck(yw >= 0 ? 0 : 1, u, push, 0.08);
+          }
+          loop.wake();
+        };
+        const onDown = (e: PointerEvent) => {
+          if (!state.current.ambient || reduced) return;
+          const { u } = toLocal(e);
+          if (Math.abs(u) > 1) return;
+          pluck(0, u, 2.2, 0.13);
+          pluck(1, u, 2.2, 0.13);
+          loop.wake();
+        };
+        const onLeave = () => {
+          tilt.tx = 0;
+          tilt.ty = 0;
+          loop.wake();
+        };
+        host.addEventListener('pointermove', onMove, { passive: true });
+        host.addEventListener('pointerdown', onDown, { passive: true });
+        host.addEventListener('pointerleave', onLeave, { passive: true });
+
         const ro = new ResizeObserver(() => {
           resize();
           loop.wake();
@@ -540,6 +620,9 @@ export function LogoWave({ level, active = false, ambient = false, label, classN
           ro.disconnect();
           offTheme();
           canvas.removeEventListener('webglcontextlost', onLost);
+          host.removeEventListener('pointermove', onMove);
+          host.removeEventListener('pointerdown', onDown);
+          host.removeEventListener('pointerleave', onLeave);
           group.traverse((o) => {
             const mesh = o as InstanceType<typeof THREE.Mesh>;
             if (mesh.isMesh) {
