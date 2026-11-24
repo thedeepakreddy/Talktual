@@ -85,3 +85,20 @@ record DR-8.5-1 (web-first vs. native shell):
 
 In every path the boundary is the facade plus serialized commands and events;
 Talktual-specific concepts (rooms, peers, push-to-talk UI) stay in Talktual.
+
+## Phase 4: Talktual uses CE recognition (implemented, opt-in)
+
+ADR-0024. Talktual can now run its calls on CE speech recognition: build it
+with `VITE_ASR_ENGINE=ce` and run the local bridge
+(`communication-engine/adapters/talktual-bridge`). It works as follows:
+* the browser streams the call's microphone as PCM over a localhost
+  WebSocket;
+* the bridge feeds it into a CE `Engine` through a network-fed audio
+  backend, so CE's own capture, Phase 3 and Phase 4 pipeline run;
+* transcript revisions come back as Talktual `AsrCallbacks`.
+
+Translation, transport and TTS are unchanged. The default build still uses
+the browser recognizer. Verified with unit tests (`src/lib/ceSpeech.test.ts`),
+the bridge's protocol and real-model tests, and a two-browser e2e
+(`e2e/ce-bridge.mjs`, real model, synthetic microphone). The guide for a
+human test is in the bridge README.

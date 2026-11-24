@@ -26,3 +26,6 @@ e2e/.dist-final/
 e2e/.dist-wave/
 e2e/.dist-wave2/
 e2e/.dist-*/
+e2e/.dist-ce/
+e2e/.ce-mic.wav
+e2e/.ce-finals.jsonl

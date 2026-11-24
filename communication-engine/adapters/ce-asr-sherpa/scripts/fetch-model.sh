@@ -11,6 +11,7 @@
 # Then: export CE_SHERPA_MODEL_DIR=<dest>/sherpa-onnx-streaming-zipformer-en-2023-06-26
 #       export SHERPA_ONNX_ARCHIVE_DIR=<dest>/native
 set -euo pipefail
+command -v sha256sum >/dev/null || sha256sum() { shasum -a 256 "$@"; }   # macOS
 dest="${1:-$HOME/ce-models}"
 base=https://github.com/k2-fsa/sherpa-onnx/releases/download
 m=sherpa-onnx-streaming-zipformer-en-2023-06-26
@@ -33,10 +34,17 @@ abd5e30f3f16fc510605c6029dba33f10e4386bd75c5bdc30cf94076864db10d  joiner-epoch-9
 SUMS
 fi
 (cd "$m" && sha256sum -c SHA256SUMS)
-lib=sherpa-onnx-v2.0.3-linux-x64-static-lib.tar.bz2
-if [[ ! -f "native/$lib" ]]; then
-  curl -fSL -o "native/$lib" "$base/v2.0.3/$lib"
+if [[ "$(uname -sm)" == "Linux x86_64" ]]; then
+  lib=sherpa-onnx-v2.0.3-linux-x64-static-lib.tar.bz2
+  if [[ ! -f "native/$lib" ]]; then
+    curl -fSL -o "native/$lib" "$base/v2.0.3/$lib"
+  fi
+  echo "f927e695d29b8c7ea3fda97eed215204b210fd57f9faf990a93377bac098ad57  native/$lib" | sha256sum -c -
+else
+  # Other platforms: sherpa-onnx-sys's build script downloads the matching
+  # prebuilt library itself (not verified by CE on these platforms).
+  echo "note: native libraries for $(uname -sm) will be downloaded by the build; SHERPA_ONNX_ARCHIVE_DIR is not needed"
 fi
-echo "f927e695d29b8c7ea3fda97eed215204b210fd57f9faf990a93377bac098ad57  native/$lib" | sha256sum -c -
 echo "CE_SHERPA_MODEL_DIR=$dest/$m"
-echo "SHERPA_ONNX_ARCHIVE_DIR=$dest/native"
+[[ -n "$(ls "$dest/native" 2>/dev/null)" ]] && echo "SHERPA_ONNX_ARCHIVE_DIR=$dest/native"
+exit 0

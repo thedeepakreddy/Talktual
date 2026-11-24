@@ -137,6 +137,40 @@ PROVENANCE.md}` (new); `scripts/verify.sh`; docs (ADR-0019…0022,
 ADR-0023, `speech.md`, `events.md`, `privacy.md`, `phase-4-evaluation.md`,
 `phase-4-real-asr.md`, this report, README, ARCHITECTURE).
 
+### Talktual end-to-end integration (ADR-0024)
+
+At the user's request, Talktual can run its calls on CE recognition.
+* **`adapters/talktual-bridge`** (outside the workspace) runs a localhost
+  WebSocket server with one CE `Engine`, the sherpa-onnx adapter (model
+  kept loaded) and a `PushBackend`: a CE `AudioBackend` whose input device
+  is fed by network PCM. Browser audio therefore goes through CE's normal
+  capture path: consent gate, negotiation, ring, taps, Phase 3 analysis
+  and Phase 4 recognition.
+  * A graceful stop waits until CE has consumed every pushed frame before
+    closing the stream.
+  * Origin checks, 127.0.0.1 binding, and an opt-in `--log-finals` with a
+    scorer (`examples/score_human_test.rs`) for a human test.
+  * `scripts/run-talktual-ce.sh` starts the bridge, the signaling server
+    and the app.
+* **Talktual**: `src/lib/ceSpeech.ts` adds engine `ce-local` (AudioWorklet
+  PCM capture, protocol v1, mapping onto `AsrCallbacks`, release tail,
+  abort, error handling). It has its own route, consent key and
+  disclosure, and is selected only with `VITE_ASR_ENGINE=ce`. Small
+  changes elsewhere: `config.ts`, `ports.ts`, `events.ts`, `privacy.ts`,
+  `capabilities.ts`, `speechToText.ts`, `CommunicationSession.ts` (a
+  label), `SettingsPage.tsx` (consent key), and `vite.config.ts`
+  (dev-scan scope).
+
+  New tests: `src/lib/ceSpeech.test.ts` and `e2e/ce-bridge.mjs`. Docs: the
+  README section, `.env.example` and the bridge README with the human-test
+  guide.
+* Defects found while integrating, fixed in the bridge:
+  * faster-than-real-time pushes overflowed the 250 ms device ring (the
+    bridge now uses 5 s);
+  * a stop could close the stream before the ring was drained (the bridge
+    now waits until the frames are consumed);
+  * a 2 s recognition queue dropped bursts (the bridge now uses 10 s).
+
 ## 5. Streaming transcript and revision semantics
 
 (ADR-0021.) Per utterance: revisions 0…n without gaps; each carries the
@@ -332,6 +366,9 @@ outside `communication-engine/` changed.
 | Talktual `npm run test:server` | **60 passed, 0 failed** |
 | Talktual `npm run build` | pass (existing chunk-size warning only) |
 | **Optional adapter** `adapters/ce-asr-sherpa/scripts/verify.sh` (fmt, clippy `-D warnings`, tests, real-model tests, `cargo deny`, resources) | **exit 0**: 1 unit test, **2 real-model tests passed** (fixture recognition, model sharing, determinism, language refusal; real model inside the `Engine` at 48 kHz stereo); advisories, bans, licenses and sources ok |
+| **Talktual bridge** `adapters/talktual-bridge/scripts/verify.sh` (fmt, clippy `-D warnings`, protocol tests with the scripted adapter, real model over the WebSocket, `cargo deny`) | **exit 0**: 1 unit + 3 protocol tests (partials → final → end, origin/language/rate/abort enforcement, 3 concurrent sessions), **1 real-model test** (fixture streamed in real time: push-to-talk @ 16 kHz and hands-free @ 48 kHz with Phase 3 activity) |
+| **Talktual e2e with CE** `node e2e/ce-bridge.mjs` (2 Chromium pages, production build with `VITE_ASR_ENGINE=ce`, signaling server, bridge, **real model**, Chromium fake mic playing a **synthetic** TTS fixture) | **4/4 passed, on 2 consecutive runs**: consent discloses the CE route; push-to-talk → AudioWorklet → CE → transcript → translator → other peer; opt-in transcript log; no page errors; Web Speech never started. Transcripts: "…where the train station is"; in some loops "…drain station…" (a model error) |
+| Talktual after the integration | tsc pass; `npm test` **543 passed** (537 + 6 new); `npm run test:server` 60 passed; `npm run build` pass; a `VITE_ASR_ENGINE=ce` build passes; existing `e2e/smoke.mjs` 17/17 (default path unchanged) |
 | Adapter with Rust 1.85 | refused by design (`aes 0.9.4`, a build dependency of `sherpa-onnx-sys`, requires 1.89); the adapter declares `rust-version = "1.89"` and lives outside the workspace |
 
 New Phase 4 tests: ce-core speech contracts (validation, serialization,
@@ -441,9 +478,11 @@ conversations: evaluate on human speech.**
   developed against it, and against the scripted and oracle adapters for
   deterministic tests.
 * Before Phase 5 results are judged on real conversations:
-  1. approve a consented or properly licensed real-speech set (e.g.
-     LibriSpeech test-clean, CC BY 4.0) and run `evaluate_real`
-     unchanged on it;
+  1. run the **human test** in Talktual now that it is connected end to
+     end (`adapters/talktual-bridge/README.md`; the 10 sentences and the
+     scorer are included), and/or approve a consented or properly licensed
+     real-speech set (e.g. LibriSpeech test-clean, CC BY 4.0) and run
+     `evaluate_real` unchanged on it;
   2. re-check `lead_in_ms` and the commit policy on its dev split;
   3. build and verify the adapter on the target platforms;
   4. validate on real audio hardware (outstanding since Phases 2–3).

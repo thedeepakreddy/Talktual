@@ -163,4 +163,4 @@ intelligence architecture · 0015 VAD selection · 0016 analysis results and
 units · 0017 analysis privacy · 0018 analysis resource policy · 0019
 speech architecture · 0020 ASR and language-ID selection · 0021 transcript
 revision semantics · 0022 language observations · 0023 real-ASR baseline
-(sherpa-onnx).
+(sherpa-onnx) · 0024 Talktual ↔ CE bridge.

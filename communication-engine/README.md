@@ -53,6 +53,7 @@ communication-engine/
   fixtures/speech/                     synthetic TTS fixtures, transcript manifest + provenance
   fixtures/language/                   authored language-ID corpus + provenance (Phase 4)
   adapters/ce-asr-sherpa/              optional real ASR adapter (sherpa-onnx; outside the workspace)
+  adapters/talktual-bridge/            Talktual ↔ CE bridge: Talktual uses CE recognition end to end
   crates/communication-engine/         runtime (private) + public facade
     examples/runtime_smoke.rs          end-to-end example, used as a CI gate
     tests/                             integration tests (public API only)

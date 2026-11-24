@@ -17,7 +17,7 @@ const MODE_HINT: Record<ModePref, string> = {
   'local-only': 'Nothing is sent to recognition, translation or voice services. Features this device can’t do on its own are unavailable — never silently sent to the cloud.',
 };
 
-const CALL_KEYS = ['talktual.consent.v1.browser-speech', 'talktual.consent.v1.server-stt'];
+const CALL_KEYS = ['talktual.consent.v1.browser-speech', 'talktual.consent.v1.server-stt', 'talktual.consent.v1.ce-local'];
 const read = (k: string) => {
   try {
     return localStorage.getItem(k) === 'granted';

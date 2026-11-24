@@ -19,7 +19,8 @@
 //   * server-stt — records the push and posts it to our server (ElevenLabs
 //     Scribe) on release. Browsers without Web Speech (Firefox, mostly).
 
-import { API_BASE, FINALIZE_TIMEOUT_MS, RELEASE_TAIL_MS } from "./config";
+import { API_BASE, ASR_ENGINE, FINALIZE_TIMEOUT_MS, RELEASE_TAIL_MS } from "./config";
+import { createCeAdapter } from "./ceSpeech";
 import { getMic, setMicEnabled } from "./audio";
 import type { AsrAdapter, AsrCallbacks, AsrEngine, AsrErrorCode, AsrOptions } from "../engine/ports";
 import type { ListeningMode, ProcessingRoute } from "../engine/events";
@@ -79,6 +80,9 @@ export function supportsStreamingStt(): boolean {
 // --- Public factory ---------------------------------------------------------
 
 export function createAsr(lang: string, mode: ListeningMode, cb: AsrCallbacks, opts: AsrOptions = {}): AsrAdapter {
+  // Communication Engine recognizer (opt-in build flag): audio goes to the
+  // local CE bridge only.
+  if (ASR_ENGINE === "ce") return createCeAdapter(lang, mode, cb);
   // On-device only: never fall back to the server recognizer.
   if (opts.processLocally) return createWebSpeechAdapter(lang, mode, cb, true);
   return getSpeechRecognitionCtor() ? createWebSpeechAdapter(lang, mode, cb) : createServerSttAdapter(lang, cb);

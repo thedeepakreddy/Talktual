@@ -13,6 +13,8 @@ export interface BrowserCapabilities {
   speechSynthesis: boolean;
   dataChannel: boolean;
   secureContext: boolean;
+  /** Talktual was built to use the Communication Engine recognizer (VITE_ASR_ENGINE=ce). */
+  ceRecognizer?: boolean;
 }
 
 export function detectBrowserCapabilities(w: Window & typeof globalThis = window): BrowserCapabilities {
@@ -25,6 +27,7 @@ export function detectBrowserCapabilities(w: Window & typeof globalThis = window
     speechSynthesis: 'speechSynthesis' in w,
     dataChannel: typeof anyW.RTCPeerConnection === 'function',
     secureContext: w.isSecureContext !== false,
+    ceRecognizer: import.meta.env?.VITE_ASR_ENGINE === 'ce',
   };
 }
 
@@ -57,7 +60,9 @@ export function resolveFeatures(browser: BrowserCapabilities, server: ServerCapa
   let stt: AsrEngine | null = null;
 
   if (!browser.secureContext) reasons.push('insecure-context');
-  if (browser.webSpeech && browser.secureContext) {
+  if (browser.ceRecognizer && browser.getUserMedia && browser.webAudio && browser.secureContext) {
+    stt = 'ce-local';
+  } else if (browser.webSpeech && browser.secureContext) {
     stt = 'webspeech';
   } else if (browser.getUserMedia && browser.mediaRecorder && browser.secureContext) {
     // Server STT path — only usable if the server has it (unknown = optimistic
@@ -74,9 +79,9 @@ export function resolveFeatures(browser: BrowserCapabilities, server: ServerCapa
 
   return {
     stt,
-    route: stt === 'webspeech' ? 'browser-speech' : stt === 'server-stt' ? 'server-stt' : null,
+    route: stt === 'webspeech' ? 'browser-speech' : stt === 'server-stt' ? 'server-stt' : stt === 'ce-local' ? 'ce-local' : null,
     canTalk: stt !== null,
-    continuous: stt === 'webspeech',
+    continuous: stt === 'webspeech' || stt === 'ce-local',
     tts,
     liveCaptions: Boolean(server?.liveCaptions),
     p2p: browser.dataChannel,
