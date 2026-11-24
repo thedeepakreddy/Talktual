@@ -1014,6 +1014,7 @@ impl Core {
             metrics: self.metrics.snapshot(),
             audio_streams: self.audio_statuses(),
             analyses: self.analysis_statuses(),
+            recognitions: Vec::new(), // Phase 4: not wired yet
         }
     }
 

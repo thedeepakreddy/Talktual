@@ -47,6 +47,7 @@ pub mod privacy;
 pub mod provider;
 pub mod resource;
 pub mod session;
+pub mod speech;
 pub mod time;
 pub mod value;
 pub mod version;

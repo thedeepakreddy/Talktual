@@ -1,0 +1,1050 @@
+{
+ "schema": "ce.lid-corpus.v1",
+ "description": "Short conversational sentences authored for the Communication Engine Phase 4 language-identification evaluation. Original text written for this project; no third-party sources.",
+ "license": "Same as the Communication Engine repository",
+ "languages": [
+  "de",
+  "en",
+  "es",
+  "fr",
+  "it",
+  "nl",
+  "pt"
+ ],
+ "items": [
+  {
+   "id": "en-dev-00",
+   "split": "dev",
+   "language": "en",
+   "length": "short",
+   "text": "Good evening"
+  },
+  {
+   "id": "en-dev-01",
+   "split": "dev",
+   "language": "en",
+   "length": "medium",
+   "text": "Where is the bathroom, please?"
+  },
+  {
+   "id": "en-dev-02",
+   "split": "dev",
+   "language": "en",
+   "length": "long",
+   "text": "I lost my phone on the train this morning"
+  },
+  {
+   "id": "en-dev-03",
+   "split": "dev",
+   "language": "en",
+   "length": "medium",
+   "text": "Could you write the address down for me?"
+  },
+  {
+   "id": "en-dev-04",
+   "split": "dev",
+   "language": "en",
+   "length": "medium",
+   "text": "We are going to the museum after lunch"
+  },
+  {
+   "id": "en-dev-05",
+   "split": "dev",
+   "language": "en",
+   "length": "short",
+   "text": "Yes, of course"
+  },
+  {
+   "id": "en-test-00",
+   "split": "test",
+   "language": "en",
+   "length": "short",
+   "text": "Thank you"
+  },
+  {
+   "id": "en-test-01",
+   "split": "test",
+   "language": "en",
+   "length": "short",
+   "text": "See you later"
+  },
+  {
+   "id": "en-test-02",
+   "split": "test",
+   "language": "en",
+   "length": "short",
+   "text": "Not today"
+  },
+  {
+   "id": "en-test-03",
+   "split": "test",
+   "language": "en",
+   "length": "short",
+   "text": "No problem"
+  },
+  {
+   "id": "en-test-04",
+   "split": "test",
+   "language": "en",
+   "length": "medium",
+   "text": "The bus leaves in ten minutes"
+  },
+  {
+   "id": "en-test-05",
+   "split": "test",
+   "language": "en",
+   "length": "medium",
+   "text": "I would like the vegetarian option"
+  },
+  {
+   "id": "en-test-06",
+   "split": "test",
+   "language": "en",
+   "length": "medium",
+   "text": "My sister lives near the old harbour"
+  },
+  {
+   "id": "en-test-07",
+   "split": "test",
+   "language": "en",
+   "length": "medium",
+   "text": "Is breakfast included in the price?"
+  },
+  {
+   "id": "en-test-08",
+   "split": "test",
+   "language": "en",
+   "length": "long",
+   "text": "If it rains tomorrow we will stay at the hotel and read"
+  },
+  {
+   "id": "en-test-09",
+   "split": "test",
+   "language": "en",
+   "length": "long",
+   "text": "The pharmacy on the corner closes at eight on Sundays"
+  },
+  {
+   "id": "en-test-10",
+   "split": "test",
+   "language": "en",
+   "length": "long",
+   "text": "I have been learning to cook since my grandmother taught me"
+  },
+  {
+   "id": "en-test-11",
+   "split": "test",
+   "language": "en",
+   "length": "long",
+   "text": "Please send me the tickets by email before Friday evening"
+  },
+  {
+   "id": "es-dev-00",
+   "split": "dev",
+   "language": "es",
+   "length": "short",
+   "text": "Buenas noches"
+  },
+  {
+   "id": "es-dev-01",
+   "split": "dev",
+   "language": "es",
+   "length": "medium",
+   "text": "¿Dónde está la estación de tren?"
+  },
+  {
+   "id": "es-dev-02",
+   "split": "dev",
+   "language": "es",
+   "length": "medium",
+   "text": "Perdí mi cartera en el autobús esta mañana"
+  },
+  {
+   "id": "es-dev-03",
+   "split": "dev",
+   "language": "es",
+   "length": "medium",
+   "text": "¿Me puede escribir la dirección, por favor?"
+  },
+  {
+   "id": "es-dev-04",
+   "split": "dev",
+   "language": "es",
+   "length": "medium",
+   "text": "Vamos al mercado después de comer"
+  },
+  {
+   "id": "es-dev-05",
+   "split": "dev",
+   "language": "es",
+   "length": "short",
+   "text": "Sí, claro"
+  },
+  {
+   "id": "es-test-00",
+   "split": "test",
+   "language": "es",
+   "length": "short",
+   "text": "Muchas gracias"
+  },
+  {
+   "id": "es-test-01",
+   "split": "test",
+   "language": "es",
+   "length": "short",
+   "text": "Hasta luego"
+  },
+  {
+   "id": "es-test-02",
+   "split": "test",
+   "language": "es",
+   "length": "short",
+   "text": "Hoy no"
+  },
+  {
+   "id": "es-test-03",
+   "split": "test",
+   "language": "es",
+   "length": "short",
+   "text": "De nada"
+  },
+  {
+   "id": "es-test-04",
+   "split": "test",
+   "language": "es",
+   "length": "medium",
+   "text": "El autobús sale en diez minutos"
+  },
+  {
+   "id": "es-test-05",
+   "split": "test",
+   "language": "es",
+   "length": "medium",
+   "text": "Quisiera la opción vegetariana"
+  },
+  {
+   "id": "es-test-06",
+   "split": "test",
+   "language": "es",
+   "length": "medium",
+   "text": "Mi hermana vive cerca del puerto viejo"
+  },
+  {
+   "id": "es-test-07",
+   "split": "test",
+   "language": "es",
+   "length": "medium",
+   "text": "¿El desayuno está incluido en el precio?"
+  },
+  {
+   "id": "es-test-08",
+   "split": "test",
+   "language": "es",
+   "length": "long",
+   "text": "Si llueve mañana nos quedaremos en el hotel leyendo"
+  },
+  {
+   "id": "es-test-09",
+   "split": "test",
+   "language": "es",
+   "length": "long",
+   "text": "La farmacia de la esquina cierra a las ocho los domingos"
+  },
+  {
+   "id": "es-test-10",
+   "split": "test",
+   "language": "es",
+   "length": "long",
+   "text": "Aprendí a cocinar porque mi abuela me enseñó de pequeña"
+  },
+  {
+   "id": "es-test-11",
+   "split": "test",
+   "language": "es",
+   "length": "long",
+   "text": "Por favor, envíame las entradas por correo antes del viernes"
+  },
+  {
+   "id": "fr-dev-00",
+   "split": "dev",
+   "language": "fr",
+   "length": "short",
+   "text": "Bonsoir"
+  },
+  {
+   "id": "fr-dev-01",
+   "split": "dev",
+   "language": "fr",
+   "length": "medium",
+   "text": "Où sont les toilettes, s'il vous plaît ?"
+  },
+  {
+   "id": "fr-dev-02",
+   "split": "dev",
+   "language": "fr",
+   "length": "long",
+   "text": "J'ai perdu mon téléphone dans le train ce matin"
+  },
+  {
+   "id": "fr-dev-03",
+   "split": "dev",
+   "language": "fr",
+   "length": "medium",
+   "text": "Pouvez-vous m'écrire l'adresse ?"
+  },
+  {
+   "id": "fr-dev-04",
+   "split": "dev",
+   "language": "fr",
+   "length": "medium",
+   "text": "Nous allons au musée après le déjeuner"
+  },
+  {
+   "id": "fr-dev-05",
+   "split": "dev",
+   "language": "fr",
+   "length": "short",
+   "text": "Oui, bien sûr"
+  },
+  {
+   "id": "fr-test-00",
+   "split": "test",
+   "language": "fr",
+   "length": "short",
+   "text": "Merci beaucoup"
+  },
+  {
+   "id": "fr-test-01",
+   "split": "test",
+   "language": "fr",
+   "length": "short",
+   "text": "À plus tard"
+  },
+  {
+   "id": "fr-test-02",
+   "split": "test",
+   "language": "fr",
+   "length": "short",
+   "text": "Pas aujourd'hui"
+  },
+  {
+   "id": "fr-test-03",
+   "split": "test",
+   "language": "fr",
+   "length": "short",
+   "text": "Pas de problème"
+  },
+  {
+   "id": "fr-test-04",
+   "split": "test",
+   "language": "fr",
+   "length": "medium",
+   "text": "Le bus part dans dix minutes"
+  },
+  {
+   "id": "fr-test-05",
+   "split": "test",
+   "language": "fr",
+   "length": "medium",
+   "text": "Je voudrais le plat végétarien"
+  },
+  {
+   "id": "fr-test-06",
+   "split": "test",
+   "language": "fr",
+   "length": "medium",
+   "text": "Ma sœur habite près du vieux port"
+  },
+  {
+   "id": "fr-test-07",
+   "split": "test",
+   "language": "fr",
+   "length": "medium",
+   "text": "Le petit-déjeuner est-il compris dans le prix ?"
+  },
+  {
+   "id": "fr-test-08",
+   "split": "test",
+   "language": "fr",
+   "length": "long",
+   "text": "S'il pleut demain, nous resterons à l'hôtel pour lire"
+  },
+  {
+   "id": "fr-test-09",
+   "split": "test",
+   "language": "fr",
+   "length": "long",
+   "text": "La pharmacie du coin ferme à huit heures le dimanche"
+  },
+  {
+   "id": "fr-test-10",
+   "split": "test",
+   "language": "fr",
+   "length": "medium",
+   "text": "J'ai appris à cuisiner grâce à ma grand-mère"
+  },
+  {
+   "id": "fr-test-11",
+   "split": "test",
+   "language": "fr",
+   "length": "long",
+   "text": "Envoyez-moi les billets par courriel avant vendredi soir, s'il vous plaît"
+  },
+  {
+   "id": "de-dev-00",
+   "split": "dev",
+   "language": "de",
+   "length": "short",
+   "text": "Guten Abend"
+  },
+  {
+   "id": "de-dev-01",
+   "split": "dev",
+   "language": "de",
+   "length": "medium",
+   "text": "Wo ist die Toilette, bitte?"
+  },
+  {
+   "id": "de-dev-02",
+   "split": "dev",
+   "language": "de",
+   "length": "long",
+   "text": "Ich habe heute Morgen mein Handy im Zug verloren"
+  },
+  {
+   "id": "de-dev-03",
+   "split": "dev",
+   "language": "de",
+   "length": "medium",
+   "text": "Können Sie mir die Adresse aufschreiben?"
+  },
+  {
+   "id": "de-dev-04",
+   "split": "dev",
+   "language": "de",
+   "length": "medium",
+   "text": "Wir gehen nach dem Mittagessen ins Museum"
+  },
+  {
+   "id": "de-dev-05",
+   "split": "dev",
+   "language": "de",
+   "length": "short",
+   "text": "Ja, natürlich"
+  },
+  {
+   "id": "de-test-00",
+   "split": "test",
+   "language": "de",
+   "length": "short",
+   "text": "Vielen Dank"
+  },
+  {
+   "id": "de-test-01",
+   "split": "test",
+   "language": "de",
+   "length": "short",
+   "text": "Bis später"
+  },
+  {
+   "id": "de-test-02",
+   "split": "test",
+   "language": "de",
+   "length": "short",
+   "text": "Heute nicht"
+  },
+  {
+   "id": "de-test-03",
+   "split": "test",
+   "language": "de",
+   "length": "short",
+   "text": "Kein Problem"
+  },
+  {
+   "id": "de-test-04",
+   "split": "test",
+   "language": "de",
+   "length": "medium",
+   "text": "Der Bus fährt in zehn Minuten ab"
+  },
+  {
+   "id": "de-test-05",
+   "split": "test",
+   "language": "de",
+   "length": "medium",
+   "text": "Ich hätte gern das vegetarische Gericht"
+  },
+  {
+   "id": "de-test-06",
+   "split": "test",
+   "language": "de",
+   "length": "long",
+   "text": "Meine Schwester wohnt in der Nähe des alten Hafens"
+  },
+  {
+   "id": "de-test-07",
+   "split": "test",
+   "language": "de",
+   "length": "medium",
+   "text": "Ist das Frühstück im Preis inbegriffen?"
+  },
+  {
+   "id": "de-test-08",
+   "split": "test",
+   "language": "de",
+   "length": "long",
+   "text": "Wenn es morgen regnet, bleiben wir im Hotel und lesen"
+  },
+  {
+   "id": "de-test-09",
+   "split": "test",
+   "language": "de",
+   "length": "long",
+   "text": "Die Apotheke an der Ecke schließt sonntags um acht Uhr"
+  },
+  {
+   "id": "de-test-10",
+   "split": "test",
+   "language": "de",
+   "length": "long",
+   "text": "Ich habe kochen gelernt, weil meine Großmutter es mir gezeigt hat"
+  },
+  {
+   "id": "de-test-11",
+   "split": "test",
+   "language": "de",
+   "length": "long",
+   "text": "Bitte schicken Sie mir die Karten vor Freitagabend per E-Mail"
+  },
+  {
+   "id": "it-dev-00",
+   "split": "dev",
+   "language": "it",
+   "length": "short",
+   "text": "Buonasera"
+  },
+  {
+   "id": "it-dev-01",
+   "split": "dev",
+   "language": "it",
+   "length": "medium",
+   "text": "Dov'è il bagno, per favore?"
+  },
+  {
+   "id": "it-dev-02",
+   "split": "dev",
+   "language": "it",
+   "length": "medium",
+   "text": "Ho perso il telefono sul treno stamattina"
+  },
+  {
+   "id": "it-dev-03",
+   "split": "dev",
+   "language": "it",
+   "length": "medium",
+   "text": "Mi può scrivere l'indirizzo?"
+  },
+  {
+   "id": "it-dev-04",
+   "split": "dev",
+   "language": "it",
+   "length": "medium",
+   "text": "Andiamo al museo dopo pranzo"
+  },
+  {
+   "id": "it-dev-05",
+   "split": "dev",
+   "language": "it",
+   "length": "short",
+   "text": "Sì, certo"
+  },
+  {
+   "id": "it-test-00",
+   "split": "test",
+   "language": "it",
+   "length": "short",
+   "text": "Grazie mille"
+  },
+  {
+   "id": "it-test-01",
+   "split": "test",
+   "language": "it",
+   "length": "short",
+   "text": "A dopo"
+  },
+  {
+   "id": "it-test-02",
+   "split": "test",
+   "language": "it",
+   "length": "short",
+   "text": "Oggi no"
+  },
+  {
+   "id": "it-test-03",
+   "split": "test",
+   "language": "it",
+   "length": "short",
+   "text": "Prego"
+  },
+  {
+   "id": "it-test-04",
+   "split": "test",
+   "language": "it",
+   "length": "medium",
+   "text": "L'autobus parte tra dieci minuti"
+  },
+  {
+   "id": "it-test-05",
+   "split": "test",
+   "language": "it",
+   "length": "medium",
+   "text": "Vorrei il piatto vegetariano"
+  },
+  {
+   "id": "it-test-06",
+   "split": "test",
+   "language": "it",
+   "length": "medium",
+   "text": "Mia sorella abita vicino al porto vecchio"
+  },
+  {
+   "id": "it-test-07",
+   "split": "test",
+   "language": "it",
+   "length": "medium",
+   "text": "La colazione è inclusa nel prezzo?"
+  },
+  {
+   "id": "it-test-08",
+   "split": "test",
+   "language": "it",
+   "length": "medium",
+   "text": "Se domani piove restiamo in albergo a leggere"
+  },
+  {
+   "id": "it-test-09",
+   "split": "test",
+   "language": "it",
+   "length": "medium",
+   "text": "La farmacia all'angolo chiude alle otto la domenica"
+  },
+  {
+   "id": "it-test-10",
+   "split": "test",
+   "language": "it",
+   "length": "long",
+   "text": "Ho imparato a cucinare perché me lo ha insegnato mia nonna"
+  },
+  {
+   "id": "it-test-11",
+   "split": "test",
+   "language": "it",
+   "length": "long",
+   "text": "Per favore mandami i biglietti per email prima di venerdì sera"
+  },
+  {
+   "id": "pt-dev-00",
+   "split": "dev",
+   "language": "pt",
+   "length": "short",
+   "text": "Boa noite"
+  },
+  {
+   "id": "pt-dev-01",
+   "split": "dev",
+   "language": "pt",
+   "length": "medium",
+   "text": "Onde fica a casa de banho, por favor?"
+  },
+  {
+   "id": "pt-dev-02",
+   "split": "dev",
+   "language": "pt",
+   "length": "medium",
+   "text": "Perdi o meu telemóvel no comboio esta manhã"
+  },
+  {
+   "id": "pt-dev-03",
+   "split": "dev",
+   "language": "pt",
+   "length": "medium",
+   "text": "Pode escrever-me a morada?"
+  },
+  {
+   "id": "pt-dev-04",
+   "split": "dev",
+   "language": "pt",
+   "length": "medium",
+   "text": "Vamos ao museu depois do almoço"
+  },
+  {
+   "id": "pt-dev-05",
+   "split": "dev",
+   "language": "pt",
+   "length": "short",
+   "text": "Sim, claro"
+  },
+  {
+   "id": "pt-test-00",
+   "split": "test",
+   "language": "pt",
+   "length": "short",
+   "text": "Muito obrigado"
+  },
+  {
+   "id": "pt-test-01",
+   "split": "test",
+   "language": "pt",
+   "length": "short",
+   "text": "Até logo"
+  },
+  {
+   "id": "pt-test-02",
+   "split": "test",
+   "language": "pt",
+   "length": "short",
+   "text": "Hoje não"
+  },
+  {
+   "id": "pt-test-03",
+   "split": "test",
+   "language": "pt",
+   "length": "short",
+   "text": "Não faz mal"
+  },
+  {
+   "id": "pt-test-04",
+   "split": "test",
+   "language": "pt",
+   "length": "medium",
+   "text": "O autocarro parte daqui a dez minutos"
+  },
+  {
+   "id": "pt-test-05",
+   "split": "test",
+   "language": "pt",
+   "length": "medium",
+   "text": "Queria o prato vegetariano"
+  },
+  {
+   "id": "pt-test-06",
+   "split": "test",
+   "language": "pt",
+   "length": "medium",
+   "text": "A minha irmã mora perto do porto antigo"
+  },
+  {
+   "id": "pt-test-07",
+   "split": "test",
+   "language": "pt",
+   "length": "medium",
+   "text": "O pequeno-almoço está incluído no preço?"
+  },
+  {
+   "id": "pt-test-08",
+   "split": "test",
+   "language": "pt",
+   "length": "medium",
+   "text": "Se amanhã chover ficamos no hotel a ler"
+  },
+  {
+   "id": "pt-test-09",
+   "split": "test",
+   "language": "pt",
+   "length": "long",
+   "text": "A farmácia da esquina fecha às oito aos domingos"
+  },
+  {
+   "id": "pt-test-10",
+   "split": "test",
+   "language": "pt",
+   "length": "long",
+   "text": "Aprendi a cozinhar porque a minha avó me ensinou"
+  },
+  {
+   "id": "pt-test-11",
+   "split": "test",
+   "language": "pt",
+   "length": "long",
+   "text": "Por favor envie-me os bilhetes por email antes de sexta-feira à noite"
+  },
+  {
+   "id": "nl-dev-00",
+   "split": "dev",
+   "language": "nl",
+   "length": "short",
+   "text": "Goedenavond"
+  },
+  {
+   "id": "nl-dev-01",
+   "split": "dev",
+   "language": "nl",
+   "length": "medium",
+   "text": "Waar is het toilet, alstublieft?"
+  },
+  {
+   "id": "nl-dev-02",
+   "split": "dev",
+   "language": "nl",
+   "length": "long",
+   "text": "Ik ben vanochtend mijn telefoon in de trein verloren"
+  },
+  {
+   "id": "nl-dev-03",
+   "split": "dev",
+   "language": "nl",
+   "length": "medium",
+   "text": "Kunt u het adres voor mij opschrijven?"
+  },
+  {
+   "id": "nl-dev-04",
+   "split": "dev",
+   "language": "nl",
+   "length": "medium",
+   "text": "We gaan na de lunch naar het museum"
+  },
+  {
+   "id": "nl-dev-05",
+   "split": "dev",
+   "language": "nl",
+   "length": "short",
+   "text": "Ja, natuurlijk"
+  },
+  {
+   "id": "nl-test-00",
+   "split": "test",
+   "language": "nl",
+   "length": "short",
+   "text": "Dank je wel"
+  },
+  {
+   "id": "nl-test-01",
+   "split": "test",
+   "language": "nl",
+   "length": "short",
+   "text": "Tot later"
+  },
+  {
+   "id": "nl-test-02",
+   "split": "test",
+   "language": "nl",
+   "length": "short",
+   "text": "Vandaag niet"
+  },
+  {
+   "id": "nl-test-03",
+   "split": "test",
+   "language": "nl",
+   "length": "short",
+   "text": "Geen probleem"
+  },
+  {
+   "id": "nl-test-04",
+   "split": "test",
+   "language": "nl",
+   "length": "medium",
+   "text": "De bus vertrekt over tien minuten"
+  },
+  {
+   "id": "nl-test-05",
+   "split": "test",
+   "language": "nl",
+   "length": "medium",
+   "text": "Ik wil graag het vegetarische gerecht"
+  },
+  {
+   "id": "nl-test-06",
+   "split": "test",
+   "language": "nl",
+   "length": "medium",
+   "text": "Mijn zus woont vlak bij de oude haven"
+  },
+  {
+   "id": "nl-test-07",
+   "split": "test",
+   "language": "nl",
+   "length": "medium",
+   "text": "Is het ontbijt bij de prijs inbegrepen?"
+  },
+  {
+   "id": "nl-test-08",
+   "split": "test",
+   "language": "nl",
+   "length": "long",
+   "text": "Als het morgen regent blijven we in het hotel om te lezen"
+  },
+  {
+   "id": "nl-test-09",
+   "split": "test",
+   "language": "nl",
+   "length": "long",
+   "text": "De apotheek op de hoek sluit op zondag om acht uur"
+  },
+  {
+   "id": "nl-test-10",
+   "split": "test",
+   "language": "nl",
+   "length": "long",
+   "text": "Ik heb leren koken omdat mijn oma het mij heeft geleerd"
+  },
+  {
+   "id": "nl-test-11",
+   "split": "test",
+   "language": "nl",
+   "length": "long",
+   "text": "Stuur mij alstublieft de kaartjes per e-mail voor vrijdagavond"
+  },
+  {
+   "id": "mix-test-00",
+   "split": "test",
+   "language": "mixed",
+   "length": "long",
+   "text": "Vamos a la playa and then we can get some ice cream",
+   "spans": [
+    [
+     0,
+     16,
+     "es"
+    ],
+    [
+     17,
+     51,
+     "en"
+    ]
+   ]
+  },
+  {
+   "id": "mix-test-01",
+   "split": "test",
+   "language": "mixed",
+   "length": "long",
+   "text": "I told him it was une très mauvaise idée",
+   "spans": [
+    [
+     0,
+     17,
+     "en"
+    ],
+    [
+     18,
+     40,
+     "fr"
+    ]
+   ]
+  },
+  {
+   "id": "mix-test-02",
+   "split": "test",
+   "language": "mixed",
+   "length": "long",
+   "text": "Das Meeting ist morgen so please bring the slides",
+   "spans": [
+    [
+     0,
+     22,
+     "de"
+    ],
+    [
+     23,
+     49,
+     "en"
+    ]
+   ]
+  },
+  {
+   "id": "mix-test-03",
+   "split": "test",
+   "language": "mixed",
+   "length": "long",
+   "text": "My mother always says poco a poco se va lejos",
+   "spans": [
+    [
+     0,
+     21,
+     "en"
+    ],
+    [
+     22,
+     45,
+     "es"
+    ]
+   ]
+  },
+  {
+   "id": "mix-test-04",
+   "split": "test",
+   "language": "mixed",
+   "length": "long",
+   "text": "On se retrouve devant la gare at seven o'clock sharp",
+   "spans": [
+    [
+     0,
+     29,
+     "fr"
+    ],
+    [
+     30,
+     52,
+     "en"
+    ]
+   ]
+  },
+  {
+   "id": "mix-test-05",
+   "split": "test",
+   "language": "mixed",
+   "length": "long",
+   "text": "Ho finito il lavoro so we can leave early today",
+   "spans": [
+    [
+     0,
+     19,
+     "it"
+    ],
+    [
+     20,
+     47,
+     "en"
+    ]
+   ]
+  },
+  {
+   "id": "mix-test-06",
+   "split": "test",
+   "language": "mixed",
+   "length": "long",
+   "text": "Não sei se consigo but I will definitely try my best",
+   "spans": [
+    [
+     0,
+     18,
+     "pt"
+    ],
+    [
+     19,
+     52,
+     "en"
+    ]
+   ]
+  },
+  {
+   "id": "mix-test-07",
+   "split": "test",
+   "language": "mixed",
+   "length": "long",
+   "text": "Ik kom straks even langs if that is okay with you",
+   "spans": [
+    [
+     0,
+     24,
+     "nl"
+    ],
+    [
+     25,
+     49,
+     "en"
+    ]
+   ]
+  }
+ ]
+}

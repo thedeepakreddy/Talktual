@@ -108,6 +108,12 @@ pub struct MetricsSnapshot {
     /// Analyses that failed (panic or stall).
     #[serde(default)]
     pub analysis_failures: u64,
+    /// Recognitions started (Phase 4).
+    #[serde(default)]
+    pub recognitions_started: u64,
+    /// Recognitions that failed (load failure, panic or stall).
+    #[serde(default)]
+    pub recognition_failures: u64,
 }
 
 /// Health and status of the runtime and every module.
@@ -129,6 +135,9 @@ pub struct RuntimeHealth {
     /// Running or recently ended analyses (Phase 3).
     #[serde(default)]
     pub analyses: Vec<crate::intel::AnalysisStatus>,
+    /// Running or recently ended recognitions (Phase 4).
+    #[serde(default)]
+    pub recognitions: Vec<crate::speech::RecognitionStatus>,
 }
 
 /// Aggregate runtime health from the runtime state and module statuses.

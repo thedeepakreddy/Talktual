@@ -157,7 +157,7 @@ impl Core {
         let attached = self
             .audio
             .as_ref()
-            .map(|a| a.attach_tap(id, tap_tx))
+            .map(|a| a.attach_tap(id, tap_tx).map(|_| ()))
             .unwrap_or_else(|| {
                 Err(CeError::internal(
                     "analysis.no_audio",

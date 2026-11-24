@@ -95,6 +95,32 @@ pub enum Command {
         /// The stream.
         stream_id: AudioStreamId,
     },
+    /// Start speech recognition on a capture stream (Phase 4). `None` uses
+    /// the engine's default recognition configuration.
+    StartRecognition {
+        /// The capture stream.
+        stream_id: AudioStreamId,
+        /// Configuration override.
+        config: Option<crate::speech::RecognitionConfig>,
+    },
+    /// Stop recognition (the open utterance is finalized) (Phase 4).
+    StopRecognition {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Reset recognition: the open utterance is cancelled and the adapter
+    /// reset; recognition continues (Phase 4).
+    ResetRecognition {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Report the recognition status of a stream (Phase 4).
+    QueryRecognition {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// List registered ASR adapters without loading any model (Phase 4).
+    ListRecognizers,
 }
 
 impl Command {
@@ -116,6 +142,11 @@ impl Command {
             Command::StartAnalysis { .. } => "start_analysis",
             Command::StopAnalysis { .. } => "stop_analysis",
             Command::QueryAnalysis { .. } => "query_analysis",
+            Command::StartRecognition { .. } => "start_recognition",
+            Command::StopRecognition { .. } => "stop_recognition",
+            Command::ResetRecognition { .. } => "reset_recognition",
+            Command::QueryRecognition { .. } => "query_recognition",
+            Command::ListRecognizers => "list_recognizers",
         }
     }
 
@@ -124,6 +155,10 @@ impl Command {
         match self {
             Command::CreateSession { config } => config.validate(),
             Command::StartAnalysis {
+                config: Some(config),
+                ..
+            } => config.validate(),
+            Command::StartRecognition {
                 config: Some(config),
                 ..
             } => config.validate(),
@@ -209,6 +244,16 @@ pub enum CommandOutcome {
     Analysis {
         /// Status.
         status: crate::intel::AnalysisStatus,
+    },
+    /// Recognition status (Phase 4).
+    Recognition {
+        /// Status.
+        status: Box<crate::speech::RecognitionStatus>,
+    },
+    /// Registered ASR adapters (Phase 4).
+    Recognizers {
+        /// Capabilities of each, in registration order.
+        adapters: Vec<crate::speech::AsrCapabilities>,
     },
 }
 

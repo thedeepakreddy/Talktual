@@ -52,6 +52,8 @@ pub struct EngineConfig {
     pub audio: crate::audio::AudioConfig,
     /// Default audio-analysis configuration (Phase 3).
     pub analysis: crate::intel::AnalysisConfig,
+    /// Speech recognition and language settings (Phase 4).
+    pub speech: crate::speech::SpeechConfig,
 }
 
 impl Default for EngineConfig {
@@ -62,6 +64,7 @@ impl Default for EngineConfig {
             modules: BTreeMap::new(),
             audio: crate::audio::AudioConfig::default(),
             analysis: crate::intel::AnalysisConfig::default(),
+            speech: crate::speech::SpeechConfig::default(),
         }
     }
 }
@@ -80,6 +83,7 @@ impl EngineConfig {
         self.runtime.validate()?;
         self.audio.validate()?;
         self.analysis.validate()?;
+        self.speech.validate()?;
         for (id, module) in &self.modules {
             module
                 .check_no_inline_secrets()

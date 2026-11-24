@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ce-core", "crates/ce-audio", "crates/ce-audio-intel", "crates/communication-engine", "crates/ce-testkit"]
+members = ["crates/ce-core", "crates/ce-audio", "crates/ce-audio-intel", "crates/ce-speech", "crates/communication-engine", "crates/ce-testkit"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,6 +16,7 @@ communication-engine = { path = "crates/communication-engine", version = "0.1.0"
 ce-testkit = { path = "crates/ce-testkit", version = "0.1.0" }
 ce-audio = { path = "crates/ce-audio", version = "0.1.0" }
 ce-audio-intel = { path = "crates/ce-audio-intel", version = "0.1.0" }
+ce-speech = { path = "crates/ce-speech", version = "0.1.0" }
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.120"
 semver = { version = "1.0.23", features = ["serde"] }
@@ -25,6 +26,8 @@ tokio-util = { version = "0.7.12", default-features = false }
 tracing = { version = "0.1.40", default-features = false, features = ["std"] }
 rtrb = "0.4.1"
 cpal = { version = "0.18.2", default-features = false }
+# Text language identification (Phase 4, ADR-0020): MIT, no dependencies.
+whichlang = "0.1.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

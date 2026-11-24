@@ -39,7 +39,7 @@ pub use backend::{
 };
 pub use io::{CaptureReader, PlaybackWriter, ReadError};
 pub use rt::{CaptureEndpoint, FaultReporter, PlaybackEndpoint, StreamFault};
-pub use tap::{TapEnd, TapReceiver, TapRecvError, TapSender, analysis_tap};
+pub use tap::{MAX_TAPS, TapEnd, TapId, TapReceiver, TapRecvError, TapSender, analysis_tap};
 pub use worker::{
     StreamContext, StreamEndpoint, WorkerCommand, WorkerConfig, WorkerHandle, WorkerReport,
     spawn_stream,

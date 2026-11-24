@@ -49,6 +49,9 @@ impl Metrics {
             audio_streams_failed: self.audio_streams_failed.load(Relaxed),
             analyses_started: self.analyses_started.load(Relaxed),
             analysis_failures: self.analysis_failures.load(Relaxed),
+            // Phase 4 recognition is not wired into the runtime yet.
+            recognitions_started: 0,
+            recognition_failures: 0,
         }
     }
 }
