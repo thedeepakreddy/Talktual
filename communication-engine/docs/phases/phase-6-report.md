@@ -1,5 +1,13 @@
 # Phase 6 report — Translation Intelligence
 
+> **Phase 6 status: ACCEPTED WITH LIMITATIONS** (by the user, 2026-11-24,
+> after the independent audit; defects D1–D5 accepted as corrected). The
+> engine-side translation architecture is accepted. **This is not a usable
+> machine translation system:** the real MT adapter is BLOCKED pending
+> model-download approval and translation quality is unmeasured. All
+> BLOCKED, PARTIAL and DEFERRED items below remain open. Not a production
+> certification (Phase 15).
+
 Branch `deepak/gallant-hamilton-wegi2i`, baseline `910b898` (main with
 Phases 1–5 merged, PR #10). Date: 2026-11-24. Environment: Linux x86_64
 cloud container, 4 vCPU, Rust 1.97.0 (MSRV 1.85.0 also run); **no audio
@@ -140,7 +148,9 @@ latency figures exist (no model).
 1. No real MT; translation quality unknown (the main risk for Phase 7+).
 2. Tiny authored corpus, single references, no human evaluation.
 3. Terminology is not inflection-aware; screens are heuristic.
-4. Hints use only final Phase 5 entities; no epistemic field on hints.
+4. Hints use only final, stated Phase 5 entities (no epistemic field on
+   the hint itself); hint availability depends on timing (an entity
+   observed after its utterance's translation is not used).
 5. In-process adapters are not preempted; deadlines discard late results
    and the stall detector abandons hung workers.
 6. Talktual bridge does not expose translation yet.
@@ -197,11 +207,22 @@ end with "Built by Deepak and Claude". No PR opened (only on request).
 | Every requirement reconciled in the ledger | met |
 | Report and handoff complete | met |
 
-**Recommendation: accept Phase 6 as architecturally complete with one
-blocked component.** Engine-side translation (contracts, lifecycle,
+**Decision: ACCEPTED WITH LIMITATIONS** (user acceptance after the
+independent audit, `phase-6-audit.md`). Architecturally complete with one
+blocked component. Engine-side translation (contracts, lifecycle,
 revision semantics, context, terminology, privacy, bounded execution,
 evaluation infrastructure) is implemented and verified. Translation
 **quality** is not established; do not treat Phase 6 as delivering
 usable machine translation until a real adapter is approved, built and
 evaluated with the existing harness. Phase 15 remains the
 production/certification gate.
+
+## 15. Independent audit addendum
+
+An independent audit of the merged state found and fixed five defects
+(stale results after a failed final, sequence reuse after reset,
+inferred and retracted observations used as hints, overstated
+`terms_applied`). See the ledger's "Audit corrections" section. After
+the fixes, `scripts/verify.sh` passes and tests are 361 default / 365
+all features / 361 MSRV, 0 failed. The recommendation is unchanged:
+accept with limitations (real MT blocked on approval).

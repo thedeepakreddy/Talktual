@@ -28,7 +28,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use ce_core::ids::AudioStreamId;
-use ce_core::semantic::SemanticObservation;
+use ce_core::semantic::{ObservationStatus, SemanticObservation};
 use ce_core::speech::{RevisionStatus, TranscriptRevision};
 use ce_core::translation::{TranslationEndReason, TranslationEvent, TranslationStatus};
 use ce_core::{CeError, ErrorCategory};
@@ -195,6 +195,15 @@ impl TranslationHandle {
     /// Offer a Phase 5 observation as a potential hint (bounded; never
     /// blocks).
     pub fn observe(&self, observation: SemanticObservation) {
+        // Only finals (admissible hints) and retractions (which remove one)
+        // matter; dropping the rest here keeps a burst of provisional
+        // observations from evicting pending finals.
+        if !matches!(
+            observation.status,
+            ObservationStatus::Final | ObservationStatus::Retracted
+        ) {
+            return;
+        }
         let mut q = self.shared.queue();
         if q.hints.len() == MAX_PENDING_HINTS {
             q.hints.pop_front();
