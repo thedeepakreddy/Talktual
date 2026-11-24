@@ -1,0 +1,22 @@
+[package]
+name = "ce-semantic"
+description = "Communication Engine semantic and contextual intelligence (Phase 5)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+ce-core = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+uuid = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "macros", "time"] }
+
+[lints]
+workspace = true

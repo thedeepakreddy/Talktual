@@ -26,11 +26,11 @@ pub use config::{
     SemanticSettings,
 };
 pub use model::{
-    ActAbstention, ActDecision, Attribute, Certainty, CommunicativeAct, ContextChange,
-    ContextItem, ContextItemId, ContextScope, ContextSize, ContextStatus, DegradeReason, Entity,
-    Epistemic, Evidence, EvidenceKind, Locality, NormalizedValue, ObservationChange,
-    ObservationId, ObservationPayload, ObservationStatus, ProfileRef, Provenance,
-    ReferenceCandidate, ReferenceKind, ReferenceResolution, RejectReason, Relation, Resolution,
+    ActAbstention, ActDecision, Attribute, Certainty, CommunicativeAct, ContextChange, ContextItem,
+    ContextItemId, ContextScope, ContextSize, ContextStatus, DegradeReason, Entity, Epistemic,
+    Evidence, EvidenceKind, Locality, NormalizedValue, ObservationChange, ObservationId,
+    ObservationPayload, ObservationStatus, ProfileRef, Provenance, ReferenceCandidate,
+    ReferenceKind, ReferenceResolution, RejectReason, Relation, Resolution,
     SEMANTIC_SCHEMA_VERSION, SemanticCapabilities, SemanticCounters, SemanticEndReason,
     SemanticEvent, SemanticInput, SemanticObservation, SemanticScore, SemanticStatus, SourceRef,
     TextSpan, Uncertainty,

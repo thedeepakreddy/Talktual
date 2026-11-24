@@ -573,6 +573,13 @@ pub enum DegradeReason {
     OutputLimited,
     /// A remote/local-service adapter is not permitted by policy.
     PolicyRestricted,
+    /// The adapter returned an error for one input (non-fatal; repeated
+    /// errors fail the worker).
+    AdapterError,
+    /// The adapter returned drafts that violate the contract (invalid span,
+    /// mention not matching the transcript, missing evidence, claimed
+    /// user confirmation); they were dropped.
+    InvalidOutput,
 }
 
 /// Why semantic processing ended.
@@ -618,6 +625,12 @@ pub struct SemanticCounters {
     pub context_expired: u64,
     /// Adapter errors.
     pub adapter_errors: u64,
+    /// Adapter drafts dropped for violating the contract.
+    pub invalid_drafts: u64,
+    /// Drafts below `min_certainty` (not emitted).
+    pub below_min_certainty: u64,
+    /// Observations confirmed by the user.
+    pub confirmed: u64,
     /// Inputs over the deadline.
     pub deadline_exceeded: u64,
     /// Utterances cancelled.

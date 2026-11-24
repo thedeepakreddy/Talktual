@@ -61,7 +61,7 @@ impl Default for ContextConfig {
 
 /// Where adapters may run. Disclosure: the chosen locality is in every
 /// observation's provenance and in `SemanticCapabilities`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct LocalityPolicy {
     /// Allow adapters in another local process. Default false.
@@ -69,15 +69,6 @@ pub struct LocalityPolicy {
     /// Allow adapters that send transcript text off the device. Default
     /// false; enabling it is a product/privacy decision of the host.
     pub allow_remote: bool,
-}
-
-impl Default for LocalityPolicy {
-    fn default() -> Self {
-        Self {
-            allow_local_service: false,
-            allow_remote: false,
-        }
-    }
 }
 
 impl LocalityPolicy {

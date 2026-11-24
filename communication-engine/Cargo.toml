@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ce-core", "crates/ce-audio", "crates/ce-audio-intel", "crates/ce-speech", "crates/communication-engine", "crates/ce-testkit"]
+members = ["crates/ce-core", "crates/ce-audio", "crates/ce-audio-intel", "crates/ce-speech", "crates/ce-semantic", "crates/communication-engine", "crates/ce-testkit"]
 # Optional, separately built adapters (native dependencies, own MSRV).
 exclude = ["adapters/ce-asr-sherpa", "adapters/talktual-bridge"]
 
@@ -19,6 +19,7 @@ ce-testkit = { path = "crates/ce-testkit", version = "0.1.0" }
 ce-audio = { path = "crates/ce-audio", version = "0.1.0" }
 ce-audio-intel = { path = "crates/ce-audio-intel", version = "0.1.0" }
 ce-speech = { path = "crates/ce-speech", version = "0.1.0" }
+ce-semantic = { path = "crates/ce-semantic", version = "0.1.0" }
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.120"
 semver = { version = "1.0.23", features = ["serde"] }
