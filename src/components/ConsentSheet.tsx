@@ -42,7 +42,7 @@ export function ConsentSheet({ open, disclosure, granted, onAllow, onDecline, al
       <ul className="space-y-3 pb-1">
         {disclosure?.points.map((p) => (
           <li key={p} className="flex gap-3 text-body text-fg-muted">
-            <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-fg-subtle" aria-hidden="true" />
+            <span className="orb-core mt-[7px] h-2 w-2 shrink-0 rounded-full" aria-hidden="true" />
             <span>{p}</span>
           </li>
         ))}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Check, Copy, Share } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Share } from './icons';
 import { Language } from '../types';
 import { SIGNALING_URL } from '../lib/config';
 import { generateRoomCode } from '../lib/roomCode';
@@ -91,39 +91,41 @@ export function StartCall({ language, onBack, onJoined }: StartCallProps) {
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-[420px] flex-col px-4 sm:px-6">
-      <header className="safe-t flex h-14 items-center gap-1 -ml-2">
+    <main className="mx-auto flex min-h-dvh w-full max-w-[460px] flex-col px-4 sm:px-6 lg:justify-center lg:py-10">
+      <header className="safe-t flex h-[68px] items-center gap-3">
         <IconButton label="Back" onClick={onBack}>
           <ArrowLeft className="h-5 w-5" />
         </IconButton>
-        <h1 className="text-heading font-semibold">Invite someone</h1>
+        <h1 className="t-title text-heading">Invite someone</h1>
       </header>
 
-      <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
-        <p className="text-body text-fg-muted">They scan this, or open your link.</p>
-        {/* QR codes need a light, high-contrast field to scan reliably in any theme. */}
-        <div className="mt-6 rounded-lg bg-white p-4">
-          {roomCode ? (
-            <QRCodeSVG value={joinUrl} size={192} fgColor="#0e0f11" bgColor="#ffffff" level="M" title="Invite QR code" />
-          ) : (
-            <div className="h-[192px] w-[192px]" aria-hidden="true" />
-          )}
+      <div className="flex flex-1 flex-col items-center justify-center py-6 text-center lg:flex-none">
+        <div className="glass-strong w-full rounded-[36px] px-6 pb-7 pt-6">
+          <p className="text-body-lg text-fg-muted">They scan this, or open your link.</p>
+          {/* QR codes need a light, high-contrast field to scan reliably in any theme. */}
+          <div className="mx-auto mt-6 w-fit rounded-[28px] bg-white p-4 shadow-[0_20px_50px_-16px_var(--glow),inset_0_0_0_1px_rgb(0_0_0/0.04)]">
+            {roomCode ? (
+              <QRCodeSVG value={joinUrl} size={196} fgColor="#140a04" bgColor="#ffffff" level="M" title="Invite QR code" />
+            ) : (
+              <div className="h-[196px] w-[196px]" aria-hidden="true" />
+            )}
+          </div>
+          <p className="t-eyebrow mt-7 text-fg-subtle">Call code</p>
+          <p data-call-code className="text-ember mt-2 font-mono text-[2.125rem] font-semibold tracking-[0.2em] tnum" aria-label={roomCode.split('').join(' ')}>
+            {roomCode || '······'}
+          </p>
+          <p role="status" className="glass-clear mx-auto mt-6 flex w-fit items-center gap-2 rounded-full px-4 py-2 text-label text-fg-muted">
+            <span className="h-2 w-2 rounded-full bg-accent shadow-[0_0_10px_var(--accent)]" aria-hidden="true" />
+            Waiting for them to join…
+          </p>
         </div>
-        <p className="mt-6 text-label text-fg-muted">Call code</p>
-        <p data-call-code className="mt-1 font-mono text-[1.75rem] font-semibold tracking-[0.18em] tnum" aria-label={roomCode.split('').join(' ')}>
-          {roomCode || '······'}
-        </p>
-        <p role="status" className="mt-6 flex items-center gap-2 text-label text-fg-muted">
-          <span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
-          Waiting for them to join…
-        </p>
       </div>
 
       <div className="safe-b grid grid-cols-2 gap-3">
-        <Button variant="secondary" onClick={() => copy('code')} icon={copied === 'code' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}>
+        <Button variant="secondary" size="lg" className="px-4" onClick={() => copy('code')} icon={copied === 'code' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}>
           {copied === 'code' ? 'Copied' : 'Copy code'}
         </Button>
-        <Button variant="primary" onClick={share} icon={copied === 'link' ? <Check className="h-4 w-4" /> : <Share className="h-4 w-4" />}>
+        <Button variant="primary" size="lg" className="px-4" onClick={share} icon={copied === 'link' ? <Check className="h-4 w-4" /> : <Share className="h-4 w-4" />}>
           {copied === 'link' ? 'Link copied' : canShare ? 'Share link' : 'Copy link'}
         </Button>
       </div>

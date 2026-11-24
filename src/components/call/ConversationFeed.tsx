@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef } from 'react';
-import { Volume2 } from 'lucide-react';
+import { Volume2 } from '../icons';
 import type { SegmentRecord } from '../../engine/events';
 import type { SessionSnapshot } from '../../engine/CommunicationSession';
 import { cn } from '../../utils';
@@ -69,7 +69,7 @@ export function ConversationFeed({ snapshot: s, peerName, peerLanguage }: FeedPr
     >
       {empty ? (
         <div className="flex h-full min-h-48 items-center justify-center py-10">
-          <p className="max-w-[18rem] text-center text-body text-fg-muted">
+          <p className="max-w-[19rem] text-center text-body-lg text-fg-muted">
             {connected
               ? `Hold the button and speak. ${peerName} hears you${peerLanguage ? ` in ${peerLanguage}` : ''}.`
               : s?.phase === 'waiting-for-peer' || s?.phase === 'connecting' || !s
@@ -89,7 +89,7 @@ export function ConversationFeed({ snapshot: s, peerName, peerLanguage }: FeedPr
             );
           })}
           {peerLive && (
-            <li className="border-t border-line py-3" aria-label={`${peerName}, speaking`}>
+            <li className="py-3" aria-label={`${peerName}, speaking`}>
               <p className="text-body-lg italic text-fg-muted">
                 {peerLive}
                 <span aria-hidden="true">…</span>
@@ -97,8 +97,8 @@ export function ConversationFeed({ snapshot: s, peerName, peerLanguage }: FeedPr
             </li>
           )}
           {live && (
-            <li className="border-t border-line py-3" aria-label="You, speaking">
-              <p className="text-body-lg text-accent-text">
+            <li className="flex flex-col items-end py-3" aria-label="You, speaking">
+              <p className="max-w-[85%] rounded-[22px] rounded-br-[8px] px-4 py-2.5 text-body-lg text-accent-text shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--accent)_35%,transparent)]" style={{ background: 'color-mix(in oklab, var(--accent) 10%, transparent)' }}>
                 {live}
                 <span aria-hidden="true">…</span>
               </p>
@@ -132,20 +132,29 @@ function Turn({ seg, showName, peerName, latest }: { seg: SegmentRecord; showNam
         : '';
 
   return (
-    <li className={cn('flex flex-col py-3', showName ? 'border-t border-line' : 'pt-0')}>
-      {showName && <span className={cn('mb-1 text-meta font-semibold', mine ? 'text-fg-subtle' : 'text-fg-muted')}>{mine ? 'You' : seg.speakerName || peerName}</span>}
+    <li className={cn('flex flex-col', mine ? 'items-end' : 'items-start', showName ? 'pt-5' : 'pt-1.5', 'pb-1')}>
+      {showName &&
+        (mine ? (
+          <span className="mb-1.5 px-1 text-label font-[600] tracking-[0.01em] text-fg-subtle">You</span>
+        ) : (
+          <span className="mb-2 flex items-center gap-2">
+            <span aria-hidden="true" className="orb-core h-[18px] w-[18px] rounded-full" />
+            <span className="text-label font-[600] tracking-[0.01em] text-fg-muted">{seg.speakerName || peerName}</span>
+          </span>
+        ))}
       <div
         className={cn(
-          'max-w-[40rem]',
+          mine ? 'glass-strong max-w-[85%] rounded-[24px] rounded-br-[8px] px-4 py-3' : 'max-w-[40rem] pl-[26px]',
           (provisional || seg.interrupted) && 'opacity-70'
         )}
+        style={mine ? { background: 'linear-gradient(160deg, color-mix(in oklab, var(--accent) 26%, var(--glass-strong-top)), color-mix(in oklab, var(--accent) 12%, var(--glass-strong)))' } : undefined}
         data-state={seg.state ?? 'final'}
       >
-        <p className={cn('text-fg', !mine && latest ? 'text-translation font-medium tracking-[-0.005em]' : 'text-body-lg', provisional && 'italic')}>
+        <p className={cn('text-fg', !mine && latest ? 'text-translation font-[600] tracking-[-0.018em]' : 'text-body-lg', provisional && 'italic')}>
           {playing && <Volume2 className="mr-1.5 inline h-4 w-4 align-[-2px] text-incoming" aria-label="Playing" />}
           {primary}
         </p>
-        {secondary && <p className="mt-1 text-label text-fg-muted">{secondary}</p>}
+        {secondary && <p className={cn('mt-1 text-label', mine ? 'text-fg-muted' : 'text-fg-muted')}>{secondary}</p>}
         {(markers.length > 0 || tags.length > 0) && <p className="mt-1.5 text-meta text-fg-subtle">{[...tags, ...markers].join(' · ')}</p>}
         {seg.notes?.length ? (
           <ul className="mt-1.5 space-y-0.5 text-label text-fg-muted" data-testid="aci-notes">

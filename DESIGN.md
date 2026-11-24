@@ -1,92 +1,159 @@
 ---
 name: Talktual
-direction: Futuristic Audio — a precise, quiet listening instrument, in the Talktual brand (orange / charcoal / warm white)
-version: 2.1.0
-status: frozen for Phase 7 final (supersedes 1.0.0 "Quiet instrument"); governed by the Phase 7 Design Constitution
-source: src/index.css (tokens), src/components/ui/* (primitives), src/components/shell/* (navigation), src/pages/* (destinations)
-themes: [dark (showcase), light] — system by default, user-selectable (Settings › Appearance)
+direction: Molten glass — iOS 27-style liquid glass over a slow molten field, in iPhone 17 Pro Cosmic Orange
+version: 3.0.0
+status: current (supersedes 2.1.0 "Futuristic Audio"); owner brief of 2026-11-24 overrides the Phase 7 constitution's "no glass / gradients / glow / pills" rules
+source: src/index.css (tokens + materials), src/components/ui/* (primitives), src/components/icons.tsx (icon set), src/three/* (Three.js scenes), src/components/voice/* (Sujit wave)
+themes: [dark (Obsidian, showcase), light (Daylight)] — system by default, user-selectable (Settings › Appearance)
 ---
 
 # Talktual design system
 
-## Direction
-Professional audio-instrument and communication design, not an AI product.
-- **Technology shows through precision:** alignment, typography, honest state and the voice wave.
-- **No ornament:** no AI iconography, gradients, glow, glass, card grids, pills or decorative motion.
-- **Translation text is always the most prominent element on a session screen.**
-- **Every visible state is true:**
-  - unavailable capabilities (Lens, Rewind) say so plainly
-  - the voice wave moves only with real recognizer events (or a real mic level)
-  - nothing pulses or animates on its own
+Plan and rationale: `docs/liquid_glass/DESIGN_PLAN.md`. Renders: `docs/liquid_glass/after/`.
 
-Concept exploration (A atmospheric / B instrument / C editorial) and the selection rationale are in `docs/phase7_final/PHASE7_FINAL_REPORT.md`. The selection is B's structure (metered activity trace with a time axis, speaker-label rows, borderless language pair) edited with C's typography and honest status copy.
+## Principles kept from the constitution
+- **Every visible state is true.**
+  - The voice wave moves only with real recognizer events (or a real mic level).
+  - The molten field is decoration and never implies listening.
+  - Lens and Rewind say plainly what doesn't exist.
+- **Translation text is the most prominent element on a session screen.**
+- **Accessibility:**
+  - contrast-tested tokens in both themes
+  - 44 px targets
+  - visible focus
+  - 200 % text without horizontal scroll
+  - reduced motion honoured
 
-## Tokens (`src/index.css`, exposed to Tailwind via `@theme inline`)
-### Color — Talktual brand (brand sheet: `docs/brand/talktual-brand-sheet.png`)
-Brand colours: Primary Orange `#F59A38` · Secondary Orange `#FFB45B` · Charcoal `#1F2328` · Warm White `#FAF7F2`. They supersede the constitution's provisional graphite and teal. The constitution's structure (three depth levels, one accent, semantic tokens) is unchanged.
-
-| Token | Dark | Light | Use |
+## Colour — Cosmic Orange
+| Token | Dark (Obsidian) | Light (Daylight) | Use |
 | --- | --- | --- | --- |
-| `bg` | `#1F2328` (Charcoal) | `#FAF7F2` (Warm White) | base |
-| `raised` | `#262B31` | `#FFFFFF` | surface level (sheets) |
-| `surface` | `#2E343B` | `#F0ECE5` | elevated (controls, inputs) |
-| `line` / `line-strong` | `#343B42` / `#4A525A` | `#E5DFD5` / `#C7BFB2` | dividers |
-| `fg` | `#F2EEE7` | `#1F2328` | primary text |
-| `fg-muted` | `#BDB6AC` | `#4A4F55` | supporting text |
-| `fg-subtle` | `#A49D93` | `#62676D` | metadata |
-| `accent` | `#F59A38` | `#F59A38` | **fills only**: primary buttons, switch on, selection tint |
-| `on-accent` | `#1F2328` | `#1F2328` | text on orange (7.2:1) |
-| `accent-text` | `#FFB45B` | `#A4560B`* | orange as text and icons |
-| `warning` | `#E6C860` | `#6F5A00` | paused (kept distinct from the orange accent) |
-| `danger` | `#F0766E` | `#B9423B` | end, errors, the listening (recording) dot |
-| `success` | `#63C08F` | `#2E7D55` | connected |
+| `bg` | `#0B0705` | `#FBF5EF` | base under the field |
+| `raised` / `surface` / `selected` | `#1A120D` / `#221812` / `#3A2A1F` | `#FFFFFF` / `#F3EBE3` / `#FFFFFF` | the *effective* colour of glass over the base (contrast checks, fallbacks) |
+| `fg` / `fg-muted` / `fg-subtle` | `#FFF7F0` / `#D7C8BB` / `#A89889` | `#1B120C` / `#574A40` / `#6E5F53` | text |
+| `accent` | `#FF7A1A` | `#FF7A1A` | Cosmic Orange: fills and light |
+| `accent-text` | `#FFA564` | `#B2450A` | orange as text |
+| `on-accent` | `#1A0A02` | `#1A0A02` | ink on molten |
+| `success` / `warning` / `danger` | `#5AD08F` / `#FFD36B` / `#FF7B6E` | `#23784B` / `#6E5500` / `#B93A30` | states |
 
-\* Orange on Warm White measures 2.06:1, which fails WCAG for text (4.5:1) and for graphics (3:1). In the light theme, orange is therefore used as a fill (with charcoal text), and orange *text* uses `#A4560B`, the same hue darkened (≥ 4.56:1). Verified by `e2e/a11y.mjs`: the lowest text pair is 4.68:1 (dark) and 4.85:1 (light).
+Ember ramp for gradients, the field and the orb: `#FFB070 → #FF9F4A → #FF7A1A → #E2560C → #7A2205`.
 
-### Logo and icon
-- `BrandMark` (`src/components/Brand.tsx`) is a vector rebuild of the sheet's mark: two mirrored waves split by a line, with a primary→secondary orange gradient. It has a `mono` variant (currentColor). The brand mark is the only place a gradient is used.
-- `Wordmark`: the mark plus "Talktual" in bold, tracking −0.02em.
-- **App icon:** `public/favicon.svg` (charcoal tile plus mark) and `public/apple-touch-icon.png` (180 px render). Theme colour `#1F2328`.
+The glass tokens are translucent and used only as fills:
+- **`--glass` / `--glass-top`:** body tint. Dark-theme glass carries a warm dark tint, so it stays neutral over bright light instead of turning red.
+- **`--glass-strong(-top)`:** text-bearing panels.
+- **`--glass-stroke`:** hairline.
+- **`--glass-rim` / `--glass-rim-warm`:** the specular rim.
+- **`--glass-hi` / `--glass-lo`:** inner highlight and shade.
+- **`--glass-drop`:** elevation.
 
-### Type (rem; follows the browser text size)
-| Role | Size / line | Constitution range |
+Lowest text contrast (a11y suite): 6.23:1 in dark and 5.18:1 in light.
+
+## Typography — Geist
+- **Families:**
+  - **Geist** (variable, self-hosted) for everything
+  - **Geist Mono** for call codes
+  - no third-party font requests
+- **Styles:**
+  - display: weight 600, tracking −0.048em
+  - title: 600, −0.034em
+  - eyebrow: 11 px, +0.14em, uppercase
+  - **Accent words** (e.g. "around you"): the same family at weight 300, lit with the ember gradient. No second typeface.
+
+| Role | Size / line (rem) |
+| --- | --- |
+| display / display-lg | 2.75 / 2.85 · 3.875 / 3.9 |
+| title | 1.875 / 2.125 |
+| translation (current line) | 1.625 / 2.05 |
+| heading | 1.1875 / 1.5 |
+| body-lg (rows, transcript) | 1.0625 / 1.6 |
+| body | 0.9375 / 1.4 |
+| label · meta · eyebrow | 0.8125 · 0.75 · 0.6875 |
+
+Speaker names stay in natural case (never uppercased).
+
+## Materials (`src/index.css`, `@layer components`)
+- **`.glass` / `.glass-strong` / `.glass-clear`:** tint, plus backdrop blur 28–39 px with saturate 1.35–1.4, plus a gradient specular rim (`::before` mask), an inner top highlight, an inner bottom shade and a long soft drop (`glass-clear` has no drop).
+- **`.molten`:** specular bloom, Cosmic body, deep ember base, a glossy liquid cap, a pointer-following sheen (`--mx`/`--my`), orange light underneath and a spring press.
+- **`.orb-core`:** a lit molten sphere in pure CSS. Used for the mic control, avatars, list bullets and the language-pair arrow.
+- **`.prism`:** the secondary button's specular top edge, with a warm rim on hover.
+- **`.ember-line`:** a gradient outline with ember text.
+- **`.btn-chip`:** an icon in a dark ink lens inside molten buttons.
+
+## Buttons (one family, deliberately varied)
+| Variant | Look | Used for |
 | --- | --- | --- |
-| `title` (page) | 26 / 32 | 24–28 |
-| `translation` (current line) | 24 / 32 | 20–26 |
-| `heading` (section) | 19 / 26 | 17–20 |
-| `body-lg` (transcript lines) | 18 / 26 | — |
-| `body` | 15 / 22 | 15–16 |
-| `label` (supporting) | 13 / 18 | 13–14 |
-| `meta` | 12 / 16 | 12–13 |
+| `primary` | Molten; leading icon in an ink chip, optional trailing arrow chip | the one main action per screen: Start listening, Start a call, Join, Pause/Start, Share link |
+| `secondary` | Prism glass (dark glass, specular edge) | Copy code, Not now |
+| `tertiary` | Ember line | Join with a code, Open Connect, Privacy settings, Play sample, Forget, Scan a QR code |
+| `ghost` | Text; glass on hover | low-emphasis actions |
+| `danger` | Red-tinted glass | End call |
+| Icon button | 44 px glass disc (`default`), `active` ember-tinted, `danger`, `plain` | headers, docks |
+| Mic control | Glass ring around a molten orb; a stronger rim and glow while live (state, not level) | push to talk, hands-free stop |
 
-The font is the brand stack: Inter / Manrope / SF Pro. They're used when installed and fall back to the system UI font. No web-font download (no third-party request). Tabular numerals for times and codes.
+## Icons (`src/components/icons.tsx`)
+A custom set drawn for Talktual:
+- **Geometry:** a 24-unit grid, a 1.6 hairline stroke and round terminals.
+- **Duotone:** a faint body (16 % `currentColor`), like hierarchical symbols.
+- **Signature glyphs:**
+  - AIR: a listener with the room's sound arriving from both sides
+  - Connect: two voices in conversation
+  - Lens: a viewfinder over text
+  - Rewind: time turning back
+  - Voice: a voice print
+  - Settings: an eight-tooth gear
+  - End call: the hang-up handset
+- **Rules:**
+  - no sparkles, robots or "AI" glyphs
+  - icons are `aria-hidden` unless given a label
 
-### Shape, depth, spacing, motion
-- **Radius:** controls 10, inputs 10, small 8, surfaces 14, sheets 16. Circles only for the hold-to-talk control (ergonomic) and status dots. **No pills.**
-- **Depth:** three levels — base, surface (sheets), elevated (controls). Shadow only on sheets. Content is separated by whitespace and hairline dividers, not cards.
-- **Spacing:** a 4 px scale (4, 8, 12, 16, 24, 32, 48, 64). Gutters are 16 px on phones, 24 px on tablets and 40 px in desktop pages.
-- **Motion:** `--duration-press` 120 ms, `--duration-state` 200 ms, `--duration-sheet` 280 ms; ease `cubic-bezier(.2,.8,.2,1)`. Motion follows real state:
-  - the voice wave moves only while capturing, with real recognizer events
-  - pause dims it
-  - the sheet slides
-  - there is no ambient animation
-  - everything is disabled under `prefers-reduced-motion`
+## Motion and Three.js (`src/three/*`)
+### LiquidField
+A full-screen shader: low-frequency domain-warped flow, with light pooling at the edges, sized against the short side so phones and desktops match. The centre stays obsidian.
+
+**Moods:**
+- `rich` (Home)
+- `session` (AIR and calls)
+- `calm` (pages)
+
+**Behaviour and performance:**
+- mounted once for the app's lifetime (one WebGL context)
+- initialised at idle
+- half resolution, 30 fps cap
+- paused when hidden
+- a still frame under reduced motion
+- CSS gradient fallback
+
+### VoiceOrb
+A molten glass sphere (fresnel, specular, internal flow) used as the **Home hero**. There, it drifts slowly and decoratively and is labelled by the page as not listening.
+
+### Sujit wave (`src/components/voice/SujitWaveform.tsx`)
+The voice visual in AIR (a full-width centred stage, 200–340 px, then 136 px once the transcript fills) and in calls (above the dock).
+
+**Strands:**
+- seven lead strands plus fourteen filaments
+- one envelope that peaks in the middle
+- each strand in its own plane around a level axis, so the bundle turns in depth
+- the lead strand is white-hot with an orange glow; the ends taper
+- dark theme: additive light; light theme: ink with an ember lead
+
+**Driven by `ActivityLevel` only:**
+- the recognizer's speech floor
+- decaying bumps per interim word
+- real mic loudness where a stream exists
+- height uses a perceptual curve, so ordinary speech swells the middle
+
+With no level, it shows one calm tapered line with a warm centre and the loop stops.
+
+### UI motion
+- spring presses (`--ease-spring`)
+- glass "lens" indicators that slide (tab bar, rail, segmented)
+- sheets spring up without scaling, so targets are always full size
 
 ## Layout and navigation
-- **Desktop (≥ 1024):** an 88 px rail on the left, with five primary destinations (Home, Connect, AIR, Lens, Rewind) and Voice and Settings in the rail footer. Content is a single column (max 720 px). Sheets open as a 400 px right panel and the session column moves aside.
-- **Phone and tablet:** bottom navigation with the five primary destinations. Voice Studio and Settings are reached from Home (the list and the header icon).
-- **Active sessions** (AIR, a call, invite and join) are full-screen with the navigation hidden, so a session can't be left by an accidental tab tap. Leaving AIR stops listening; leaving a live call asks first.
-- A **"Skip to content"** link is the first focusable element on navigated pages.
-
-## Components
-- **Primitives (`src/components/ui`):** `Button` (primary · secondary · ghost · danger; heights 48/44), `IconButton` (44 px, labelled), `Sheet`, `Switch`, `Segmented`, `Row`/`Section`, `Banner`.
-- **Shell (`src/components/shell`):** `AppShell`, `DesktopRail`, `MobileBottomNav`, `Page`.
-- **AIR (`src/components/ambient`):** `AmbientScreen` with `LanguagePair`, the voice wave, the transcript rows, the dock, the AIR settings sheet and the test-mode strip.
-- **Voice wave (`src/components/voice`):** `SujitWaveform` (owner-requested, replaces the activity trace). Seven sine curves share one envelope, each in its own plane around a slightly rising time axis, so they form a slowly turning 3D bundle. Strokes use `fg`: warm white with a soft glow on dark, charcoal ink without glow on light. Used in AIR (128 px) and in calls above the talk control (64 px).
-  - **Honest input (`ActivityLevel`):** height comes only from real signals. The recognizer's "speech detected" holds a floor, each new interim word adds a bump that decays, and real loudness is used only where the app already holds a mic stream (the server-recognition fallback in calls). Nothing reported → one calm idle line, and the animation loop stops. Reduced motion: no turning or travel, height still follows the real level.
-  - **Deviation:** the glow and the continuous motion while capturing are an owner-approved exception to "no glow, no decorative motion"; the motion is tied to capture and real events, never ambient.
-- **Connect (`src/components/call`):** `ConversationFeed` (speaker-label rows), `TalkDock`, `SettingsSheet`; plus `StartCall` and `JoinCall`.
-- **Pages (`src/pages`):** `HomePage`, `ConnectPage`, `LensPage`, `RewindPage`, `VoicePage`, `SettingsPage`.
+- **Desktop (≥ 1024):** a floating glass rail (inset 12, radius 30) with the brand mark, five destinations, and Voice and Settings at the foot. Sheets are a floating right panel (420 px, inset 12, radius 30), and the session column moves aside.
+- **Phone and tablet:** a floating glass tab bar (capsule, above the safe area) with a sliding lens under the active tab. Sheets are liquid-glass bottom sheets with a grabber.
+- **Active sessions** (AIR, a call, invite and join) are full-screen with the navigation hidden.
+- **The call header** is a glass capsule with a molten avatar. Under large text or narrow widths (container query in rem), End collapses to its icon, keeping the accessible name "End call".
+- **Verified sizes:** 320, 390, 834 and 1440 px wide, in both themes, with no horizontal scroll.
 
 ## Copy
-Plain verbs, sentence case, no exclamation marks, no AI vocabulary. Status says what is true ("Paused — not listening", "Not set up on this server", "Nothing is kept").
+Plain verbs, sentence case, no exclamation marks, no AI vocabulary. Status says what is true.

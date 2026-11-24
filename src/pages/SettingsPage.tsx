@@ -59,7 +59,7 @@ export function SettingsPage({ language, onLanguageChange }: { language: Languag
   }, []);
 
   return (
-    <Page title="Settings" description="Language, appearance, and how your speech is processed.">
+    <Page eyebrow="Preferences" title="Settings" description="Language, appearance, and how your speech is processed.">
       <Section title="Language">
         <Row label="Your language" value={`${language.flag} ${language.native}`} onClick={() => setPicker(true)} ariaLabel={`Your language: ${language.native}. Change`} />
       </Section>
@@ -106,20 +106,20 @@ export function SettingsPage({ language, onLanguageChange }: { language: Languag
 
       <Section title="Privacy">
         <div className="flex min-h-12 items-center justify-between gap-4 py-2.5">
-          <span className="text-body">Microphone</span>
+          <span className="text-body-lg font-[520]">Microphone</span>
           <span className="text-right text-label text-fg-muted" data-testid="mic-permission">
             {mic}
           </span>
         </div>
         <div className="flex min-h-12 items-center justify-between gap-4 py-2.5">
           <div>
-            <p className="text-body">AIR listening permission</p>
+            <p className="text-body-lg font-[520]">AIR listening permission</p>
             <p className="text-label text-fg-muted">{airConsent ? 'Given on this device' : 'Asked before AIR listens'}</p>
           </div>
           {airConsent && (
             <Button
               size="sm"
-              variant="ghost"
+              variant="tertiary"
               onClick={() => {
                 forget([ambientConsentKey('browser-speech')]);
                 setAirConsent(false);
@@ -131,13 +131,13 @@ export function SettingsPage({ language, onLanguageChange }: { language: Languag
         </div>
         <div className="flex min-h-12 items-center justify-between gap-4 py-2.5">
           <div>
-            <p className="text-body">Call microphone permission</p>
+            <p className="text-body-lg font-[520]">Call microphone permission</p>
             <p className="text-label text-fg-muted">{callConsent ? 'Given on this device' : 'Asked before your first call'}</p>
           </div>
           {callConsent && (
             <Button
               size="sm"
-              variant="ghost"
+              variant="tertiary"
               onClick={() => {
                 forget(CALL_KEYS);
                 setCallConsent(false);
@@ -149,7 +149,7 @@ export function SettingsPage({ language, onLanguageChange }: { language: Languag
         </div>
         <Row label="What AIR captures and where it goes" onClick={() => setDisclosure(ambientDisclosure(translator, mode, serverTts))} />
         <div className="py-3">
-          <p className="text-body">What Talktual keeps</p>
+          <p className="text-body-lg font-[520]">What Talktual keeps</p>
           <p className="mt-1 text-label text-fg-muted">
             No audio, ever. Text stays on screen until you clear it or leave and is never saved. By default the server holds translated text for about two minutes to avoid repeat requests, then drops it.
           </p>

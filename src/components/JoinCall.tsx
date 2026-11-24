@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Scanner } from '@yudiel/react-qr-scanner';
-import { ArrowLeft, Loader2, ScanLine, Keyboard } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Loader2, ScanLine, Keyboard } from './icons';
 import { Language } from '../types';
 import { LanguagePicker } from './LanguagePicker';
 import { LanguageField, NameField } from './LanguageField';
@@ -165,43 +165,43 @@ export function JoinCall({
   const showCodeEntry = !invited;
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-[420px] flex-col px-4 sm:px-6">
-      <header className="safe-t flex h-14 items-center gap-1 -ml-2">
+    <main className="mx-auto flex min-h-dvh w-full max-w-[460px] flex-col px-4 sm:px-6 lg:justify-center lg:py-10">
+      <header className="safe-t flex h-[68px] items-center gap-3">
         <IconButton label="Back" onClick={onBack}>
           <ArrowLeft className="h-5 w-5" />
         </IconButton>
-        <h1 className="text-heading font-semibold">Join a call</h1>
+        <h1 className="t-title text-heading">Join a call</h1>
       </header>
 
       <form
-        className="flex flex-1 flex-col"
+        className="flex flex-1 flex-col lg:flex-none"
         onSubmit={(e) => {
           e.preventDefault();
           tryJoin();
         }}
       >
-        <div className="flex-1 space-y-5 py-6">
+        <div className="glass-strong my-4 space-y-6 rounded-[32px] p-5 sm:p-6">
           {invited ? (
-            <p className="text-body text-fg-muted">
+            <p className="text-body-lg text-fg-muted">
               You’ve been invited to call <span className="font-mono font-semibold tracking-[0.12em] text-fg">{code}</span>.
             </p>
           ) : scanning ? (
             <div>
-              <div className="relative mx-auto aspect-square w-full max-w-[320px] overflow-hidden rounded-lg bg-black">
+              <div className="relative mx-auto aspect-square w-full max-w-[320px] overflow-hidden rounded-[28px] bg-black shadow-[inset_0_0_0_1px_var(--glass-stroke)]">
                 {!cameraFailed ? (
                   <Scanner onScan={handleScan} onError={() => setCameraFailed(true)} classNames={{ container: 'w-full h-full object-cover' }} components={{ finder: false }} />
                 ) : (
                   <p className="flex h-full items-center justify-center px-8 text-center text-body text-white/80">Camera unavailable.</p>
                 )}
               </div>
-              <Button variant="ghost" size="sm" className="mx-auto mt-3 flex" icon={<Keyboard className="h-4 w-4" />} onClick={() => setScanning(false)}>
+              <Button variant="tertiary" size="sm" className="mx-auto mt-3 flex" icon={<Keyboard className="h-4 w-4" />} onClick={() => setScanning(false)}>
                 Enter code
               </Button>
             </div>
           ) : (
             showCodeEntry && (
               <div>
-                <label htmlFor="call-code" className="mb-1.5 block text-label font-medium text-fg-muted">
+                <label htmlFor="call-code" className="t-eyebrow mb-2 block px-1 text-fg-subtle">
                   Call code
                 </label>
                 <div className="relative">
@@ -213,8 +213,8 @@ export function JoinCall({
                         <span
                           key={i}
                           className={cn(
-                            'flex h-14 flex-1 items-center justify-center rounded-md border bg-surface font-mono text-[1.375rem] font-semibold tnum transition-colors',
-                            active ? 'border-focus' : 'border-line'
+                            'glass-clear flex h-[60px] min-w-0 flex-1 items-center justify-center rounded-[18px] font-mono text-[1.5rem] font-semibold tnum transition-shadow',
+                            active && 'shadow-[inset_0_0_0_1.5px_var(--focus),0_0_0_4px_color-mix(in_oklab,var(--accent)_16%,transparent)]'
                           )}
                         >
                           {char ?? ''}
@@ -243,7 +243,7 @@ export function JoinCall({
                     className="absolute inset-0 h-full w-full cursor-text opacity-0"
                   />
                 </div>
-                <Button variant="ghost" size="sm" className="mt-2 -ml-2" icon={<ScanLine className="h-4 w-4" />} onClick={() => setScanning(true)}>
+                <Button variant="tertiary" size="sm" className="mt-3" icon={<ScanLine className="h-4 w-4" />} onClick={() => setScanning(true)}>
                   Scan a QR code instead
                 </Button>
               </div>
@@ -266,8 +266,8 @@ export function JoinCall({
           {error && <Banner tone="error">{error}</Banner>}
         </div>
 
-        <div className="safe-b">
-          <Button type="submit" variant="primary" block disabled={code.length !== CODE_LENGTH || connecting} icon={connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}>
+        <div className="safe-b mt-auto lg:mt-2">
+          <Button type="submit" variant="primary" size="lg" block disabled={code.length !== CODE_LENGTH || connecting} icon={connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined} chip={connecting ? undefined : <ArrowRight />}>
             {connecting ? 'Connecting…' : 'Join'}
           </Button>
         </div>

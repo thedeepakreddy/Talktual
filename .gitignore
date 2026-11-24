@@ -25,3 +25,4 @@ e2e/.dist-ambient/
 e2e/.dist-final/
 e2e/.dist-wave/
 e2e/.dist-wave2/
+e2e/.dist-*/

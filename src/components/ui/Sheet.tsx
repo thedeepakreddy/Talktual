@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, ChevronLeft } from 'lucide-react';
+import { X, ChevronLeft } from '../icons';
 import { IconButton } from './IconButton';
 import { cn } from '../../utils';
 
@@ -80,11 +80,11 @@ export function Sheet({ open, onClose, title, onBack, closeLabel = 'Close', chil
       {open && (
         <div className="fixed inset-0 z-40">
           <motion.div
-            className="absolute inset-0 bg-[var(--scrim)] lg:bg-black/20"
+            className="absolute inset-0 bg-[var(--scrim)] backdrop-blur-[2px] lg:bg-black/10"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.24 }}
             onClick={dismissible ? onClose : undefined}
           />
           <motion.div
@@ -92,38 +92,39 @@ export function Sheet({ open, onClose, title, onBack, closeLabel = 'Close', chil
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            initial={{ y: 24, opacity: 0 }}
+            initial={{ y: 40, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 24, opacity: 0 }}
-            transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
+            exit={{ y: 32, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 36, mass: 0.9 }}
             className={cn(
-              'absolute flex flex-col bg-raised text-fg shadow-[var(--sheet-shadow)]',
-              // phones/tablets: bottom sheet
-              'inset-x-0 bottom-0 mx-auto max-h-[88dvh] w-full max-w-[560px] rounded-t-[var(--radius-sheet)] border-t border-line',
-              tall && 'h-[88dvh]',
-              // desktop: right-side panel
-              'lg:inset-y-0 lg:right-0 lg:left-auto lg:mx-0 lg:h-full lg:max-h-none lg:w-[400px] lg:max-w-none lg:rounded-none lg:border-t-0 lg:border-l'
+              'glass-strong absolute flex flex-col text-fg',
+              // phones/tablets: liquid-glass bottom sheet
+              'inset-x-0 bottom-0 mx-auto max-h-[90dvh] w-full max-w-[580px] rounded-t-[var(--radius-sheet)]',
+              tall && 'h-[90dvh]',
+              // desktop: floating right-side panel
+              'lg:inset-y-3 lg:right-3 lg:left-auto lg:mx-0 lg:h-auto lg:max-h-none lg:w-[420px] lg:max-w-none lg:rounded-[30px]'
             )}
           >
-            <header className="flex min-h-14 items-center gap-1 px-2 pt-2 lg:pt-3">
+            <div aria-hidden="true" className="mx-auto mt-2 h-[5px] w-10 shrink-0 rounded-full bg-[var(--fg-subtle)] opacity-40 lg:hidden" />
+            <header className="flex min-h-14 items-center gap-1 px-3 pt-1.5 lg:pt-3">
               {onBack ? (
                 <IconButton label="Back" onClick={onBack}>
                   <ChevronLeft className="h-5 w-5" />
                 </IconButton>
               ) : (
-                <span className="w-3" />
+                <span className="w-2" />
               )}
-              <h2 id={titleId} tabIndex={-1} className="flex-1 text-heading font-semibold outline-none">
+              <h2 id={titleId} tabIndex={-1} className="t-title flex-1 px-1 text-heading outline-none">
                 {title}
               </h2>
               {dismissible && (
                 <IconButton label={closeLabel} onClick={onClose}>
-                  <X className="h-5 w-5" />
+                  <X className="h-[18px] w-[18px]" />
                 </IconButton>
               )}
             </header>
             <div className="scroll-area flex-1 overflow-y-auto px-4 pb-4">{children}</div>
-            {footer && <div className="safe-b border-t border-line px-4 pt-3">{footer}</div>}
+            {footer && <div className="safe-b border-t border-[var(--glass-stroke)] px-4 pt-3">{footer}</div>}
             {!footer && <div className="safe-b" />}
           </motion.div>
         </div>

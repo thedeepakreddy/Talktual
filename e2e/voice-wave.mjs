@@ -25,11 +25,11 @@ try {
     const wave = page.getByTestId('voice-wave');
     await page.waitForTimeout(600);
     // Silence: nothing reported → the canvas holds only the idle line.
-    const ink = () => wave.locator('canvas').evaluate((c) => {
+    const ink = () => wave.locator('canvas[role="img"]').evaluate((c) => {
       const g = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
       const rows = new Set();
-      for (let i = 3; i < g.length; i += 4) if (g[i] > 40) rows.add(Math.floor((i - 3) / 4 / c.width));
-      return rows.size; // vertical extent of drawn pixels
+      for (let i = 3; i < g.length; i += 4) if (g[i] > 110) rows.add(Math.floor((i - 3) / 4 / c.width));
+      return rows.size / c.height; // vertical extent of drawn pixels, as a share of the canvas
     });
     const idleRows = await ink();
     await wave.screenshot({ path: path.join(outDir, `air-idle-${scheme}.png`) });
@@ -45,10 +45,10 @@ try {
     await page.evaluate((t) => window.__say(t, true), words.join(' '));
     await page.waitForTimeout(3500);
     const settledRows = await ink();
-    console.log(`${scheme}: idle rows ${idleRows}, speaking rows ${activeRows}, after silence ${settledRows}`);
-    assert.ok(idleRows <= 30, 'idle is one thin (tilted) line');
-    assert.ok(activeRows > idleRows * 3, 'wave rises with reported speech');
-    assert.ok(settledRows <= idleRows + 2, 'wave settles back to the idle line after silence');
+    console.log(`${scheme}: drawn height idle ${(idleRows * 100).toFixed(0)}%, speaking ${(activeRows * 100).toFixed(0)}%, after silence ${(settledRows * 100).toFixed(0)}%`);
+    assert.ok(idleRows <= 0.3, 'idle is one thin (tilted) line');
+    assert.ok(activeRows > idleRows * 2, 'wave rises with reported speech');
+    assert.ok(settledRows <= idleRows + 0.05 && settledRows < activeRows / 2, 'wave settles back to a line after silence');
     assert.deepEqual(errors, []);
     await ctx.close();
   }
