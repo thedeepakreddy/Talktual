@@ -38,6 +38,7 @@ mod audio;
 mod intel;
 mod semantic;
 mod speech;
+mod translation;
 
 pub(crate) use audio::OpenedAudio;
 use audio::{AUDIO_SIGNAL_CAPACITY, AudioState};
@@ -45,13 +46,17 @@ use ce_audio::{AudioBackend, AudioSignal, BackendNotifier};
 use ce_audio_intel::VoiceActivityDetector;
 use ce_audio_intel::worker::IntelSignal;
 use ce_core::audio::StreamRequest;
+use ce_core::translation::TranslationEndReason;
 use ce_semantic::SemanticSignal;
 use ce_speech::worker::SpeechSignal;
+use ce_translate::TranslationSignal;
 use intel::{INTEL_SIGNAL_CAPACITY, IntelState};
 pub(crate) use semantic::SemanticProviders;
 use semantic::{SEMANTIC_SIGNAL_CAPACITY, SemanticState};
 pub(crate) use speech::SpeechProviders;
 use speech::{SPEECH_SIGNAL_CAPACITY, SpeechState};
+pub(crate) use translation::TranslationProviders;
+use translation::{TRANSLATION_SIGNAL_CAPACITY, TranslationStateMap};
 
 use super::actor::{ActorHandle, ActorReport, ActorSpec, Ctrl, Ingress, LifecycleOp, spawn_actor};
 use super::metrics::Metrics;
@@ -114,6 +119,7 @@ pub(crate) struct CoreDeps {
     pub(crate) audio_backend: Option<Arc<dyn AudioBackend>>,
     pub(crate) speech: SpeechProviders,
     pub(crate) semantic: SemanticProviders,
+    pub(crate) translation: TranslationProviders,
 }
 
 #[derive(Debug)]
@@ -167,6 +173,9 @@ pub(crate) struct Core {
     semantic: Option<SemanticState>,
     semantic_rx: Option<mpsc::Receiver<SemanticSignal>>,
     semantic_providers: SemanticProviders,
+    translation: Option<TranslationStateMap>,
+    translation_rx: Option<mpsc::Receiver<TranslationSignal>>,
+    translation_providers: TranslationProviders,
 }
 
 pub(super) async fn recv_opt<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
@@ -216,7 +225,16 @@ impl Core {
         } else {
             (None, None)
         };
+        let (translation, translation_rx) = if audio.is_some() {
+            let (tx, rx) = mpsc::channel(TRANSLATION_SIGNAL_CAPACITY);
+            (Some(TranslationStateMap::new(tx)), Some(rx))
+        } else {
+            (None, None)
+        };
         Self {
+            translation,
+            translation_rx,
+            translation_providers: deps.translation,
             intel,
             intel_rx,
             speech,
@@ -279,9 +297,11 @@ impl Core {
                 Some(signal) = recv_opt(&mut self.intel_rx) => self.handle_intel_signal(signal),
                 Some(signal) = recv_opt(&mut self.speech_rx) => self.handle_speech_signal(signal),
                 Some(signal) = recv_opt(&mut self.semantic_rx) => self.handle_semantic_signal(signal),
+                Some(signal) = recv_opt(&mut self.translation_rx) => self.handle_translation_signal(signal),
                 () = tick_opt(&mut self.audio_tick) => {
                     self.speech_housekeeping();
                     self.semantic_housekeeping();
+                    self.translation_housekeeping();
                     self.intel_housekeeping();
                     self.audio_housekeeping().await;
                 }
@@ -648,6 +668,7 @@ impl Core {
                 Some(signal) = recv_opt(&mut self.intel_rx) => self.handle_intel_signal(signal),
                 Some(signal) = recv_opt(&mut self.speech_rx) => self.handle_speech_signal(signal),
                 Some(signal) = recv_opt(&mut self.semantic_rx) => self.handle_semantic_signal(signal),
+                Some(signal) = recv_opt(&mut self.translation_rx) => self.handle_translation_signal(signal),
             }
         }
     }
@@ -846,6 +867,19 @@ impl Core {
                         } => self.confirm_observation(stream_id, observation),
                         Command::QuerySemantics { stream_id } => self.query_semantics(stream_id),
                         Command::ListSemanticAdapters => Ok(self.list_semantic_adapters()),
+                        Command::StartTranslation { stream_id, config } => {
+                            self.start_translation(stream_id, config)
+                        }
+                        Command::StopTranslation { stream_id } => {
+                            self.stop_translation(stream_id).await
+                        }
+                        Command::ResetTranslation { stream_id } => {
+                            self.reset_translation(stream_id)
+                        }
+                        Command::QueryTranslation { stream_id } => {
+                            self.query_translation(stream_id)
+                        }
+                        Command::ListTranslationAdapters => Ok(self.list_translation_adapters()),
                         _ => Err(CeError::invalid_input(
                             "command.unsupported",
                             "command not supported by this runtime",
@@ -1094,6 +1128,7 @@ impl Core {
             analyses: self.analysis_statuses(),
             recognitions: self.recognition_statuses(),
             semantics: self.semantic_statuses(),
+            translations: self.translation_statuses(),
         }
     }
 
@@ -1167,6 +1202,10 @@ impl Core {
             deadline,
         )
         .await;
+        // Translations drain after semantics so final transcripts (and the
+        // observations used as hints) are translated.
+        self.stop_all_translations(Some(id), TranslationEndReason::SourceEnded, deadline)
+            .await;
         self.stop_analyses(
             Some(id),
             ce_core::intel::AnalysisEndReason::StreamClosed,
@@ -1295,6 +1334,8 @@ impl Core {
             deadline,
         )
         .await;
+        self.stop_all_translations(None, TranslationEndReason::Shutdown, deadline)
+            .await;
         self.stop_analyses(None, ce_core::intel::AnalysisEndReason::Shutdown, deadline)
             .await;
         let open: Vec<SessionId> = self.sessions.keys().copied().collect();
@@ -1313,7 +1354,8 @@ impl Core {
         let stuck = self.drain_zombies(deadline).await
             + self.drain_intel(deadline).await
             + self.drain_speech(deadline).await
-            + self.drain_semantic(deadline).await;
+            + self.drain_semantic(deadline).await
+            + self.drain_translation(deadline).await;
         if stuck > 0 {
             self.log(
                 Observation::log(Level::Warn, "audio.workers_did_not_exit").field("count", stuck),

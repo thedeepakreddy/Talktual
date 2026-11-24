@@ -381,9 +381,16 @@ impl Core {
                 // Phase 5: transcripts are handed to the stream's semantic
                 // worker (non-blocking) before publication; when the
                 // recognition stops, the worker drains and ends.
+                // Phase 6: and to its translation worker (read-only copy).
                 match &event {
-                    SpeechEvent::Transcript(rev) => self.forward_transcript(rev),
-                    SpeechEvent::Stopped { .. } => self.transcripts_ended(stream),
+                    SpeechEvent::Transcript(rev) => {
+                        self.forward_transcript(rev);
+                        self.forward_transcript_to_translation(rev);
+                    }
+                    SpeechEvent::Stopped { .. } => {
+                        self.transcripts_ended(stream);
+                        self.transcripts_ended_for_translation(stream);
+                    }
                     _ => {}
                 }
                 let class = event.data_class();
@@ -511,6 +518,7 @@ impl Core {
                 () = tokio::time::sleep_until(deadline) => break,
                 Some(sig) = super::recv_opt(&mut self.speech_rx) => self.handle_speech_signal(sig),
                 Some(sig) = super::recv_opt(&mut self.semantic_rx) => self.handle_semantic_signal(sig),
+                Some(sig) = super::recv_opt(&mut self.translation_rx) => self.handle_translation_signal(sig),
                 Some(sig) = super::recv_opt(&mut self.intel_rx) => self.handle_intel_signal(sig),
                 Some(ingress) = self.ingress_rx.recv() => self.handle_ingress(ingress),
                 Some(signal) = super::recv_opt(&mut self.audio_rx) => self.handle_audio_signal(signal),

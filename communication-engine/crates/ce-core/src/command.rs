@@ -154,6 +154,33 @@ pub enum Command {
     },
     /// List registered semantic adapters (Phase 5).
     ListSemanticAdapters,
+    /// Start translating a capture stream's transcripts (Phase 6). `None`
+    /// uses the engine's default translation configuration.
+    StartTranslation {
+        /// The stream.
+        stream_id: AudioStreamId,
+        /// Configuration override.
+        config: Option<crate::translation::TranslationConfig>,
+    },
+    /// Stop translating (queued inputs are discarded; results of
+    /// unfinished utterances are withdrawn) (Phase 6).
+    StopTranslation {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Reset translation: pending work is discarded and current results of
+    /// unfinished utterances are withdrawn; translation continues (Phase 6).
+    ResetTranslation {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Report the translation status of a stream (Phase 6).
+    QueryTranslation {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// List registered translation adapters without loading any model (Phase 6).
+    ListTranslationAdapters,
 }
 
 impl Command {
@@ -186,6 +213,11 @@ impl Command {
             Command::ConfirmObservation { .. } => "confirm_observation",
             Command::QuerySemantics { .. } => "query_semantics",
             Command::ListSemanticAdapters => "list_semantic_adapters",
+            Command::StartTranslation { .. } => "start_translation",
+            Command::StopTranslation { .. } => "stop_translation",
+            Command::ResetTranslation { .. } => "reset_translation",
+            Command::QueryTranslation { .. } => "query_translation",
+            Command::ListTranslationAdapters => "list_translation_adapters",
         }
     }
 
@@ -202,6 +234,10 @@ impl Command {
                 ..
             } => config.validate(),
             Command::StartSemantics {
+                config: Some(config),
+                ..
+            } => config.validate(),
+            Command::StartTranslation {
                 config: Some(config),
                 ..
             } => config.validate(),
@@ -315,6 +351,16 @@ pub enum CommandOutcome {
     SemanticAdapters {
         /// Capabilities of each, in registration order.
         adapters: Vec<crate::semantic::SemanticCapabilities>,
+    },
+    /// Translation status (Phase 6).
+    Translation {
+        /// Status.
+        status: Box<crate::translation::TranslationStatus>,
+    },
+    /// Registered translation adapters (Phase 6).
+    TranslationAdapters {
+        /// Capabilities of each, in registration order.
+        adapters: Vec<crate::translation::TranslationCapabilities>,
     },
 }
 

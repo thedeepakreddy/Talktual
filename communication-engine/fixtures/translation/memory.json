@@ -1,0 +1,216 @@
+{
+ "schema": "ce.translation-memory.v1",
+ "description": "Translation memory built from the dev split of corpus.json only.",
+ "segments": [
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "Good evening",
+   "target": "Buenas noches",
+   "provenance": "par-enes-dev-00"
+  },
+  {
+   "source_language": "es",
+   "target_language": "en",
+   "source": "Buenas noches",
+   "target": "Good evening",
+   "provenance": "par-esen-dev-00"
+  },
+  {
+   "source_language": "en",
+   "target_language": "fr",
+   "source": "Good evening",
+   "target": "Bonsoir",
+   "provenance": "par-enfr-dev-00"
+  },
+  {
+   "source_language": "en",
+   "target_language": "de",
+   "source": "Good evening",
+   "target": "Guten Abend",
+   "provenance": "par-ende-dev-00"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "Where is the bathroom, please?",
+   "target": "¿Dónde está la estación de tren?",
+   "provenance": "par-enes-dev-01"
+  },
+  {
+   "source_language": "es",
+   "target_language": "en",
+   "source": "¿Dónde está la estación de tren?",
+   "target": "Where is the bathroom, please?",
+   "provenance": "par-esen-dev-01"
+  },
+  {
+   "source_language": "en",
+   "target_language": "fr",
+   "source": "Where is the bathroom, please?",
+   "target": "Où sont les toilettes, s'il vous plaît ?",
+   "provenance": "par-enfr-dev-01"
+  },
+  {
+   "source_language": "en",
+   "target_language": "de",
+   "source": "Where is the bathroom, please?",
+   "target": "Wo ist die Toilette, bitte?",
+   "provenance": "par-ende-dev-01"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "I lost my phone on the train this morning",
+   "target": "Perdí mi cartera en el autobús esta mañana",
+   "provenance": "par-enes-dev-02"
+  },
+  {
+   "source_language": "es",
+   "target_language": "en",
+   "source": "Perdí mi cartera en el autobús esta mañana",
+   "target": "I lost my phone on the train this morning",
+   "provenance": "par-esen-dev-02"
+  },
+  {
+   "source_language": "en",
+   "target_language": "fr",
+   "source": "I lost my phone on the train this morning",
+   "target": "J'ai perdu mon téléphone dans le train ce matin",
+   "provenance": "par-enfr-dev-02"
+  },
+  {
+   "source_language": "en",
+   "target_language": "de",
+   "source": "I lost my phone on the train this morning",
+   "target": "Ich habe heute Morgen mein Handy im Zug verloren",
+   "provenance": "par-ende-dev-02"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "Could you write the address down for me?",
+   "target": "¿Me puede escribir la dirección, por favor?",
+   "provenance": "par-enes-dev-03"
+  },
+  {
+   "source_language": "es",
+   "target_language": "en",
+   "source": "¿Me puede escribir la dirección, por favor?",
+   "target": "Could you write the address down for me?",
+   "provenance": "par-esen-dev-03"
+  },
+  {
+   "source_language": "en",
+   "target_language": "fr",
+   "source": "Could you write the address down for me?",
+   "target": "Pouvez-vous m'écrire l'adresse ?",
+   "provenance": "par-enfr-dev-03"
+  },
+  {
+   "source_language": "en",
+   "target_language": "de",
+   "source": "Could you write the address down for me?",
+   "target": "Können Sie mir die Adresse aufschreiben?",
+   "provenance": "par-ende-dev-03"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "We are going to the museum after lunch",
+   "target": "Vamos al mercado después de comer",
+   "provenance": "par-enes-dev-04"
+  },
+  {
+   "source_language": "es",
+   "target_language": "en",
+   "source": "Vamos al mercado después de comer",
+   "target": "We are going to the museum after lunch",
+   "provenance": "par-esen-dev-04"
+  },
+  {
+   "source_language": "en",
+   "target_language": "fr",
+   "source": "We are going to the museum after lunch",
+   "target": "Nous allons au musée après le déjeuner",
+   "provenance": "par-enfr-dev-04"
+  },
+  {
+   "source_language": "en",
+   "target_language": "de",
+   "source": "We are going to the museum after lunch",
+   "target": "Wir gehen nach dem Mittagessen ins Museum",
+   "provenance": "par-ende-dev-04"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "Yes, of course",
+   "target": "Sí, claro",
+   "provenance": "par-enes-dev-05"
+  },
+  {
+   "source_language": "es",
+   "target_language": "en",
+   "source": "Sí, claro",
+   "target": "Yes, of course",
+   "provenance": "par-esen-dev-05"
+  },
+  {
+   "source_language": "en",
+   "target_language": "fr",
+   "source": "Yes, of course",
+   "target": "Oui, bien sûr",
+   "provenance": "par-enfr-dev-05"
+  },
+  {
+   "source_language": "en",
+   "target_language": "de",
+   "source": "Yes, of course",
+   "target": "Ja, natürlich",
+   "provenance": "par-ende-dev-05"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "I do not want the room on the ground floor",
+   "target": "No quiero la habitación en la planta baja",
+   "provenance": "fid-enes-dev-00"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "We need 2 rooms for 3 nights",
+   "target": "Necesitamos 2 habitaciones para 3 noches",
+   "provenance": "fid-enes-dev-01"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "Is the pool open today?",
+   "target": "¿Está abierta la piscina hoy?",
+   "provenance": "fid-enes-dev-02"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "My name is Deepak and I booked through Talktual",
+   "target": "Me llamo Deepak y reservé a través de Talktual",
+   "provenance": "fid-enes-dev-03"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "Where is the check-in desk?",
+   "target": "¿Dónde está el mostrador de registro?",
+   "provenance": "fid-enes-dev-04"
+  },
+  {
+   "source_language": "en",
+   "target_language": "es",
+   "source": "The reservation is for Tuesday, sorry, for Wednesday",
+   "target": "La reserva es para el martes, perdón, para el miércoles",
+   "provenance": "fid-enes-dev-05"
+  }
+ ]
+}

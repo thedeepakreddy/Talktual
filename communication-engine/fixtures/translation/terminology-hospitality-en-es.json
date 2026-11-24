@@ -1,0 +1,33 @@
+{
+ "id": "hospitality-en-es",
+ "version": "1.0.0",
+ "pair": {
+  "source": "en",
+  "target": "es"
+ },
+ "domain": "hospitality",
+ "provenance": "authored for CE Phase 6 tests and evaluation",
+ "terms": [
+  {
+   "source": "check-in desk",
+   "target": "mostrador de registro"
+  },
+  {
+   "source": "check-in",
+   "target": "registro"
+  },
+  {
+   "source": "check-out",
+   "target": "salida"
+  },
+  {
+   "source": "room service",
+   "target": "servicio de habitaciones"
+  },
+  {
+   "source": "Talktual",
+   "kind": "do_not_translate",
+   "case_sensitive": true
+  }
+ ]
+}

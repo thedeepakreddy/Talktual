@@ -50,6 +50,7 @@ pub mod semantic;
 pub mod session;
 pub mod speech;
 pub mod time;
+pub mod translation;
 pub mod value;
 pub mod version;
 
