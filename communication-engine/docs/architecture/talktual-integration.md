@@ -41,11 +41,33 @@ need from CE, and its concepts map onto CE contracts:
 | call phase / activity state machines | `SessionState` + future module state; product phases stay in the product |
 | `EngineEvent` v1, peer wire messages | `EventEnvelope` (schema v1); wire protocols stay in transport adapters |
 | `CapabilityRegistry` (browser/server capabilities, degradation reasons) | capability descriptors with unknown-stays-unknown fields + health |
-| `PrivacyPolicyController` (modes, consent records, capture gate) | `ConsentPurpose`/`ConsentState` per session; gating to be enforced in Phase 2 |
+| `PrivacyPolicyController` (modes, consent records, capture gate) | `ConsentPurpose`/`ConsentState` per session; capture gate enforced since Phase 2 (ADR-0013) |
 | `Diagnostics` (redacted ring buffer) | `ObservabilitySink` + `RedactionPolicy` + metrics |
 | provider adapters in `src/lib/` | `Provider` contract + future CE adapter crates |
 
-## Integration paths (not implemented in Phase 1)
+## Phase 2: audio foundation and Talktual
+
+Talktual's audio today is entirely in the browser (`src/lib/audio.ts`:
+`getUserMedia`, one `AudioContext`, mic epochs; `src/lib/textToSpeech.ts`:
+PCM scheduling through Web Audio). **CE Phase 2 does not change it and cannot
+replace it in the browser**: the CE runtime does not compile to wasm, and
+cpal's web backend is output-only. CE's audio becomes usable by Talktual only
+through a native shell (DR-8.5-1 option B/C) or a desktop/server host.
+
+The concepts line up, which keeps a future migration mechanical:
+
+| Talktual (web) | CE (Phase 2) |
+| --- | --- |
+| mic epoch: a late `getUserMedia` must not resurrect the mic | authorization re-checked after open; revocation during open closes the stream |
+| consent sheet + capture gate in `PrivacyPolicyController` | `UpdateConsent` + capture gate (consent ∧ platform permission) |
+| device-lost listeners | `StreamInvalidated`, `DeviceRemoved`, no silent restart |
+| PCM schedule-ahead with ordered queue | `PlaybackWriter` with bounded queue and backpressure |
+| `micPermission()` | `PlatformPermission` via `PermissionOverride` from the native shell |
+
+Talktual's checks were re-run after Phase 2 with unchanged results
+(type-check, 537 client tests, 60 server tests, build).
+
+## Integration paths (not implemented)
 
 Phase 1 explicitly excludes Talktual feature integration. The candidate paths,
 for decision after Phase 2's platform research and Talktual's open decision

@@ -10,6 +10,7 @@ repository.workspace = true
 
 [dependencies]
 ce-core = { workspace = true }
+ce-audio = { workspace = true }
 communication-engine = { workspace = true }
 tokio = { workspace = true, features = ["time", "sync"] }
 uuid = { workspace = true }

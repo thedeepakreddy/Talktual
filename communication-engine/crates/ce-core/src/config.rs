@@ -48,6 +48,8 @@ pub struct EngineConfig {
     pub runtime: RuntimeConfig,
     /// Per-module configuration, keyed by module id.
     pub modules: BTreeMap<ModuleId, ModuleConfig>,
+    /// Audio limits and policies (Phase 2).
+    pub audio: crate::audio::AudioConfig,
 }
 
 impl Default for EngineConfig {
@@ -56,6 +58,7 @@ impl Default for EngineConfig {
             config_version: CONFIG_VERSION,
             runtime: RuntimeConfig::default(),
             modules: BTreeMap::new(),
+            audio: crate::audio::AudioConfig::default(),
         }
     }
 }
@@ -72,6 +75,7 @@ impl EngineConfig {
             .with_context("supported", CONFIG_VERSION.to_string()));
         }
         self.runtime.validate()?;
+        self.audio.validate()?;
         for (id, module) in &self.modules {
             module
                 .check_no_inline_secrets()

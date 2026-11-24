@@ -9,12 +9,14 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::audio::{AudioStreamStatus, DeviceCatalog};
 use crate::capability::CapabilityInfo;
 use crate::error::{CeError, ErrorReport};
 use crate::event::StopReason;
 use crate::health::RuntimeHealth;
-use crate::ids::{CapabilityId, CommandId, CorrelationId, ModuleId, SessionId};
+use crate::ids::{AudioStreamId, CapabilityId, CommandId, CorrelationId, ModuleId, SessionId};
 use crate::lifecycle::ModuleState;
+use crate::privacy::{ConsentPurpose, ConsentState};
 use crate::session::{SessionConfig, SessionInfo};
 use crate::version::VersionReq;
 
@@ -46,6 +48,35 @@ pub enum Command {
     QueryHealth,
     /// Stop everything and release resources.
     Shutdown,
+    /// Record a consent decision for a session (Phase 2). Revoking capture
+    /// consent stops and closes the session's capture streams.
+    UpdateConsent {
+        /// The session.
+        session_id: SessionId,
+        /// What the consent is for.
+        purpose: ConsentPurpose,
+        /// The new state.
+        state: ConsentState,
+    },
+    /// Re-enumerate audio devices and report the catalog (Phase 2).
+    ListAudioDevices,
+    /// Start (or restart) an open audio stream (Phase 2).
+    StartAudioStream {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Stop a running audio stream, keeping its device (Phase 2).
+    StopAudioStream {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Close an audio stream and release its device (Phase 2).
+    CloseAudioStream {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Report every audio stream that is not yet closed (Phase 2).
+    ListAudioStreams,
 }
 
 impl Command {
@@ -58,6 +89,12 @@ impl Command {
             Command::ListCapabilities { .. } => "list_capabilities",
             Command::QueryHealth => "query_health",
             Command::Shutdown => "shutdown",
+            Command::UpdateConsent { .. } => "update_consent",
+            Command::ListAudioDevices => "list_audio_devices",
+            Command::StartAudioStream { .. } => "start_audio_stream",
+            Command::StopAudioStream { .. } => "stop_audio_stream",
+            Command::CloseAudioStream { .. } => "close_audio_stream",
+            Command::ListAudioStreams => "list_audio_streams",
         }
     }
 
@@ -123,6 +160,26 @@ pub enum CommandOutcome {
         /// Report.
         report: ShutdownReport,
     },
+    /// Consent recorded.
+    ConsentUpdated {
+        /// The session after the update.
+        session: SessionInfo,
+    },
+    /// Audio device catalog.
+    AudioDevices {
+        /// Catalog.
+        catalog: DeviceCatalog,
+    },
+    /// Status of one audio stream after a start/stop/close.
+    AudioStream {
+        /// Status.
+        status: AudioStreamStatus,
+    },
+    /// Every audio stream that is not closed.
+    AudioStreams {
+        /// Statuses.
+        streams: Vec<AudioStreamStatus>,
+    },
 }
 
 /// How a module ended during shutdown.
@@ -165,6 +222,9 @@ pub struct ShutdownReport {
     pub duration: Duration,
     /// Sessions closed during shutdown.
     pub sessions_closed: u32,
+    /// Audio streams closed during shutdown (Phase 2).
+    #[serde(default)]
+    pub audio_streams_closed: u32,
     /// Per-module results, in stop order.
     pub modules: Vec<ModuleShutdown>,
     /// Whether no module failed: every module stopped cleanly, was already

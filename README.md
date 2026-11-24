@@ -134,8 +134,9 @@ Builds with `VITE_VOICEMIRROR=1` show a **Voice match** toggle. With the speaker
 foundation (contracts, runtime, registry, bounded event flow, lifecycle,
 cancellation, sessions, test kit and facade) for a reusable communication
 engine. Talktual will be its first consumer; nothing in the web app uses it
-yet, and it does not replace `src/engine/`. It has no audio, speech,
-translation or voice functionality. See
+yet, and it does not replace `src/engine/`. Phase 2 added a native audio
+foundation (capture/playback via `cpal`, consent-gated); it has no speech,
+translation or voice functionality and does not run in the browser. See
 [communication-engine/README.md](communication-engine/README.md) and its
 [Phase 1 report](communication-engine/docs/phases/phase-1-report.md).
 

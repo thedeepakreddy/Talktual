@@ -131,3 +131,110 @@ pub fn error_codes(events: &EventRecorder) -> Vec<String> {
         })
         .collect()
 }
+
+// ------------------------------------------------------------------ audio
+
+use ce_testkit::fake_audio::{FakeAudioBackend, FakeDriver};
+use communication_engine::contracts::audio::AudioEvent;
+use communication_engine::contracts::time::WallTime;
+
+pub struct AudioHarness {
+    pub engine: Engine,
+    pub events: EventRecorder,
+    pub fake: FakeAudioBackend,
+    pub clock: Arc<ManualClock>,
+    pub session: SessionInfo,
+}
+
+/// Audio test configuration: fast housekeeping and pressure reports.
+pub fn audio_config() -> EngineConfig {
+    let mut config = fixtures::test_config();
+    config.audio.housekeeping_interval_ms = 50;
+    config.audio.pressure_report_interval_ms = 10;
+    config.audio.operation_timeout_ms = 500;
+    config.audio.open_timeout_ms = 1_000;
+    config
+}
+
+/// A started engine with a fake backend and one session (no consent yet).
+pub async fn audio_harness_with(config: EngineConfig, driver: FakeDriver) -> AudioHarness {
+    let fake = FakeAudioBackend::new(driver);
+    let clock = Arc::new(ManualClock::default());
+    let engine = Engine::builder()
+        .config(config)
+        .clock(clock.clone())
+        .id_generator(Arc::new(SequentialIds::default()))
+        .audio_backend(Arc::new(fake.clone()))
+        .build()
+        .expect("engine builds");
+    let events = EventRecorder::new(engine.subscribe().expect("subscribe"));
+    engine.start().await.expect("start");
+    let session = engine
+        .create_session(SessionConfig::default())
+        .await
+        .expect("session");
+    AudioHarness {
+        engine,
+        events,
+        fake,
+        clock,
+        session,
+    }
+}
+
+pub async fn audio_harness() -> AudioHarness {
+    audio_harness_with(audio_config(), FakeDriver::Manual).await
+}
+
+impl AudioHarness {
+    pub fn now(&self) -> WallTime {
+        use communication_engine::contracts::time::Clock;
+        self.clock.wall()
+    }
+
+    pub async fn grant_capture(&self) {
+        self.engine
+            .update_consent(
+                self.session.id,
+                ConsentPurpose::Capture,
+                ConsentState::Granted { at: self.now() },
+            )
+            .await
+            .expect("consent");
+    }
+
+    /// Audio events recorded so far.
+    pub fn audio_events(&self) -> Vec<AudioEvent> {
+        self.events
+            .events()
+            .iter()
+            .filter_map(|e| match &e.payload {
+                EventPayload::Audio(a) => Some(a.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub async fn wait_audio(&mut self, pred: impl Fn(&AudioEvent) -> bool) -> AudioEvent {
+        let e = self
+            .events
+            .wait_for(
+                WAIT,
+                |e| matches!(&e.payload, EventPayload::Audio(a) if pred(a)),
+            )
+            .await
+            .expect("expected audio event");
+        match &e.payload {
+            EventPayload::Audio(a) => a.clone(),
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// Receive one block, failing the test after `WAIT`.
+pub async fn recv_block(reader: &mut CaptureReader) -> AudioBlock {
+    tokio::time::timeout(WAIT, reader.recv())
+        .await
+        .expect("block in time")
+        .expect("block")
+}

@@ -12,9 +12,12 @@ repository.workspace = true
 default = []
 # Forward redacted observations to the `tracing` ecosystem.
 tracing = ["dep:tracing"]
+# The cpal audio backend adapter (needs libasound2-dev on Linux).
+cpal = ["ce-audio/cpal"]
 
 [dependencies]
 ce-core = { workspace = true }
+ce-audio = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 tokio-util = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
@@ -31,3 +34,9 @@ name = "runtime_smoke"
 
 [lints]
 workspace = true
+
+[[example]]
+name = "audio_smoke"
+
+[[example]]
+name = "audio_probe"

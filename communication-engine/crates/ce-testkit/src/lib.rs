@@ -8,6 +8,7 @@
 //!   tasks, consume events slowly and acknowledge sessions with correlated
 //!   events.
 //! * [`EventRecorder`] — waits for and collects events with timeouts.
+//! * [`fake_audio`] — a scriptable fake audio backend with fault injection.
 //! * [`fixtures`] — small configurations and descriptors.
 //!
 //! This crate is for tests and examples only.
@@ -16,6 +17,7 @@
 #![warn(missing_docs)]
 
 mod clock;
+pub mod fake_audio;
 pub mod fixtures;
 mod mock_module;
 mod mock_provider;

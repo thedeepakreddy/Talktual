@@ -1,0 +1,28 @@
+[package]
+name = "ce-audio"
+description = "Communication Engine audio foundation: backend boundary, real-time handoff, conversion and stream workers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# The cross-platform `cpal` backend adapter (ALSA/CoreAudio/WASAPI/AAudio...).
+# On Linux this needs the ALSA development package (libasound2-dev).
+cpal = ["dep:cpal"]
+
+[dependencies]
+ce-core = { workspace = true }
+rtrb = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+cpal = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

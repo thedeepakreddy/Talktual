@@ -13,10 +13,18 @@ Status: Accepted (Phase 1) · Date: 2026-11-24
 | tokio-util | runtime | `CancellationToken` | MIT |
 | tracing (optional, feature `tracing`) | runtime | bridge to host logging | MIT |
 | serde_json (dev) | tests | serialization tests | MIT OR Apache-2.0 |
+| rtrb 0.4 (Phase 2) | ce-audio | wait-free SPSC rings for the callback handoff | MIT OR Apache-2.0 |
+| cpal 0.18 (Phase 2, optional feature `cpal`) | ce-audio | cross-platform audio I/O (ADR-0010) | Apache-2.0 |
 
 Rejected/avoided: `async-trait` (boxed futures suffice), `thiserror`/`anyhow`
-(redaction needs custom `Display`), `futures` (not needed), `cpal` (Phase 2
-candidate only).
+(redaction needs custom `Display`), `futures` (not needed), `ringbuf` (rtrb
+is smaller and purpose-built for real-time audio).
+
+`cpal` and `rtrb` contain `unsafe` internally; CE's own crates remain
+`#![forbid(unsafe_code)]`. On Linux the `cpal` feature links the system ALSA
+library (LGPL-2.1 libasound, dynamically linked; build needs
+`libasound2-dev`) — a distribution concern to review before shipping a
+Linux binary SDK.
 
 ## Licensing policy
 `deny.toml` allows MIT, Apache-2.0 and Unicode-3.0 only; anything

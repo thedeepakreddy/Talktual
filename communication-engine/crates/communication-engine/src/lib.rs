@@ -45,17 +45,22 @@ mod tracing_sink;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+pub use ce_audio as audio;
+use ce_audio::{AudioBackend, CaptureReader, PlaybackWriter, StreamEndpoint};
 pub use ce_core as contracts;
 use ce_core::CeResult;
+use ce_core::audio::{AudioDirection, AudioStreamStatus, DeviceCatalog, StreamRequest};
 use ce_core::capability::CapabilityInfo;
 use ce_core::command::{Command, CommandEnvelope, CommandOutcome, ShutdownReport};
 use ce_core::config::EngineConfig;
 use ce_core::error::{CeError, ErrorCategory};
 use ce_core::event::EventEnvelope;
 use ce_core::health::{MetricsSnapshot, RuntimeHealth};
+use ce_core::ids::AudioStreamId;
 use ce_core::ids::{CapabilityId, CommandId, CorrelationId, IdGenerator, SessionId};
 use ce_core::module::{ModuleDescriptor, ModuleFactory};
 use ce_core::observability::{NoopSink, ObservabilitySink};
+use ce_core::privacy::{ConsentPurpose, ConsentState};
 use ce_core::resource::{AdmissionPolicy, QueueKind};
 use ce_core::session::{SessionConfig, SessionInfo};
 use ce_core::time::{Clock, SystemClock};
@@ -76,16 +81,23 @@ pub const FACADE_API_VERSION: &str = "0.1";
 /// Commonly used contract types.
 pub mod prelude {
     pub use crate::{Engine, EngineBuilder, EventSubscription, SubscriptionError};
+    pub use ce_audio::{AudioBackend, CaptureReader, PlaybackWriter, ReadError};
+    pub use ce_core::audio::{
+        AudioBlock, AudioDeviceId, AudioDirection, AudioEvent, AudioStreamState, AudioStreamStatus,
+        ChannelMode, DeviceCatalog, DeviceSelector, FormatPreference, SampleFormat, StreamRequest,
+    };
     pub use ce_core::capability::{CapabilityDescriptor, CapabilityInfo, CapabilityRequirement};
     pub use ce_core::command::{Command, CommandOutcome, ShutdownReport};
     pub use ce_core::config::{EngineConfig, ModuleConfig, RuntimeConfig};
     pub use ce_core::error::{CeError, ErrorCategory, Recoverability};
     pub use ce_core::event::{EventEnvelope, EventPayload, EventTopic, ModuleEventDraft};
     pub use ce_core::health::{HealthStatus, RuntimeHealth};
+    pub use ce_core::ids::AudioStreamId;
     pub use ce_core::ids::{CapabilityId, EventName, ModuleId, SessionId};
     pub use ce_core::lifecycle::{ModuleState, RuntimeState};
     pub use ce_core::module::{Module, ModuleContext, ModuleDescriptor, ModuleFactory};
     pub use ce_core::privacy::DataClass;
+    pub use ce_core::privacy::{ConsentPurpose, ConsentState};
     pub use ce_core::session::{SessionConfig, SessionInfo, SessionState};
     pub use ce_core::version::{Version, VersionReq};
     pub use ce_core::{BoxFuture, CeResult};
@@ -108,6 +120,7 @@ pub struct EngineBuilder {
     clock: Option<Arc<dyn Clock>>,
     ids: Option<Arc<dyn IdGenerator>>,
     sink: Option<Arc<dyn ObservabilitySink>>,
+    audio: Option<Arc<dyn AudioBackend>>,
 }
 
 impl EngineBuilder {
@@ -137,6 +150,13 @@ impl EngineBuilder {
     /// Inject an observability sink (default: [`NoopSink`]).
     pub fn observability(mut self, sink: Arc<dyn ObservabilitySink>) -> Self {
         self.sink = Some(sink);
+        self
+    }
+
+    /// Use an audio backend (Phase 2). Without one, audio operations fail
+    /// with `audio.no_backend`.
+    pub fn audio_backend(mut self, backend: Arc<dyn AudioBackend>) -> Self {
+        self.audio = Some(backend);
         self
     }
 
@@ -173,6 +193,7 @@ impl EngineBuilder {
             cmd_rx,
             ingress_tx: ingress_tx.clone(),
             ingress_rx,
+            audio_backend: self.audio,
         });
         let core = handle.spawn(core.run());
         Ok(Engine {
@@ -357,6 +378,130 @@ impl Engine {
     pub async fn health(&self) -> CeResult<RuntimeHealth> {
         match self.execute(Command::QueryHealth).await? {
             CommandOutcome::Health { health } => Ok(health),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    // ------------------------------------------------------------ audio
+
+    /// Re-enumerate audio devices and return the catalog. Device changes
+    /// since the last enumeration are published as audio events.
+    pub async fn audio_devices(&self) -> CeResult<DeviceCatalog> {
+        match self.execute(Command::ListAudioDevices).await? {
+            CommandOutcome::AudioDevices { catalog } => Ok(catalog),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Record a consent decision for a session. Revoking capture consent
+    /// stops capture immediately and releases the session's capture devices.
+    pub async fn update_consent(
+        &self,
+        session_id: SessionId,
+        purpose: ConsentPurpose,
+        state: ConsentState,
+    ) -> CeResult<SessionInfo> {
+        match self
+            .execute(Command::UpdateConsent {
+                session_id,
+                purpose,
+                state,
+            })
+            .await?
+        {
+            CommandOutcome::ConsentUpdated { session } => Ok(session),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    async fn open_audio(
+        &self,
+        session_id: SessionId,
+        request: StreamRequest,
+    ) -> CeResult<StreamEndpoint> {
+        let (reply, rx) = oneshot::channel();
+        self.submit(CoreMsg::OpenAudio {
+            session_id,
+            request,
+            reply,
+        })
+        .await?;
+        rx.await.map_err(|_| stopped())?.map(|o| o.endpoint)
+    }
+
+    /// Open (not start) a capture stream in a session. Requires capture
+    /// consent on the session and platform permission. The returned reader
+    /// carries the stream's resolved format in `info()`.
+    pub async fn open_capture(
+        &self,
+        session_id: SessionId,
+        request: StreamRequest,
+    ) -> CeResult<CaptureReader> {
+        if request.direction != AudioDirection::Capture {
+            return Err(CeError::invalid_input(
+                "audio.direction_mismatch",
+                "open_capture needs a capture request",
+            ));
+        }
+        match self.open_audio(session_id, request).await? {
+            StreamEndpoint::Capture(reader) => Ok(reader),
+            StreamEndpoint::Playback(_) => Err(CeError::internal(
+                "audio.endpoint_mismatch",
+                "runtime returned a playback endpoint",
+            )),
+        }
+    }
+
+    /// Open (not start) a playback stream in a session.
+    pub async fn open_playback(
+        &self,
+        session_id: SessionId,
+        request: StreamRequest,
+    ) -> CeResult<PlaybackWriter> {
+        if request.direction != AudioDirection::Playback {
+            return Err(CeError::invalid_input(
+                "audio.direction_mismatch",
+                "open_playback needs a playback request",
+            ));
+        }
+        match self.open_audio(session_id, request).await? {
+            StreamEndpoint::Playback(writer) => Ok(writer),
+            StreamEndpoint::Capture(_) => Err(CeError::internal(
+                "audio.endpoint_mismatch",
+                "runtime returned a capture endpoint",
+            )),
+        }
+    }
+
+    async fn audio_command(&self, command: Command) -> CeResult<AudioStreamStatus> {
+        match self.execute(command).await? {
+            CommandOutcome::AudioStream { status } => Ok(status),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Start (or restart) an open or stopped stream.
+    pub async fn start_audio(&self, stream_id: AudioStreamId) -> CeResult<AudioStreamStatus> {
+        self.audio_command(Command::StartAudioStream { stream_id })
+            .await
+    }
+
+    /// Stop a running stream, keeping its device.
+    pub async fn stop_audio(&self, stream_id: AudioStreamId) -> CeResult<AudioStreamStatus> {
+        self.audio_command(Command::StopAudioStream { stream_id })
+            .await
+    }
+
+    /// Close a stream and release its device; returns the final status.
+    pub async fn close_audio(&self, stream_id: AudioStreamId) -> CeResult<AudioStreamStatus> {
+        self.audio_command(Command::CloseAudioStream { stream_id })
+            .await
+    }
+
+    /// Every audio stream that is not closed.
+    pub async fn audio_streams(&self) -> CeResult<Vec<AudioStreamStatus>> {
+        match self.execute(Command::ListAudioStreams).await? {
+            CommandOutcome::AudioStreams { streams } => Ok(streams),
             other => Err(unexpected(&other)),
         }
     }

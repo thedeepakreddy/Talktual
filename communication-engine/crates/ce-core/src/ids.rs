@@ -85,6 +85,11 @@ uuid_id!(
     CommandId,
     "cmd"
 );
+uuid_id!(
+    /// Identifies one audio stream (capture or playback). Added in Phase 2.
+    AudioStreamId,
+    "aud"
+);
 
 /// Maximum length of a namespaced identifier.
 pub const MAX_NAME_LEN: usize = 128;

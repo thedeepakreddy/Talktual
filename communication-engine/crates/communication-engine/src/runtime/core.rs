@@ -17,7 +17,9 @@ use ce_core::error::{CeError, ErrorCategory};
 use ce_core::event::{
     EVENT_SCHEMA_VERSION, EventEnvelope, EventPayload, EventSource, EventTopic, StopReason,
 };
-use ce_core::health::{HealthStatus, HealthSubject, ModuleStatus, RuntimeHealth, aggregate_health};
+use ce_core::health::{
+    HealthStatus, HealthSubject, ModuleStatus, RuntimeHealth, aggregate_runtime_health,
+};
 use ce_core::ids::{CorrelationId, EventId, IdGenerator, ModuleId, SessionId};
 use ce_core::lifecycle::{ModuleState, RuntimeState};
 use ce_core::module::{ModuleDescriptor, ModuleFactory};
@@ -31,6 +33,13 @@ use ce_core::{CeResult, ErrorCategory as Cat};
 use tokio::sync::{Notify, broadcast, mpsc, oneshot};
 use tokio::time::{Instant, sleep_until, timeout_at};
 use tokio_util::sync::CancellationToken;
+
+mod audio;
+
+pub(crate) use audio::OpenedAudio;
+use audio::{AUDIO_SIGNAL_CAPACITY, AudioState};
+use ce_audio::{AudioBackend, AudioSignal, BackendNotifier};
+use ce_core::audio::StreamRequest;
 
 use super::actor::{ActorHandle, ActorReport, ActorSpec, Ctrl, Ingress, LifecycleOp, spawn_actor};
 use super::metrics::Metrics;
@@ -51,6 +60,13 @@ pub(crate) enum CoreMsg {
         factory: Arc<dyn ModuleFactory>,
         reply: oneshot::Sender<CeResult<ModuleDescriptor>>,
     },
+    /// Open an audio stream (not a serializable command: it returns the
+    /// in-process data-plane endpoint).
+    OpenAudio {
+        session_id: SessionId,
+        request: StreamRequest,
+        reply: oneshot::Sender<CeResult<OpenedAudio>>,
+    },
 }
 
 impl std::fmt::Debug for CoreMsg {
@@ -58,6 +74,7 @@ impl std::fmt::Debug for CoreMsg {
         match self {
             CoreMsg::Command { envelope, .. } => write!(f, "Command({})", envelope.command.name()),
             CoreMsg::Register { .. } => f.write_str("Register"),
+            CoreMsg::OpenAudio { .. } => f.write_str("OpenAudio"),
         }
     }
 }
@@ -74,6 +91,7 @@ pub(crate) struct CoreDeps {
     pub(crate) cmd_rx: mpsc::Receiver<CoreMsg>,
     pub(crate) ingress_tx: mpsc::Sender<Ingress>,
     pub(crate) ingress_rx: mpsc::Receiver<Ingress>,
+    pub(crate) audio_backend: Option<Arc<dyn AudioBackend>>,
 }
 
 #[derive(Debug)]
@@ -116,11 +134,44 @@ pub(crate) struct Core {
     sequence: u64,
     runtime_health: HealthStatus,
     current_correlation: Option<CorrelationId>,
+    audio: Option<AudioState>,
+    audio_rx: Option<mpsc::Receiver<AudioSignal>>,
+    audio_tick: Option<tokio::time::Interval>,
+}
+
+async fn recv_opt<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
+    match rx {
+        Some(rx) => rx.recv().await,
+        None => std::future::pending().await,
+    }
+}
+
+async fn tick_opt(tick: &mut Option<tokio::time::Interval>) {
+    match tick {
+        Some(t) => {
+            t.tick().await;
+        }
+        None => std::future::pending().await,
+    }
 }
 
 impl Core {
     pub(crate) fn new(deps: CoreDeps) -> Self {
+        let (audio, audio_rx, audio_tick) = match deps.audio_backend {
+            Some(backend) => {
+                let (tx, rx) = mpsc::channel(AUDIO_SIGNAL_CAPACITY);
+                backend.set_notifier(BackendNotifier::new(tx.clone()));
+                let period = Duration::from_millis(deps.config.audio.housekeeping_interval_ms);
+                let mut tick = tokio::time::interval_at(Instant::now() + period, period);
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                (Some(AudioState::new(backend, tx)), Some(rx), Some(tick))
+            }
+            None => (None, None, None),
+        };
         Self {
+            audio,
+            audio_rx,
+            audio_tick,
             config: deps.config,
             clock: deps.clock,
             ids: deps.ids,
@@ -165,6 +216,11 @@ impl Core {
                 },
                 Some(ingress) = self.ingress_rx.recv() => self.handle_ingress(ingress),
                 () = self.exit_notify.notified() => self.reap_actors().await,
+                Some(signal) = recv_opt(&mut self.audio_rx) => {
+                    self.handle_audio_signal(signal);
+                    self.process_deferred_audio().await;
+                }
+                () = tick_opt(&mut self.audio_tick) => self.audio_housekeeping().await,
             }
         }
         self.log(Observation::log(Level::Debug, "runtime.core_exited"));
@@ -353,7 +409,7 @@ impl Core {
     }
 
     fn refresh_runtime_health(&mut self) {
-        let to = aggregate_health(self.state, &self.statuses());
+        let to = aggregate_runtime_health(self.state, &self.statuses(), &self.audio_statuses());
         if to != self.runtime_health {
             let from = std::mem::replace(&mut self.runtime_health, to.clone());
             self.emit(
@@ -514,6 +570,7 @@ impl Core {
                 reply = &mut rx => return reply.map_err(|_| WaitError::ActorGone),
                 () = sleep_until(deadline) => return Err(WaitError::TimedOut),
                 Some(ingress) = self.ingress_rx.recv() => self.handle_ingress(ingress),
+                Some(signal) = recv_opt(&mut self.audio_rx) => self.handle_audio_signal(signal),
             }
         }
     }
@@ -608,6 +665,15 @@ impl Core {
                 let _ = reply.send(result);
                 false
             }
+            CoreMsg::OpenAudio {
+                session_id,
+                request,
+                reply,
+            } => {
+                let result = self.open_audio(session_id, request).await;
+                let _ = reply.send(result);
+                false
+            }
             CoreMsg::Command { envelope, reply } => {
                 self.current_correlation = Some(envelope.correlation_id);
                 self.log(
@@ -621,7 +687,9 @@ impl Core {
                     Ok(()) => match envelope.command {
                         Command::Start => self.start().await,
                         Command::CreateSession { config } => self.create_session(config),
-                        Command::CloseSession { session_id } => self.close_session(session_id),
+                        Command::CloseSession { session_id } => {
+                            self.close_session(session_id).await
+                        }
                         Command::ListCapabilities {
                             capability,
                             version,
@@ -638,6 +706,20 @@ impl Core {
                         Command::Shutdown => Ok(CommandOutcome::ShutdownCompleted {
                             report: self.shutdown(StopReason::Requested).await,
                         }),
+                        Command::UpdateConsent {
+                            session_id,
+                            purpose,
+                            state,
+                        } => self.update_consent(session_id, purpose, state).await,
+                        Command::ListAudioDevices => self.list_audio_devices().await,
+                        Command::StartAudioStream { stream_id } => {
+                            self.start_audio(stream_id).await
+                        }
+                        Command::StopAudioStream { stream_id } => self.stop_audio(stream_id).await,
+                        Command::CloseAudioStream { stream_id } => {
+                            self.close_audio(stream_id).await
+                        }
+                        Command::ListAudioStreams => self.list_audio_streams(),
                         _ => Err(CeError::invalid_input(
                             "command.unsupported",
                             "command not supported by this runtime",
@@ -882,6 +964,7 @@ impl Core {
             modules: self.statuses(),
             open_sessions: u32::try_from(self.sessions.len()).unwrap_or(u32::MAX),
             metrics: self.metrics.snapshot(),
+            audio_streams: self.audio_statuses(),
         }
     }
 
@@ -935,8 +1018,10 @@ impl Core {
         Ok(())
     }
 
-    fn close_session(&mut self, id: SessionId) -> CeResult<CommandOutcome> {
+    async fn close_session(&mut self, id: SessionId) -> CeResult<CommandOutcome> {
         self.set_session_state(id, SessionState::Closing)?;
+        // Release the session's audio devices before the session ends.
+        self.close_session_streams(id).await;
         self.set_session_state(id, SessionState::Closed)?;
         let session = self.sessions.remove(&id).ok_or_else(|| {
             CeError::internal("session.vanished", "session disappeared while closing")
@@ -1045,11 +1130,23 @@ impl Core {
         self.emit(EventPayload::RuntimeStopping { reason }, None);
 
         let open: Vec<SessionId> = self.sessions.keys().copied().collect();
+        let streams_before = self.audio_statuses().len();
         let mut sessions_closed = 0u32;
         for id in open {
-            if self.close_session(id).is_ok() {
+            if self.close_session(id).await.is_ok() {
                 sessions_closed += 1;
             }
+        }
+        // Streams can only exist inside sessions, so all were closed above;
+        // wait (bounded) for any worker thread that missed its deadline.
+        let audio_streams_closed =
+            u32::try_from(streams_before.saturating_sub(self.audio_statuses().len()))
+                .unwrap_or(u32::MAX);
+        let stuck = self.drain_zombies(deadline).await;
+        if stuck > 0 {
+            self.log(
+                Observation::log(Level::Warn, "audio.workers_did_not_exit").field("count", stuck),
+            );
         }
 
         let order: Vec<usize> = if self.order.len() == self.slots.len() {
@@ -1084,8 +1181,9 @@ impl Core {
             reason,
             duration: started.elapsed(),
             sessions_closed,
+            audio_streams_closed,
             modules,
-            clean,
+            clean: clean && stuck == 0,
         };
         self.log(
             Observation::log(Level::Info, "runtime.shutdown_completed")

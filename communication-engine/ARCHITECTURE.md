@@ -1,14 +1,20 @@
 # Communication Engine — Architecture (Phase 1)
 
-Status: Phase 1 foundation, implemented and verified on Linux x86_64 (see
-[phase report](docs/phases/phase-1-report.md)). APIs are **provisional**.
+Status: Phase 1 foundation and Phase 2 audio foundation, implemented and
+verified on Linux x86_64 (see the [Phase 1](docs/phases/phase-1-report.md)
+and [Phase 2](docs/phases/phase-2-report.md) reports). APIs are
+**provisional**.
 
 The Communication Engine (CE) is a product-agnostic Rust foundation for a
 communication intelligence engine. Talktual is its first consumer, not its
 boundary. Phase 1 provides contracts, a runtime, a registry, bounded event
 flow, lifecycle, cancellation, sessions, a test kit, a public facade and a mock
-module. It contains **no** audio, ASR, translation, semantic, voice or TTS
-functionality and makes no real-time or device claims.
+module. Phase 2 adds the audio foundation — device discovery, format
+negotiation, capture and playback streams, bounded real-time handoff,
+timestamps, device-change handling and a capture authorization gate (see
+[audio.md](docs/architecture/audio.md)). There is **no** VAD, DSP, ASR,
+translation, semantic, voice or TTS functionality, and no latency or device
+claims (no audio hardware has been tested).
 
 ## 1. Crates and dependency direction
 
@@ -19,6 +25,12 @@ functionality and makes no real-time or device claims.
   SDKs,     │  EventSubscription         │  feature `tracing`: TracingSink
   tests)    └─────────────┬──────────────┘
                           │ re-exports as `contracts`
+                          │ re-exports as `audio`
+            ┌─────────────▼──────────────┐
+ adapters ► │ ce-audio (Phase 2)         │  AudioBackend trait, rt endpoints (rtrb),
+            │                            │  conversion, stream workers; feature
+            │                            │  `cpal`: cpal adapter
+            └─────────────┬──────────────┘
             ┌─────────────▼──────────────┐
  modules ─► │ ce-core                    │  types + contracts, runtime-agnostic
  adapters   │  ids, errors, config,      │  deps: serde, semver, uuid (no rng)
@@ -113,4 +125,6 @@ documented on `RuntimeConfig`.
 ADRs in [docs/architecture/adr](docs/architecture/adr/):
 0001 workspace and crates · 0002 async runtime and concurrency · 0003 module
 contract · 0004 event model · 0005 lifecycle · 0006 errors · 0007 privacy ·
-0008 real-time boundary · 0009 dependencies and licensing.
+0008 real-time boundary · 0009 dependencies and licensing · 0010 audio
+backend selection · 0011 audio stream architecture · 0012 audio
+normalization contract · 0013 capture authorization gate.

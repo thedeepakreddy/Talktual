@@ -31,6 +31,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod audio;
 pub mod capability;
 pub mod command;
 pub mod config;

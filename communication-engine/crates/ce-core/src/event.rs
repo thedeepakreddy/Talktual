@@ -172,6 +172,8 @@ pub enum EventPayload {
     },
     /// A module-defined event.
     Module(ModuleEvent),
+    /// An audio device, stream or authorization event (Phase 2).
+    Audio(crate::audio::AudioEvent),
 }
 
 impl EventPayload {
@@ -193,6 +195,7 @@ impl EventPayload {
             EventPayload::RuntimeError { .. } => "runtime_error",
             EventPayload::QueueSaturated { .. } => "queue_saturated",
             EventPayload::Module(_) => "module",
+            EventPayload::Audio(_) => "audio",
         }
     }
 
@@ -216,6 +219,7 @@ impl EventPayload {
                 EventTopic::Diagnostics
             }
             EventPayload::Module(_) => EventTopic::ModuleEvents,
+            EventPayload::Audio(_) => EventTopic::Audio,
         }
     }
 }
@@ -236,6 +240,8 @@ pub enum EventTopic {
     Diagnostics,
     /// Events emitted by other modules.
     ModuleEvents,
+    /// Audio device, stream and authorization events (Phase 2).
+    Audio,
 }
 
 /// The envelope every event travels in.
