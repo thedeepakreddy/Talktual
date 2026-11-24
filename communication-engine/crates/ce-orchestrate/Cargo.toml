@@ -1,0 +1,20 @@
+[package]
+name = "ce-orchestrate"
+description = "Communication Engine streaming orchestration and timing logic (Phase 7)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+ce-core = { workspace = true }
+
+[dev-dependencies]
+uuid = { workspace = true }
+ce-translate = { workspace = true }
+ce-audio-intel = { workspace = true }
+
+[lints]
+workspace = true

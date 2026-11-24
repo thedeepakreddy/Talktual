@@ -89,6 +89,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ce-orchestrate"
+version = "0.1.0"
+dependencies = [
+ "ce-audio-intel",
+ "ce-core",
+ "ce-translate",
+ "uuid",
+]
+
+[[package]]
 name = "ce-semantic"
 version = "0.1.0"
 dependencies = [
@@ -158,6 +168,7 @@ dependencies = [
  "ce-audio",
  "ce-audio-intel",
  "ce-core",
+ "ce-orchestrate",
  "ce-semantic",
  "ce-speech",
  "ce-testkit",

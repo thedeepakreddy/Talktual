@@ -131,3 +131,17 @@ consent (`voice_profile`) from the voice's owner; authorization and access
 control; revocation that triggers `DataErasure`; provenance for generated
 audio; abuse prevention; and review. Nothing in Phase 1 certifies compliance
 with any regulation.
+
+## Orchestration (Phase 7)
+
+* Orchestration events, status and logs are `Operational`. They carry
+  stream and session ids, stage kinds, generations, epochs, utterance and
+  revision numbers, frame positions, counts and durations. They never
+  carry transcript, translation or observation text, or audio.
+* The observer keeps bounded, in-memory, per-pipeline state: at most
+  `observer_utterances` entries of (revision number, status, end time,
+  end frame), plus latency reservoirs of 512 numbers each. It is dropped
+  when the pipeline ends; nothing is persisted or transmitted.
+* Stale outputs of earlier worker generations are dropped without being
+  published. Only their identifiers are logged.
+

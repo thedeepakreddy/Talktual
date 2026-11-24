@@ -38,7 +38,9 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use super::Core;
+use super::pipeline::{Tagged, semantic_end, tagged_sender};
 use crate::runtime::metrics::Metrics;
+use ce_core::orchestration::{StageEnd, StageKind};
 
 /// Capacity of the semantic event channel.
 pub(crate) const SEMANTIC_SIGNAL_CAPACITY: usize = 1024;
@@ -47,11 +49,12 @@ const FINISHED_KEPT: usize = 16;
 struct Running {
     handle: SemanticHandle,
     session: SessionId,
+    generation: u64,
 }
 
 /// Semantic bookkeeping owned by the core.
 pub(crate) struct SemanticState {
-    tx: mpsc::Sender<SemanticSignal>,
+    tx: mpsc::Sender<Tagged<SemanticSignal>>,
     running: BTreeMap<AudioStreamId, Running>,
     finished: BTreeMap<AudioStreamId, (SessionId, SemanticStatus)>,
     finished_order: Vec<AudioStreamId>,
@@ -69,7 +72,7 @@ impl std::fmt::Debug for SemanticState {
 }
 
 impl SemanticState {
-    pub(crate) fn new(tx: mpsc::Sender<SemanticSignal>) -> Self {
+    pub(crate) fn new(tx: mpsc::Sender<Tagged<SemanticSignal>>) -> Self {
         Self {
             tx,
             running: BTreeMap::new(),
@@ -137,7 +140,7 @@ impl Core {
         }
     }
 
-    fn resolve_semantic(
+    pub(super) fn resolve_semantic(
         &self,
         cfg: &SemanticConfig,
     ) -> CeResult<(Arc<dyn SemanticFactory>, SemanticCapabilities)> {
@@ -171,6 +174,8 @@ impl Core {
     ) -> CeResult<CommandOutcome> {
         let cfg = config.unwrap_or_else(|| self.config.semantic.semantic.clone());
         cfg.validate()?;
+        let generation = self.next_generation();
+        let metrics = self.metrics.clone();
         let session = {
             let audio = self.audio.as_ref().ok_or_else(unavailable)?;
             let (info, state, ended) = audio.stream(id).ok_or_else(|| {
@@ -215,7 +220,7 @@ impl Core {
             )
             .with_context("max", max.to_string()));
         }
-        let tx = state.tx.clone();
+        let tx = tagged_sender(generation, state.tx.clone(), metrics);
         let adapter = factory.create(&cfg)?;
         let processor = SemanticProcessor::new(
             ProcessorSetup {
@@ -227,9 +232,14 @@ impl Core {
         )?;
         let handle = spawn_semantic(processor, tx)?;
         let status = handle.status();
-        self.semantic_mut()?
-            .running
-            .insert(id, Running { handle, session });
+        self.semantic_mut()?.running.insert(
+            id,
+            Running {
+                handle,
+                session,
+                generation,
+            },
+        );
         Metrics::inc(&self.metrics.semantics_started, 1);
         self.log(
             Observation::log(Level::Info, "semantic.started")
@@ -290,6 +300,14 @@ impl Core {
     }
 
     /// Current or final status.
+    /// Generation of the worker running on `id`, if any.
+    pub(super) fn semantic_generation(&self, id: AudioStreamId) -> Option<u64> {
+        self.semantic
+            .as_ref()
+            .and_then(|s| s.running.get(&id))
+            .map(|r| r.generation)
+    }
+
     pub(super) fn query_semantics(&mut self, id: AudioStreamId) -> CeResult<CommandOutcome> {
         let state = self.semantic_mut()?;
         if let Some(r) = state.running.get(&id) {
@@ -329,7 +347,16 @@ impl Core {
     }
 
     /// Process one semantic signal.
-    pub(super) fn handle_semantic_signal(&mut self, signal: SemanticSignal) {
+    pub(super) fn handle_semantic_signal(&mut self, tagged: Tagged<SemanticSignal>) {
+        let Tagged { generation, signal } = tagged;
+        let stream = match &signal {
+            SemanticSignal::Event(e) => e.stream(),
+            SemanticSignal::Ended { stream, .. } => *stream,
+        };
+        let current = self.semantic_generation(stream);
+        if !self.admit_signal(StageKind::Semantics, stream, generation, current) {
+            return;
+        }
         match signal {
             SemanticSignal::Event(event) => {
                 let stream = event.stream();
@@ -350,8 +377,10 @@ impl Core {
                 if let SemanticEvent::Observation { observation, .. } = &event {
                     self.forward_observation_to_translation(observation);
                 }
+                let findings = self.observe_semantic(&event);
                 let class = event.data_class();
                 self.emit_classified(EventPayload::Semantic(event), class, session);
+                self.report_findings(stream, findings);
             }
             SemanticSignal::Ended { stream, status } => {
                 let Some(state) = self.semantic.as_mut() else {
@@ -364,11 +393,13 @@ impl Core {
                     }
                     let reason = status.ended;
                     state.remember(stream, r.session, *status);
+                    let end = semantic_end(reason);
                     self.log(
                         Observation::log(Level::Info, "semantic.ended")
                             .field("stream", stream)
                             .field("reason", format!("{reason:?}")),
                     );
+                    self.note_stage_end(StageKind::Semantics, stream, generation, end, false);
                 }
             }
         }
@@ -381,6 +412,7 @@ impl Core {
         let Some(mut r) = state.running.remove(&stream) else {
             return;
         };
+        let generation = r.generation;
         let mut status = r.handle.status();
         r.handle.abandon(SemanticEndReason::Failed);
         status.running = false;
@@ -412,6 +444,13 @@ impl Core {
             }),
             Some(session),
         );
+        self.note_stage_end(
+            StageKind::Semantics,
+            stream,
+            generation,
+            StageEnd::Stalled,
+            false,
+        );
     }
 
     /// Housekeeping: reap exited threads, detect stalls.
@@ -433,7 +472,7 @@ impl Core {
         }
     }
 
-    async fn await_semantic_end(&mut self, ids: &[AudioStreamId], deadline: Instant) {
+    pub(super) async fn await_semantic_end(&mut self, ids: &[AudioStreamId], deadline: Instant) {
         loop {
             let pending = self
                 .semantic
@@ -470,6 +509,7 @@ impl Core {
             let Some(mut r) = state.running.remove(&stream) else {
                 continue;
             };
+            let generation = r.generation;
             let mut status = r.handle.status();
             r.handle.abandon(SemanticEndReason::Failed);
             status.running = false;
@@ -479,6 +519,13 @@ impl Core {
             Metrics::inc(&self.metrics.semantic_failures, 1);
             self.log(
                 Observation::log(Level::Warn, "semantic.stop_timed_out").field("stream", stream),
+            );
+            self.note_stage_end(
+                StageKind::Semantics,
+                stream,
+                generation,
+                StageEnd::Stalled,
+                true,
             );
         }
     }

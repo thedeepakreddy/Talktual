@@ -36,6 +36,7 @@ use tokio_util::sync::CancellationToken;
 
 mod audio;
 mod intel;
+mod pipeline;
 mod semantic;
 mod speech;
 mod translation;
@@ -51,6 +52,7 @@ use ce_semantic::SemanticSignal;
 use ce_speech::worker::SpeechSignal;
 use ce_translate::TranslationSignal;
 use intel::{INTEL_SIGNAL_CAPACITY, IntelState};
+use pipeline::{Pipelines, Tagged};
 pub(crate) use semantic::SemanticProviders;
 use semantic::{SEMANTIC_SIGNAL_CAPACITY, SemanticState};
 pub(crate) use speech::SpeechProviders;
@@ -166,16 +168,17 @@ pub(crate) struct Core {
     audio_rx: Option<mpsc::Receiver<AudioSignal>>,
     audio_tick: Option<tokio::time::Interval>,
     intel: Option<IntelState>,
-    intel_rx: Option<mpsc::Receiver<IntelSignal>>,
+    intel_rx: Option<mpsc::Receiver<Tagged<IntelSignal>>>,
     speech: Option<SpeechState>,
-    speech_rx: Option<mpsc::Receiver<SpeechSignal>>,
+    speech_rx: Option<mpsc::Receiver<Tagged<SpeechSignal>>>,
     providers: SpeechProviders,
     semantic: Option<SemanticState>,
-    semantic_rx: Option<mpsc::Receiver<SemanticSignal>>,
+    semantic_rx: Option<mpsc::Receiver<Tagged<SemanticSignal>>>,
     semantic_providers: SemanticProviders,
     translation: Option<TranslationStateMap>,
-    translation_rx: Option<mpsc::Receiver<TranslationSignal>>,
+    translation_rx: Option<mpsc::Receiver<Tagged<TranslationSignal>>>,
     translation_providers: TranslationProviders,
+    pipelines: Pipelines,
 }
 
 pub(super) async fn recv_opt<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
@@ -191,6 +194,44 @@ async fn tick_opt(tick: &mut Option<tokio::time::Interval>) {
             t.tick().await;
         }
         None => std::future::pending().await,
+    }
+}
+
+/// One ready data-plane input of the control loop.
+enum DataMsg {
+    Ingress(Ingress),
+    Exit,
+    Audio(AudioSignal),
+    Intel(Tagged<IntelSignal>),
+    Speech(Tagged<SpeechSignal>),
+    Semantic(Tagged<SemanticSignal>),
+    Translation(Tagged<TranslationSignal>),
+    Tick,
+}
+
+/// The next ready data input, chosen **without bias** (random start), so no
+/// data channel can starve another (ADR-0033).
+#[allow(clippy::too_many_arguments)]
+async fn next_data(
+    ingress_rx: &mut mpsc::Receiver<Ingress>,
+    exit: &Notify,
+    audio_rx: &mut Option<mpsc::Receiver<AudioSignal>>,
+    intel_rx: &mut Option<mpsc::Receiver<Tagged<IntelSignal>>>,
+    speech_rx: &mut Option<mpsc::Receiver<Tagged<SpeechSignal>>>,
+    semantic_rx: &mut Option<mpsc::Receiver<Tagged<SemanticSignal>>>,
+    translation_rx: &mut Option<mpsc::Receiver<Tagged<TranslationSignal>>>,
+    tick: &mut Option<tokio::time::Interval>,
+) -> DataMsg {
+    tokio::select! {
+        Some(ingress) = ingress_rx.recv() => DataMsg::Ingress(ingress),
+        () = exit.notified() => DataMsg::Exit,
+        Some(signal) = recv_opt(audio_rx) => DataMsg::Audio(signal),
+        Some(signal) = recv_opt(intel_rx) => DataMsg::Intel(signal),
+        Some(signal) = recv_opt(speech_rx) => DataMsg::Speech(signal),
+        Some(signal) = recv_opt(semantic_rx) => DataMsg::Semantic(signal),
+        Some(signal) = recv_opt(translation_rx) => DataMsg::Translation(signal),
+        () = tick_opt(tick) => DataMsg::Tick,
+        else => std::future::pending::<DataMsg>().await,
     }
 }
 
@@ -232,6 +273,7 @@ impl Core {
             (None, None)
         };
         Self {
+            pipelines: Pipelines::default(),
             translation,
             translation_rx,
             translation_providers: deps.translation,
@@ -269,6 +311,11 @@ impl Core {
     }
 
     /// The control loop. Returns after shutdown completes.
+    ///
+    /// Scheduling (ADR-0033): runtime cancellation and commands are polled
+    /// first (control must not wait behind data); the data arms are polled
+    /// by an **unbiased** select (random start), so no data channel can
+    /// starve another.
     pub(crate) async fn run(mut self) {
         loop {
             tokio::select! {
@@ -288,26 +335,50 @@ impl Core {
                         break;
                     }
                 },
-                Some(ingress) = self.ingress_rx.recv() => self.handle_ingress(ingress),
-                () = self.exit_notify.notified() => self.reap_actors().await,
-                Some(signal) = recv_opt(&mut self.audio_rx) => {
-                    self.handle_audio_signal(signal);
-                    self.process_deferred_audio().await;
-                }
-                Some(signal) = recv_opt(&mut self.intel_rx) => self.handle_intel_signal(signal),
-                Some(signal) = recv_opt(&mut self.speech_rx) => self.handle_speech_signal(signal),
-                Some(signal) = recv_opt(&mut self.semantic_rx) => self.handle_semantic_signal(signal),
-                Some(signal) = recv_opt(&mut self.translation_rx) => self.handle_translation_signal(signal),
-                () = tick_opt(&mut self.audio_tick) => {
-                    self.speech_housekeeping();
-                    self.semantic_housekeeping();
-                    self.translation_housekeeping();
-                    self.intel_housekeeping();
-                    self.audio_housekeeping().await;
-                }
+                data = next_data(
+                    &mut self.ingress_rx,
+                    &self.exit_notify,
+                    &mut self.audio_rx,
+                    &mut self.intel_rx,
+                    &mut self.speech_rx,
+                    &mut self.semantic_rx,
+                    &mut self.translation_rx,
+                    &mut self.audio_tick,
+                ) => self.handle_data(data).await,
+            }
+            if self.pipelines.has_pending() {
+                self.process_pipeline_actions().await;
             }
         }
         self.log(Observation::log(Level::Debug, "runtime.core_exited"));
+    }
+
+    async fn handle_data(&mut self, data: DataMsg) {
+        match data {
+            DataMsg::Ingress(ingress) => self.handle_ingress(ingress),
+            DataMsg::Exit => {
+                // Events a module emitted before exiting are processed first.
+                while let Ok(ingress) = self.ingress_rx.try_recv() {
+                    self.handle_ingress(ingress);
+                }
+                self.reap_actors().await;
+            }
+            DataMsg::Audio(signal) => {
+                self.handle_audio_signal(signal);
+                self.process_deferred_audio().await;
+            }
+            DataMsg::Intel(signal) => self.handle_intel_signal(signal),
+            DataMsg::Speech(signal) => self.handle_speech_signal(signal),
+            DataMsg::Semantic(signal) => self.handle_semantic_signal(signal),
+            DataMsg::Translation(signal) => self.handle_translation_signal(signal),
+            DataMsg::Tick => {
+                self.speech_housekeeping();
+                self.semantic_housekeeping();
+                self.translation_housekeeping();
+                self.intel_housekeeping();
+                self.audio_housekeeping().await;
+            }
+        }
     }
 
     // ---------------------------------------------------------------- utilities
@@ -880,6 +951,15 @@ impl Core {
                             self.query_translation(stream_id)
                         }
                         Command::ListTranslationAdapters => Ok(self.list_translation_adapters()),
+                        Command::StartPipeline { stream_id, spec } => {
+                            self.start_pipeline(stream_id, spec).await
+                        }
+                        Command::StopPipeline { stream_id } => self.stop_pipeline(stream_id).await,
+                        Command::ResetPipeline { stream_id } => self.reset_pipeline(stream_id),
+                        Command::RestartPipeline { stream_id, spec } => {
+                            self.restart_pipeline(stream_id, spec).await
+                        }
+                        Command::QueryPipeline { stream_id } => self.query_pipeline(stream_id),
                         _ => Err(CeError::invalid_input(
                             "command.unsupported",
                             "command not supported by this runtime",
@@ -1129,6 +1209,7 @@ impl Core {
             recognitions: self.recognition_statuses(),
             semantics: self.semantic_statuses(),
             translations: self.translation_statuses(),
+            pipelines: self.pipeline_statuses(),
         }
     }
 
@@ -1188,6 +1269,7 @@ impl Core {
         // analyses (their final events belong to the session), then release
         // its audio devices.
         let deadline = Instant::now() + self.config.audio.operation_timeout();
+        self.pipelines_teardown_begin(Some(id));
         self.stop_recognitions(
             Some(id),
             ce_core::speech::RecognitionEndReason::StreamClosed,
@@ -1212,6 +1294,7 @@ impl Core {
             deadline,
         )
         .await;
+        self.pipelines_teardown_end(Some(id));
         self.close_session_streams(id).await;
         self.set_session_state(id, SessionState::Closed)?;
         let session = self.sessions.remove(&id).ok_or_else(|| {
@@ -1322,6 +1405,7 @@ impl Core {
 
         // Recognitions end first (final transcripts), then analyses, with an
         // explicit Shutdown reason.
+        self.pipelines_teardown_begin(None);
         self.stop_recognitions(
             None,
             ce_core::speech::RecognitionEndReason::Shutdown,
@@ -1338,6 +1422,7 @@ impl Core {
             .await;
         self.stop_analyses(None, ce_core::intel::AnalysisEndReason::Shutdown, deadline)
             .await;
+        self.pipelines_teardown_end(None);
         let open: Vec<SessionId> = self.sessions.keys().copied().collect();
         let streams_before = self.audio_statuses().len();
         let mut sessions_closed = 0u32;
@@ -1411,5 +1496,74 @@ impl Core {
             None,
         );
         report
+    }
+}
+
+#[cfg(test)]
+mod scheduling_tests {
+    use super::*;
+    use ce_core::ids::AudioStreamId;
+    use ce_core::speech::{ResetReason, SpeechEvent};
+    use ce_core::translation::{TranslationEvent, WithdrawReason};
+
+    /// A data channel that never empties must not starve another ready one
+    /// (ADR-0033): the unbiased select picks the other within a few polls.
+    #[tokio::test]
+    async fn a_busy_channel_does_not_starve_another() {
+        let stream = AudioStreamId::from_uuid(uuid::Uuid::from_u128(1));
+        let (_ingress_tx, mut ingress_rx) = mpsc::channel::<Ingress>(1);
+        let exit = Notify::new();
+        let mut audio_rx: Option<mpsc::Receiver<AudioSignal>> = None;
+        let mut intel_rx: Option<mpsc::Receiver<Tagged<IntelSignal>>> = None;
+        let mut semantic_rx: Option<mpsc::Receiver<Tagged<SemanticSignal>>> = None;
+        let mut tick: Option<tokio::time::Interval> = None;
+        // "Speech" is busy: refilled after every poll so it never empties.
+        let (speech_tx, speech_rx) = mpsc::channel::<Tagged<SpeechSignal>>(8);
+        let mut speech_rx = Some(speech_rx);
+        let (tr_tx, tr_rx) = mpsc::channel::<Tagged<TranslationSignal>>(8);
+        let mut tr_rx = Some(tr_rx);
+        let busy = || Tagged {
+            generation: 1,
+            signal: SpeechSignal::Event(SpeechEvent::Reset {
+                stream,
+                reason: ResetReason::Requested,
+            }),
+        };
+        for _ in 0..4 {
+            speech_tx.send(busy()).await.unwrap();
+        }
+        tr_tx
+            .send(Tagged {
+                generation: 2,
+                signal: TranslationSignal::Event(TranslationEvent::Withdrawn {
+                    stream,
+                    utterance: 0,
+                    through_sequence: None,
+                    reason: WithdrawReason::Reset,
+                }),
+            })
+            .await
+            .unwrap();
+        let mut polls = 0;
+        loop {
+            polls += 1;
+            let msg = next_data(
+                &mut ingress_rx,
+                &exit,
+                &mut audio_rx,
+                &mut intel_rx,
+                &mut speech_rx,
+                &mut semantic_rx,
+                &mut tr_rx,
+                &mut tick,
+            )
+            .await;
+            match msg {
+                DataMsg::Translation(_) => break,
+                DataMsg::Speech(_) => speech_tx.send(busy()).await.unwrap(),
+                _ => panic!("unexpected input"),
+            }
+            assert!(polls < 200, "translation starved behind a busy channel");
+        }
     }
 }

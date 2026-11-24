@@ -22,6 +22,7 @@ ce-audio-intel = { workspace = true }
 ce-speech = { workspace = true }
 ce-semantic = { workspace = true }
 ce-translate = { workspace = true }
+ce-orchestrate = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 tokio-util = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }

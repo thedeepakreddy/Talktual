@@ -457,7 +457,8 @@ impl Core {
                             total: counters.discontinuities,
                         },
                         Some(session),
-                    );
+                    ); // Phase 7: the stream's pipeline records the gap.
+                    self.observe_audio_gap(stream, d.lost_frames);
                 }
             }
             WorkerReport::Panicked { stream } => {

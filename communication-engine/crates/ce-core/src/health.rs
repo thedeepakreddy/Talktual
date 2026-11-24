@@ -134,6 +134,28 @@ pub struct MetricsSnapshot {
     /// worker (queue at its hard bound or worker gone).
     #[serde(default)]
     pub translation_inputs_dropped: u64,
+    /// Pipelines started (Phase 7; restarts included).
+    #[serde(default)]
+    pub pipelines_started: u64,
+    /// Pipelines that failed (a required stage failed).
+    #[serde(default)]
+    pub pipelines_failed: u64,
+    /// Stage outputs of earlier worker generations rejected (Phase 7).
+    #[serde(default)]
+    pub stale_outputs_rejected: u64,
+    /// Causal and revision-contract violations observed (Phase 7).
+    #[serde(default)]
+    pub causal_violations: u64,
+    /// Timeline anomalies observed (Phase 7).
+    #[serde(default)]
+    pub timeline_anomalies: u64,
+    /// Deadline misses (Phase 7).
+    #[serde(default)]
+    pub deadline_misses: u64,
+    /// Live per-worker signal forwarders (Phase 7; one per running or
+    /// abandoned-but-not-exited stage worker).
+    #[serde(default)]
+    pub worker_forwarders: u64,
 }
 
 /// Health and status of the runtime and every module.
@@ -164,6 +186,9 @@ pub struct RuntimeHealth {
     /// Running or recently ended translation workers (Phase 6).
     #[serde(default)]
     pub translations: Vec<crate::translation::TranslationStatus>,
+    /// Running or recently ended pipelines (Phase 7).
+    #[serde(default)]
+    pub pipelines: Vec<crate::orchestration::PipelineStatus>,
 }
 
 /// Aggregate runtime health from the runtime state and module statuses.

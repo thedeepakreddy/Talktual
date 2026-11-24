@@ -182,6 +182,8 @@ pub enum EventPayload {
     Semantic(crate::semantic::SemanticEvent),
     /// A translation event (Phase 6).
     Translation(crate::translation::TranslationEvent),
+    /// An orchestration event (Phase 7).
+    Orchestration(crate::orchestration::OrchestrationEvent),
 }
 
 impl EventPayload {
@@ -208,6 +210,7 @@ impl EventPayload {
             EventPayload::Speech(_) => "speech",
             EventPayload::Semantic(_) => "semantic",
             EventPayload::Translation(_) => "translation",
+            EventPayload::Orchestration(_) => "orchestration",
         }
     }
 
@@ -236,6 +239,7 @@ impl EventPayload {
             EventPayload::Speech(_) => EventTopic::Speech,
             EventPayload::Semantic(_) => EventTopic::Semantic,
             EventPayload::Translation(_) => EventTopic::Translation,
+            EventPayload::Orchestration(_) => EventTopic::Orchestration,
         }
     }
 }
@@ -266,6 +270,8 @@ pub enum EventTopic {
     Semantic,
     /// Translation results and lifecycle (Phase 6).
     Translation,
+    /// Pipeline lifecycle and orchestration findings (Phase 7).
+    Orchestration,
 }
 
 /// The envelope every event travels in.

@@ -62,6 +62,7 @@ use ce_core::ids::{CapabilityId, CommandId, CorrelationId, IdGenerator, SessionI
 use ce_core::intel::{AnalysisConfig, AnalysisStatus};
 use ce_core::module::{ModuleDescriptor, ModuleFactory};
 use ce_core::observability::{NoopSink, ObservabilitySink};
+use ce_core::orchestration::{PipelineSpec, PipelineStatus};
 use ce_core::privacy::{ConsentPurpose, ConsentState};
 use ce_core::resource::{AdmissionPolicy, QueueKind};
 use ce_core::semantic::{ObservationId, SemanticCapabilities, SemanticConfig, SemanticStatus};
@@ -112,6 +113,10 @@ pub mod prelude {
     pub use ce_core::intel::{AnalysisConfig, AnalysisEvent, AnalysisStatus};
     pub use ce_core::lifecycle::{ModuleState, RuntimeState};
     pub use ce_core::module::{Module, ModuleContext, ModuleDescriptor, ModuleFactory};
+    pub use ce_core::orchestration::{
+        OrchestrationEvent, PipelineSpec, PipelineState, PipelineStatus, Requirement, StageConfig,
+        StageKind, StageSpec, StopMode,
+    };
     pub use ce_core::privacy::DataClass;
     pub use ce_core::privacy::{ConsentPurpose, ConsentState};
     pub use ce_core::semantic::{
@@ -839,6 +844,59 @@ impl Engine {
             CommandOutcome::TranslationAdapters { adapters } => Ok(adapters),
             other => Err(unexpected(&other)),
         }
+    }
+
+    async fn pipeline_command(&self, command: Command) -> CeResult<PipelineStatus> {
+        match self.execute(command).await? {
+            CommandOutcome::Pipeline { status } => Ok(*status),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Validate and start a pipeline (Phase 7) on a capture stream: its
+    /// stages start in dependency order; a required stage that cannot start
+    /// rolls the others back and fails the call; an optional one leaves the
+    /// pipeline `degraded` (reported). Orchestration events arrive as
+    /// `EventPayload::Orchestration` (operational; no content).
+    pub async fn start_pipeline(
+        &self,
+        stream_id: AudioStreamId,
+        spec: PipelineSpec,
+    ) -> CeResult<PipelineStatus> {
+        self.pipeline_command(Command::StartPipeline { stream_id, spec })
+            .await
+    }
+
+    /// Stop a pipeline with its stop mode (`drain` or `cancel`); per-stage
+    /// outcomes are reported.
+    pub async fn stop_pipeline(&self, stream_id: AudioStreamId) -> CeResult<PipelineStatus> {
+        self.pipeline_command(Command::StopPipeline { stream_id })
+            .await
+    }
+
+    /// Reset a pipeline's running stages in dependency order (identifiers
+    /// continue).
+    pub async fn reset_pipeline(&self, stream_id: AudioStreamId) -> CeResult<PipelineStatus> {
+        self.pipeline_command(Command::ResetPipeline { stream_id })
+            .await
+    }
+
+    /// Stop (if running) and start again with a new epoch and new worker
+    /// generations; outputs of the previous workers are rejected. `spec`
+    /// replaces the stored specification when given.
+    pub async fn restart_pipeline(
+        &self,
+        stream_id: AudioStreamId,
+        spec: Option<PipelineSpec>,
+    ) -> CeResult<PipelineStatus> {
+        self.pipeline_command(Command::RestartPipeline { stream_id, spec })
+            .await
+    }
+
+    /// Current (or final) pipeline status.
+    pub async fn pipeline_status(&self, stream_id: AudioStreamId) -> CeResult<PipelineStatus> {
+        self.pipeline_command(Command::QueryPipeline { stream_id })
+            .await
     }
 
     /// Current counters (no round trip to the core).
