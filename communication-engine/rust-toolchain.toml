@@ -1,0 +1,6 @@
+# The toolchain the Phase 1 gates were verified with. The declared MSRV
+# (workspace `rust-version`) is 1.85, the first release with edition 2024.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

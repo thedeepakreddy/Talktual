@@ -1,0 +1,21 @@
+[package]
+name = "ce-testkit"
+description = "Deterministic test utilities, fakes and mock modules for the Communication Engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+ce-core = { workspace = true }
+communication-engine = { workspace = true }
+tokio = { workspace = true, features = ["time", "sync"] }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "test-util"] }
+
+[lints]
+workspace = true

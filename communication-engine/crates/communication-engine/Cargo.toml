@@ -1,0 +1,33 @@
+[package]
+name = "communication-engine"
+description = "Communication Engine runtime and public facade (provisional API)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# Forward redacted observations to the `tracing` ecosystem.
+tracing = ["dep:tracing"]
+
+[dependencies]
+ce-core = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
+tokio-util = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+ce-testkit = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
+
+[[example]]
+name = "runtime_smoke"
+
+[lints]
+workspace = true
