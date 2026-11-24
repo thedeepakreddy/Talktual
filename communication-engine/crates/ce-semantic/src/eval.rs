@@ -160,11 +160,23 @@ pub struct Prf {
 
 impl Prf {
     fn finish(mut self) -> Self {
-        let p = if self.tp + self.fp > 0 { f64::from(self.tp) / f64::from(self.tp + self.fp) } else { 0.0 };
-        let r = if self.tp + self.fn_ > 0 { f64::from(self.tp) / f64::from(self.tp + self.fn_) } else { 0.0 };
+        let p = if self.tp + self.fp > 0 {
+            f64::from(self.tp) / f64::from(self.tp + self.fp)
+        } else {
+            0.0
+        };
+        let r = if self.tp + self.fn_ > 0 {
+            f64::from(self.tp) / f64::from(self.tp + self.fn_)
+        } else {
+            0.0
+        };
         self.precision = p;
         self.recall = r;
-        self.f1 = if p + r > 0.0 { 2.0 * p * r / (p + r) } else { 0.0 };
+        self.f1 = if p + r > 0.0 {
+            2.0 * p * r / (p + r)
+        } else {
+            0.0
+        };
         self
     }
 }
@@ -316,7 +328,10 @@ fn nth_span(text: &str, mention: &str, n: usize) -> Option<TextSpan> {
         let boundary_r = i + m.len() == chars.len() || chars[i + m.len()] == ' ';
         if chars[i..i + m.len()] == m[..] && boundary_l && boundary_r {
             if seen == n {
-                return Some(TextSpan { start: i as u32, end: (i + m.len()) as u32 });
+                return Some(TextSpan {
+                    start: i as u32,
+                    end: (i + m.len()) as u32,
+                });
             }
             seen += 1;
         }
@@ -324,7 +339,14 @@ fn nth_span(text: &str, mention: &str, n: usize) -> Option<TextSpan> {
     None
 }
 
-fn input(stream: AudioStreamId, utt: u64, rev: u32, status: RevisionStatus, committed: &str, provisional: &str) -> SemanticInput {
+fn input(
+    stream: AudioStreamId,
+    utt: u64,
+    rev: u32,
+    status: RevisionStatus,
+    committed: &str,
+    provisional: &str,
+) -> SemanticInput {
     let text = match (committed.is_empty(), provisional.is_empty()) {
         (_, true) => committed.to_string(),
         (true, false) => provisional.to_string(),
@@ -336,11 +358,18 @@ fn input(stream: AudioStreamId, utt: u64, rev: u32, status: RevisionStatus, comm
         utterance: utt,
         revision: rev,
         status,
-        committed_chars: if status == RevisionStatus::Partial { committed.chars().count() as u32 } else { text.chars().count() as u32 },
+        committed_chars: if status == RevisionStatus::Partial {
+            committed.chars().count() as u32
+        } else {
+            text.chars().count() as u32
+        },
         text,
         language: None,
         recognition_score: None,
-        time_range: (MonotonicTime::from_nanos(utt * 10_000 * 1_000_000), MonotonicTime::from_nanos(end_ms * 1_000_000)),
+        time_range: (
+            MonotonicTime::from_nanos(utt * 10_000 * 1_000_000),
+            MonotonicTime::from_nanos(end_ms * 1_000_000),
+        ),
         audio_ms: u64::from(rev + 1) * 300,
     }
 }
@@ -394,11 +423,26 @@ pub fn replay(
 ) -> Result<Replay, String> {
     let mut config = base.clone();
     if let Some(p) = &d.profile {
-        config.profile = Some(profiles.get(p).cloned().ok_or_else(|| format!("{}: unknown profile {p}", d.id))?);
+        config.profile = Some(
+            profiles
+                .get(p)
+                .cloned()
+                .ok_or_else(|| format!("{}: unknown profile {p}", d.id))?,
+        );
     }
-    let stream = AudioStreamId::from_uuid(uuid::Uuid::from_u128(u128::from(u64::from_str_radix(&fnv64(d.id.as_bytes()), 16).unwrap_or(1))));
+    let stream = AudioStreamId::from_uuid(uuid::Uuid::from_u128(u128::from(
+        u64::from_str_radix(&fnv64(d.id.as_bytes()), 16).unwrap_or(1),
+    )));
     let adapter = factory.create(&config).map_err(|e| e.to_string())?;
-    let mut p = SemanticProcessor::new(ProcessorSetup { stream, config, capabilities: factory.capabilities() }, adapter).map_err(|e| e.to_string())?;
+    let mut p = SemanticProcessor::new(
+        ProcessorSetup {
+            stream,
+            config,
+            capabilities: factory.capabilities(),
+        },
+        adapter,
+    )
+    .map_err(|e| e.to_string())?;
     let mut events = Vec::new();
     let mut input_ms = Vec::new();
     p.start(&mut events);
@@ -414,12 +458,26 @@ pub fn replay(
                     seq.push(i);
                     if r > 0 {
                         let (c0, p0) = &parts[r - 1];
-                        seq.push(input(stream, utt, r as u32 - 1, RevisionStatus::Partial, c0, p0));
+                        seq.push(input(
+                            stream,
+                            utt,
+                            r as u32 - 1,
+                            RevisionStatus::Partial,
+                            c0,
+                            p0,
+                        ));
                     }
                 }
             }
         }
-        let fin = input(stream, utt, parts.len() as u32, RevisionStatus::Final, &u.text, "");
+        let fin = input(
+            stream,
+            utt,
+            parts.len() as u32,
+            RevisionStatus::Final,
+            &u.text,
+            "",
+        );
         seq.push(fin.clone());
         if delivery == Delivery::Disordered {
             seq.push(fin);
@@ -440,26 +498,79 @@ pub fn replay(
         }
     }
     for f in &mut finals {
-        f.sort_by(|a, b| a.source.span.start.cmp(&b.source.span.start).then(a.id.cmp(&b.id)));
+        f.sort_by(|a, b| {
+            a.source
+                .span
+                .start
+                .cmp(&b.source.span.start)
+                .then(a.id.cmp(&b.id))
+        });
     }
     let counters = p.counters();
-    Ok(Replay { events, finals, counters, input_ms })
+    Ok(Replay {
+        events,
+        finals,
+        counters,
+        input_ms,
+    })
 }
 
 fn fingerprint_finals(f: &[Vec<SemanticObservation>]) -> String {
-    let v: Vec<Vec<(String, TextSpan, String)>> = f
+    // Compare meaning, not internal ids (context item and relation ids
+    // depend on the delivery path).
+    let v: Vec<Vec<String>> = f
         .iter()
         .map(|u| {
             u.iter()
-                .map(|o| (o.payload.kind().to_string(), o.source.span, serde_json::to_string(&o.payload).unwrap_or_default()))
+                .map(|o| {
+                    let what = match &o.payload {
+                        ObservationPayload::Entity(e) => format!(
+                            "{}|{}|{:?}|{:?}",
+                            e.category, e.mention, e.normalized, e.attributes
+                        ),
+                        ObservationPayload::Reference(r) => {
+                            let target = match &r.resolution {
+                                Resolution::Resolved { target } => r
+                                    .candidates
+                                    .iter()
+                                    .find(|c| &c.item == target)
+                                    .map(|c| c.mention.clone())
+                                    .unwrap_or_default(),
+                                other => format!("{other:?}"),
+                            };
+                            format!("{}|{:?}|{}", r.mention, r.kind, target)
+                        }
+                        ObservationPayload::Act(a) => {
+                            format!("{:?}|{:?}", a.decision, a.alternatives)
+                        }
+                        ObservationPayload::Relation(r) => r.kind.clone(),
+                    };
+                    format!(
+                        "{}:{}-{}:{}:{:?}",
+                        o.payload.kind(),
+                        o.source.span.start,
+                        o.source.span.end,
+                        what,
+                        o.uncertainty.level
+                    )
+                })
                 .collect()
         })
         .collect();
     serde_json::to_string(&v).unwrap_or_default()
 }
 
-fn entity_scores(dialogues: &[Dialogue], replays: &[Replay], min: Certainty, errors: &mut Vec<(String, usize, String, String)>, record: bool) -> EntityScores {
-    let mut s = EntityScores { min_certainty: format!("{min:?}").to_lowercase(), ..EntityScores::default() };
+fn entity_scores(
+    dialogues: &[Dialogue],
+    replays: &[Replay],
+    min: Certainty,
+    errors: &mut Vec<(String, usize, String, String)>,
+    record: bool,
+) -> EntityScores {
+    let mut s = EntityScores {
+        min_certainty: format!("{min:?}").to_lowercase(),
+        ..EntityScores::default()
+    };
     let mut exact = Prf::default();
     let mut overlap = Prf::default();
     let mut per: BTreeMap<String, Prf> = BTreeMap::new();
@@ -469,7 +580,12 @@ fn entity_scores(dialogues: &[Dialogue], replays: &[Replay], min: Certainty, err
                 .iter()
                 .filter(|o| o.uncertainty.level >= min)
                 .filter_map(|o| match &o.payload {
-                    ObservationPayload::Entity(e) => Some((e.category.clone(), o.source.span, e.normalized.clone(), e.mention.clone())),
+                    ObservationPayload::Entity(e) => Some((
+                        e.category.clone(),
+                        o.source.span,
+                        e.normalized.clone(),
+                        e.mention.clone(),
+                    )),
                     _ => None,
                 })
                 .collect();
@@ -485,11 +601,19 @@ fn entity_scores(dialogues: &[Dialogue], replays: &[Replay], min: Certainty, err
                 };
                 let Some(span) = nth_span(&u.text, m, g.occurrence) else {
                     if record {
-                        errors.push((d.id.clone(), ui, "gold_error".into(), format!("mention {m:?} not in text")));
+                        errors.push((
+                            d.id.clone(),
+                            ui,
+                            "gold_error".into(),
+                            format!("mention {m:?} not in text"),
+                        ));
                     }
                     continue;
                 };
-                let hit = preds.iter().enumerate().position(|(i, p)| !used[i] && p.0 == g.category && p.1 == span);
+                let hit = preds
+                    .iter()
+                    .enumerate()
+                    .position(|(i, p)| !used[i] && p.0 == g.category && p.1 == span);
                 match hit {
                     Some(i) => {
                         used[i] = true;
@@ -500,7 +624,15 @@ fn entity_scores(dialogues: &[Dialogue], replays: &[Replay], min: Certainty, err
                             if preds[i].2.as_ref() == Some(n) {
                                 s.normalized_correct += 1;
                             } else if record {
-                                errors.push((d.id.clone(), ui, "entity_normalized".into(), format!("{} {m:?}: expected {n:?}, got {:?}", g.category, preds[i].2)));
+                                errors.push((
+                                    d.id.clone(),
+                                    ui,
+                                    "entity_normalized".into(),
+                                    format!(
+                                        "{} {m:?}: expected {n:?}, got {:?}",
+                                        g.category, preds[i].2
+                                    ),
+                                ));
                             }
                         }
                     }
@@ -508,11 +640,21 @@ fn entity_scores(dialogues: &[Dialogue], replays: &[Replay], min: Certainty, err
                         exact.fn_ += 1;
                         per.entry(g.category.clone()).or_default().fn_ += 1;
                         if record {
-                            errors.push((d.id.clone(), ui, "entity_missed".into(), format!("{} {m:?}", g.category)));
+                            errors.push((
+                                d.id.clone(),
+                                ui,
+                                "entity_missed".into(),
+                                format!("{} {m:?}", g.category),
+                            ));
                         }
                     }
                 }
-                let ov = preds.iter().enumerate().position(|(i, p)| !used_overlap[i] && p.0 == g.category && p.1.start < span.end && span.start < p.1.end);
+                let ov = preds.iter().enumerate().position(|(i, p)| {
+                    !used_overlap[i]
+                        && p.0 == g.category
+                        && p.1.start < span.end
+                        && span.start < p.1.end
+                });
                 match ov {
                     Some(i) => {
                         used_overlap[i] = true;
@@ -526,7 +668,12 @@ fn entity_scores(dialogues: &[Dialogue], replays: &[Replay], min: Certainty, err
                     exact.fp += 1;
                     per.entry(p.0.clone()).or_default().fp += 1;
                     if record {
-                        errors.push((d.id.clone(), ui, "entity_spurious".into(), format!("{} {:?}", p.0, p.3)));
+                        errors.push((
+                            d.id.clone(),
+                            ui,
+                            "entity_spurious".into(),
+                            format!("{} {:?}", p.0, p.3),
+                        ));
                     }
                 }
                 if !used_overlap[i] {
@@ -542,10 +689,17 @@ fn entity_scores(dialogues: &[Dialogue], replays: &[Replay], min: Certainty, err
 }
 
 fn bump(m: &mut BTreeMap<String, BTreeMap<String, u32>>, a: &str, b: &str) {
-    *m.entry(a.to_string()).or_default().entry(b.to_string()).or_default() += 1;
+    *m.entry(a.to_string())
+        .or_default()
+        .entry(b.to_string())
+        .or_default() += 1;
 }
 
-fn reference_scores(dialogues: &[Dialogue], replays: &[Replay], errors: &mut Vec<(String, usize, String, String)>) -> ReferenceScores {
+fn reference_scores(
+    dialogues: &[Dialogue],
+    replays: &[Replay],
+    errors: &mut Vec<(String, usize, String, String)>,
+) -> ReferenceScores {
     let mut s = ReferenceScores::default();
     let mut resolved_right = 0u32;
     for (d, r) in dialogues.iter().zip(replays) {
@@ -562,13 +716,23 @@ fn reference_scores(dialogues: &[Dialogue], replays: &[Replay], errors: &mut Vec
                 s.gold += 1;
                 let gname = format!("{:?}", g.outcome).to_lowercase();
                 let Some(span) = nth_span(&u.text, &g.mention, g.occurrence) else {
-                    errors.push((d.id.clone(), ui, "gold_error".into(), format!("reference {:?} not in text", g.mention)));
+                    errors.push((
+                        d.id.clone(),
+                        ui,
+                        "gold_error".into(),
+                        format!("reference {:?} not in text", g.mention),
+                    ));
                     continue;
                 };
                 let hit = preds.iter().position(|(sp, _)| sp.start == span.start);
                 let Some(i) = hit else {
                     bump(&mut s.confusion, &gname, "missed");
-                    errors.push((d.id.clone(), ui, "reference_missed".into(), g.mention.clone()));
+                    errors.push((
+                        d.id.clone(),
+                        ui,
+                        "reference_missed".into(),
+                        g.mention.clone(),
+                    ));
                     continue;
                 };
                 used[i] = true;
@@ -577,14 +741,31 @@ fn reference_scores(dialogues: &[Dialogue], replays: &[Replay], errors: &mut Vec
                 let (pname, ok) = match &pr.resolution {
                     Resolution::Resolved { target } => {
                         s.predicted_resolved += 1;
-                        let tm = pr.candidates.iter().find(|c| &c.item == target).map(|c| c.mention.clone());
-                        let right = g.outcome == GoldOutcome::Resolved && tm.is_some() && tm == g.target;
+                        let tm = pr
+                            .candidates
+                            .iter()
+                            .find(|c| &c.item == target)
+                            .map(|c| c.mention.clone());
+                        let right =
+                            g.outcome == GoldOutcome::Resolved && tm.is_some() && tm == g.target;
                         if right {
                             resolved_right += 1;
                         }
-                        let name = if g.outcome == GoldOutcome::Resolved && !right { "resolved_wrong_target" } else { "resolved" };
+                        let name = if g.outcome == GoldOutcome::Resolved && !right {
+                            "resolved_wrong_target"
+                        } else {
+                            "resolved"
+                        };
                         if !right {
-                            errors.push((d.id.clone(), ui, "reference_wrong".into(), format!("{} → {:?} (gold {:?} {:?})", g.mention, tm, g.outcome, g.target)));
+                            errors.push((
+                                d.id.clone(),
+                                ui,
+                                "reference_wrong".into(),
+                                format!(
+                                    "{} → {:?} (gold {:?} {:?})",
+                                    g.mention, tm, g.outcome, g.target
+                                ),
+                            ));
                         }
                         (name, right)
                     }
@@ -600,27 +781,56 @@ fn reference_scores(dialogues: &[Dialogue], replays: &[Replay], errors: &mut Vec
                 if ok {
                     s.correct += 1;
                 } else if pname != "resolved" && pname != "resolved_wrong_target" {
-                    errors.push((d.id.clone(), ui, "reference_outcome".into(), format!("{}: {pname} (gold {gname} {:?})", g.mention, g.target)));
+                    errors.push((
+                        d.id.clone(),
+                        ui,
+                        "reference_outcome".into(),
+                        format!("{}: {pname} (gold {gname} {:?})", g.mention, g.target),
+                    ));
                 }
                 bump(&mut s.confusion, &gname, pname);
             }
             s.spurious += used.iter().filter(|u| !**u).count() as u32;
             for (i, (_, p)) in preds.iter().enumerate() {
                 if !used[i] {
-                    errors.push((d.id.clone(), ui, "reference_spurious".into(), p.mention.clone()));
+                    errors.push((
+                        d.id.clone(),
+                        ui,
+                        "reference_spurious".into(),
+                        p.mention.clone(),
+                    ));
                 }
             }
         }
     }
-    s.accuracy = if s.gold > 0 { f64::from(s.correct) / f64::from(s.gold) } else { 0.0 };
-    s.resolution_precision = if s.predicted_resolved > 0 { f64::from(resolved_right) / f64::from(s.predicted_resolved) } else { 0.0 };
-    s.abstention_rate = if s.detected > 0 { f64::from(s.predicted_ambiguous + s.predicted_unresolved) / f64::from(s.detected) } else { 0.0 };
+    s.accuracy = if s.gold > 0 {
+        f64::from(s.correct) / f64::from(s.gold)
+    } else {
+        0.0
+    };
+    s.resolution_precision = if s.predicted_resolved > 0 {
+        f64::from(resolved_right) / f64::from(s.predicted_resolved)
+    } else {
+        0.0
+    };
+    s.abstention_rate = if s.detected > 0 {
+        f64::from(s.predicted_ambiguous + s.predicted_unresolved) / f64::from(s.detected)
+    } else {
+        0.0
+    };
     s
 }
 
-fn act_scores(dialogues: &[Dialogue], replays: &[Replay], errors: &mut Vec<(String, usize, String, String)>) -> ActScores {
+fn act_scores(
+    dialogues: &[Dialogue],
+    replays: &[Replay],
+    errors: &mut Vec<(String, usize, String, String)>,
+) -> ActScores {
     let mut s = ActScores::default();
-    let mut per: BTreeMap<String, Prf> = ACT_LABELS.iter().map(|l| ((*l).to_string(), Prf::default())).collect();
+    let mut per: BTreeMap<String, Prf> = ACT_LABELS
+        .iter()
+        .map(|l| ((*l).to_string(), Prf::default()))
+        .collect();
     let (mut labeled, mut correct, mut abst_ok) = (0u32, 0u32, 0u32);
     for (d, r) in dialogues.iter().zip(replays) {
         for (ui, u) in d.utterances.iter().enumerate() {
@@ -634,7 +844,11 @@ fn act_scores(dialogues: &[Dialogue], replays: &[Replay], errors: &mut Vec<(Stri
             });
             let pred = pred.flatten();
             let g = u.act.clone();
-            bump(&mut s.confusion, g.as_deref().unwrap_or("abstain"), pred.as_deref().unwrap_or("abstain"));
+            bump(
+                &mut s.confusion,
+                g.as_deref().unwrap_or("abstain"),
+                pred.as_deref().unwrap_or("abstain"),
+            );
             if g.is_none() {
                 s.gold_abstentions += 1;
                 if pred.is_none() {
@@ -657,7 +871,12 @@ fn act_scores(dialogues: &[Dialogue], replays: &[Replay], errors: &mut Vec<(Stri
                         per.entry(b.clone()).or_default().fp += 1;
                     }
                     if a != b {
-                        errors.push((d.id.clone(), ui, "act".into(), format!("{:?}: gold {a:?}, got {b:?}", u.text)));
+                        errors.push((
+                            d.id.clone(),
+                            ui,
+                            "act".into(),
+                            format!("{:?}: gold {a:?}, got {b:?}", u.text),
+                        ));
                     }
                 }
             }
@@ -665,11 +884,27 @@ fn act_scores(dialogues: &[Dialogue], replays: &[Replay], errors: &mut Vec<(Stri
     }
     let per: BTreeMap<String, Prf> = per.into_iter().map(|(k, v)| (k, v.finish())).collect();
     let supported: Vec<&Prf> = per.values().filter(|p| p.tp + p.fp + p.fn_ > 0).collect();
-    s.macro_f1 = if supported.is_empty() { 0.0 } else { supported.iter().map(|p| p.f1).sum::<f64>() / supported.len() as f64 };
+    s.macro_f1 = if supported.is_empty() {
+        0.0
+    } else {
+        supported.iter().map(|p| p.f1).sum::<f64>() / supported.len() as f64
+    };
     s.per_label = per;
-    s.coverage = if s.utterances > 0 { f64::from(labeled) / f64::from(s.utterances) } else { 0.0 };
-    s.selective_accuracy = if labeled > 0 { f64::from(correct) / f64::from(labeled) } else { 0.0 };
-    s.abstention_recall = if s.gold_abstentions > 0 { f64::from(abst_ok) / f64::from(s.gold_abstentions) } else { 0.0 };
+    s.coverage = if s.utterances > 0 {
+        f64::from(labeled) / f64::from(s.utterances)
+    } else {
+        0.0
+    };
+    s.selective_accuracy = if labeled > 0 {
+        f64::from(correct) / f64::from(labeled)
+    } else {
+        0.0
+    };
+    s.abstention_recall = if s.gold_abstentions > 0 {
+        f64::from(abst_ok) / f64::from(s.gold_abstentions)
+    } else {
+        0.0
+    };
     s
 }
 
@@ -679,30 +914,49 @@ fn streaming_scores(dialogues: &[Dialogue], replays: &[Replay]) -> StreamingScor
     let mut proc = Reservoir::new(100_000);
     for (d, r) in dialogues.iter().zip(replays) {
         s.inputs += r.counters.processed;
-        s.partial_inputs += d.utterances.iter().map(|u| partials(u).len() as u64).sum::<u64>();
+        s.partial_inputs += d
+            .utterances
+            .iter()
+            .map(|u| partials(u).len() as u64)
+            .sum::<u64>();
         let mut first_seen: BTreeMap<String, ObservationStatus> = BTreeMap::new();
         let mut final_ids: Vec<String> = Vec::new();
         for e in &r.events {
-            if let SemanticEvent::Observation { change, observation } = e {
-                *s.changes.entry(format!("{change:?}").to_lowercase()).or_default() += 1;
-                first_seen.entry(observation.id.0.clone()).or_insert(observation.status);
+            if let SemanticEvent::Observation {
+                change,
+                observation,
+            } = e
+            {
+                *s.changes
+                    .entry(format!("{change:?}").to_lowercase())
+                    .or_default() += 1;
+                first_seen
+                    .entry(observation.id.0.clone())
+                    .or_insert(observation.status);
                 match observation.status {
                     ObservationStatus::Final => final_ids.push(observation.id.0.clone()),
-                    ObservationStatus::Retracted if !final_ids.contains(&observation.id.0) => s.retracted_before_final += 1,
+                    ObservationStatus::Retracted if !final_ids.contains(&observation.id.0) => {
+                        s.retracted_before_final += 1
+                    }
                     _ => {}
                 }
             }
         }
         s.finals += r.finals.iter().map(|f| f.len() as u64).sum::<u64>();
         for f in r.finals.iter().flatten() {
-            if first_seen.get(&f.id.0).is_some_and(|st| *st != ObservationStatus::Final) {
+            if first_seen
+                .get(&f.id.0)
+                .is_some_and(|st| *st != ObservationStatus::Final)
+            {
                 s.finals_seen_early += 1;
             }
         }
         let mut seen_utt: Vec<u64> = Vec::new();
         for e in &r.events {
             if let SemanticEvent::Observation { observation: o, .. } = e {
-                if !matches!(o.payload, ObservationPayload::Act(_)) && !seen_utt.contains(&o.source.utterance) {
+                if !matches!(o.payload, ObservationPayload::Act(_))
+                    && !seen_utt.contains(&o.source.utterance)
+                {
                     seen_utt.push(o.source.utterance);
                     first.record(((o.source.revision + 1) * 300) as f32);
                 }
@@ -713,7 +967,11 @@ fn streaming_scores(dialogues: &[Dialogue], replays: &[Replay]) -> StreamingScor
         }
     }
     let total: u64 = s.changes.values().sum();
-    s.revision_rate = if s.inputs > 0 { total as f64 / s.inputs as f64 } else { 0.0 };
+    s.revision_rate = if s.inputs > 0 {
+        total as f64 / s.inputs as f64
+    } else {
+        0.0
+    };
     s.first_observation_ms = first.summary();
     s.processing_ms = proc.summary();
     s
@@ -727,7 +985,11 @@ pub fn evaluate(
     dialogues: &[Dialogue],
     split: &str,
 ) -> Result<SplitReport, String> {
-    let ds: Vec<Dialogue> = dialogues.iter().filter(|d| d.split == split).cloned().collect();
+    let ds: Vec<Dialogue> = dialogues
+        .iter()
+        .filter(|d| d.split == split)
+        .cloned()
+        .collect();
     let mut replays = Vec::new();
     let mut rob = RobustnessScores::default();
     for d in &ds {
@@ -772,22 +1034,50 @@ mod tests {
 
     #[test]
     fn spans_respect_word_boundaries_and_occurrences() {
-        assert_eq!(nth_span("ONE ONE TWO", "ONE", 1), Some(TextSpan { start: 4, end: 7 }));
-        assert_eq!(nth_span("ONEX ONE", "ONE", 0), Some(TextSpan { start: 5, end: 8 }));
+        assert_eq!(
+            nth_span("ONE ONE TWO", "ONE", 1),
+            Some(TextSpan { start: 4, end: 7 })
+        );
+        assert_eq!(
+            nth_span("ONEX ONE", "ONE", 0),
+            Some(TextSpan { start: 5, end: 8 })
+        );
         assert_eq!(nth_span("A", "B", 0), None);
     }
 
     #[test]
     fn prf_handles_empty_support() {
-        let p = Prf { tp: 0, fp: 0, fn_: 0, ..Prf::default() }.finish();
+        let p = Prf {
+            tp: 0,
+            fp: 0,
+            fn_: 0,
+            ..Prf::default()
+        }
+        .finish();
         assert_eq!((p.precision, p.recall, p.f1), (0.0, 0.0, 0.0));
-        let p = Prf { tp: 1, fp: 1, fn_: 0, ..Prf::default() }.finish();
+        let p = Prf {
+            tp: 1,
+            fp: 1,
+            fn_: 0,
+            ..Prf::default()
+        }
+        .finish();
         assert!((p.f1 - 2.0 / 3.0).abs() < 1e-9);
     }
 
     #[test]
     fn synthesized_partials_lag_one_word() {
-        let u = GoldUtterance { text: "A B C".into(), revisions: None, entities: vec![], references: vec![], act: None, note: None };
-        assert_eq!(partials(&u), vec![(String::new(), "A".to_string()), ("A".into(), "B".into())]);
+        let u = GoldUtterance {
+            text: "A B C".into(),
+            revisions: None,
+            entities: vec![],
+            references: vec![],
+            act: None,
+            note: None,
+        };
+        assert_eq!(
+            partials(&u),
+            vec![(String::new(), "A".to_string()), ("A".into(), "B".into())]
+        );
     }
 }

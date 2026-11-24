@@ -547,7 +547,16 @@ impl RulesAdapter {
             strong = true;
         }
         let cue = i > 0 && TIME_CUES.contains(&t[i - 1].w.as_str());
-        if !(strong || cue) {
+        // "EIGHT THIRTY", "FIVE OH FIVE": an hour word 1–12 followed by a
+        // spoken minute (tens word or "oh" + digit) reads as a clock time
+        // even without a cue word (Medium).
+        let clock_pair = !strong
+            && !h.digits
+            && (1..=12).contains(&hour)
+            && end > h.end
+            && t.get(h.end)
+                .is_some_and(|x| crate::text::tens(&x.w).is_some() || x.w == "oh" || x.w == "o");
+        if !(strong || cue || clock_pair) {
             return None;
         }
         if pm.is_some() && !(1..=12).contains(&hour) {
@@ -1114,7 +1123,15 @@ enum RefClass {
     Temporal,
     Locative,
     Personal,
+    /// "that is right", "is that correct": refers to a proposition, never
+    /// to an entity (always unresolved, reason `propositional`).
+    Propositional,
 }
+
+const EVALUATIVE: [&str; 14] = [
+    "right", "correct", "true", "fine", "good", "great", "wrong", "ok", "okay", "perfect", "false",
+    "bad", "possible", "enough",
+];
 
 const DEMONSTRATIVE_FOLLOW: [&str; 30] = [
     "is", "was", "are", "were", "will", "would", "should", "can", "could", "please", "again",
@@ -1133,7 +1150,18 @@ fn reference_at(t: &[Tok], i: usize) -> Option<(ReferenceKind, RefClass, usize)>
     match w {
         "it" | "it's" => Some((ReferenceKind::Pronoun, RefClass::Singular, i + 1)),
         "they" | "them" | "they're" => Some((ReferenceKind::Pronoun, RefClass::Plural, i + 1)),
+        "that's" if next.is_some_and(|n| EVALUATIVE.contains(&n)) => {
+            Some((ReferenceKind::Demonstrative, RefClass::Propositional, i + 1))
+        }
         "that's" => Some((ReferenceKind::Demonstrative, RefClass::Singular, i + 1)),
+        "this" | "that"
+            if next.is_some_and(|n| EVALUATIVE.contains(&n))
+                || (matches!(next, Some("is" | "was"))
+                    && t.get(i + 2)
+                        .is_some_and(|x| EVALUATIVE.contains(&x.w.as_str()))) =>
+        {
+            Some((ReferenceKind::Demonstrative, RefClass::Propositional, i + 1))
+        }
         "this" | "that" | "these" | "those" => {
             if w == "that" && prev.is_some_and(|p| COMPLEMENTIZER_PREV.contains(&p)) {
                 return None;
@@ -1190,7 +1218,7 @@ fn compatible(class: RefClass, category: &str, hinted: &[String]) -> bool {
             category,
             "time_of_day" | "relative_day" | "weekday" | "date"
         ),
-        RefClass::Locative | RefClass::Personal => false,
+        RefClass::Locative | RefClass::Personal | RefClass::Propositional => false,
     }
 }
 
@@ -1198,7 +1226,12 @@ fn act(t: &[Tok]) -> Option<(ActDecision, Vec<String>, &'static str)> {
     if t.is_empty() {
         return None;
     }
-    let ws: Vec<&str> = t.iter().map(|x| x.w.as_str()).collect();
+    let mut ws: Vec<&str> = t.iter().map(|x| x.w.as_str()).collect();
+    // A leading discourse marker does not decide the act: "AND SET …",
+    // "SO THE TOTAL IS …" are classified on the rest.
+    while ws.len() > 1 && matches!(ws[0], "and" | "so" | "also" | "but" | "well" | "now") {
+        ws.remove(0);
+    }
     let first = ws[0];
     let has = |p: &[&str]| ws.windows(p.len()).any(|w| w == p);
     let starts = |p: &[&str]| ws.starts_with(p);
@@ -1260,8 +1293,14 @@ fn act(t: &[Tok]) -> Option<(ActDecision, Vec<String>, &'static str)> {
     {
         cues.insert("request");
     }
-    if polite {
+    // "would you like …" is an offer phrased as a question.
+    let offer = ws.starts_with(&["would", "you", "like"]) || ws.starts_with(&["do", "you", "want"]);
+    if polite && !offer {
         cues.remove("question");
+    }
+    if offer {
+        cues.remove("request");
+        cues.insert("question");
     }
     const YES: [&str; 10] = [
         "yes",
@@ -1553,7 +1592,11 @@ impl SemanticAdapter for RulesAdapter {
                         c.source.utterance != input.utterance || c.source.span.end <= s.start
                     })
                     .collect();
-                let resolution = if context.disabled {
+                let resolution = if class == RefClass::Propositional {
+                    Resolution::Unresolved {
+                        reason: "propositional".into(),
+                    }
+                } else if context.disabled {
                     Resolution::Unresolved {
                         reason: "context_disabled".into(),
                     }
