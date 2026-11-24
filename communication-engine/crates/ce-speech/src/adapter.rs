@@ -69,6 +69,11 @@ pub trait AsrAdapter: Send {
     fn finalize(&mut self) -> Result<AdapterHypothesis, CeError>;
     /// Abandon the utterance (no final) and clear state.
     fn reset(&mut self);
+    /// Where the next utterance starts, in adapter-rate samples since the
+    /// recognizer's current timeline anchor (called just before `begin`).
+    /// Real adapters ignore it; the reference (oracle) adapter uses it to
+    /// align with reference labels. Default: ignored.
+    fn position_hint(&mut self, _absolute_start_sample: u64) {}
 }
 
 /// Creates adapters of one kind. Registered with the engine.

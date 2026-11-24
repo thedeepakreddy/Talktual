@@ -111,6 +111,11 @@ pub struct LanguageIdConfig {
     pub session_min_utterances: u32,
     /// Share of decided utterances the session language must hold. Default 0.6.
     pub session_min_share: f32,
+    /// Abstain as `Ambiguous` when the two halves of the text (each with at
+    /// least max(min_letters, 10) letters) are identified as different
+    /// languages: mixed-language evidence. Default true (dev split: costs
+    /// 1 of 42 single-language items in coverage, no accuracy change).
+    pub split_check: bool,
 }
 
 impl Default for LanguageIdConfig {
@@ -121,6 +126,7 @@ impl Default for LanguageIdConfig {
             min_score: 0.15,
             session_min_utterances: 2,
             session_min_share: 0.6,
+            split_check: true,
         }
     }
 }
