@@ -138,6 +138,37 @@ try {
     console.log(`      log: ${lines.map((l) => `${JSON.stringify(l.text)} firstPartial=${l.firstPartialAfterUtteranceStartMs}ms afterRelease=${l.finalAfterReleaseMs ?? '–'}ms`).join('; ')}`);
   });
 
+  await step('Engine Lab: all four phases live from the real engine (hold to talk)', async () => {
+    const lab = await host.context.newPage();
+    const labErrors = [];
+    lab.on('pageerror', (e) => labErrors.push(e.message));
+    await lab.setViewportSize({ width: 1100, height: 900 });
+    await lab.goto(`${stack.web}/#/engine`);
+    await lab.getByRole('heading', { name: 'Engine Lab' }).waitFor();
+    await lab.getByLabel('Bridge address').fill(`ws://127.0.0.1:${BRIDGE_PORT}`);
+    await lab.getByRole('button', { name: 'Connect' }).click();
+    await lab.getByText(/Connected · 1 recognizer/).waitFor({ timeout: 10000 });
+    const hold = lab.getByRole('button', { name: 'Hold to talk' });
+    await hold.hover();
+    await lab.mouse.down();
+    await lab.waitForTimeout(7000);
+    await lab.mouse.up();
+    const finals = lab.getByRole('list', { name: 'Final utterances' });
+    await finals.waitFor({ timeout: 20000 });
+    await lab.waitForFunction(() => /station/i.test(document.querySelector('[aria-label="Final utterances"]')?.textContent ?? ''), null, { timeout: 20000 });
+    const text = await lab.locator('main').innerText();
+    assert.match(text, /ce\.asr\.sherpa-zipformer/, 'Phase 4 recognizer shown');
+    assert.match(text, /ce\.vad\.spectral/, 'Phase 3 detector shown');
+    assert.match(text, /16000 Hz · 1 ch · i16|48000 Hz · 1 ch · i16|44100 Hz · 1 ch · i16/, 'Phase 2 negotiated format shown');
+    assert.match(text, /healthy|running/, 'Phase 1 health shown');
+    const events = await lab.getByRole('list', { name: 'Events' }).locator('li').count();
+    assert.ok(events > 10, `event log has ${events} entries`);
+    console.log(`      lab finals: ${JSON.stringify(await finals.innerText())}`);
+    await lab.screenshot({ path: path.join(root, 'e2e/.ce-lab.png'), fullPage: true });
+    assert.deepEqual(labErrors, []);
+    await lab.close();
+  });
+
   await step('no page errors', async () => {
     assert.deepEqual(host.errors, []);
     assert.deepEqual(guest.errors, []);

@@ -86,7 +86,10 @@ export CE_SHERPA_MODEL_DIR=~/ce-models/sherpa-onnx-streaming-zipformer-en-2023-0
 communication-engine/adapters/talktual-bridge/scripts/run-talktual-ce.sh          # bridge + server + app
 ```
 
-Then open http://localhost:5173 in two windows and talk in English. Details,
+Then open http://localhost:5173 in two windows and talk in English, or open
+**http://localhost:5173/#/engine** (Settings › Engine Lab) to test every engine
+phase live: transcript and language (Phase 4), voice activity and quality
+(Phase 3), audio capture (Phase 2), and runtime health and events (Phase 1). Details,
 a step-by-step human test and scoring are in
 [`communication-engine/adapters/talktual-bridge/README.md`](communication-engine/adapters/talktual-bridge/README.md).
 Without `VITE_ASR_ENGINE=ce`, Talktual behaves exactly as before.

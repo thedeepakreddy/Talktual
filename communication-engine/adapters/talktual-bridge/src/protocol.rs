@@ -212,7 +212,9 @@ mod tests {
             ClientMsg::Start {
                 lang: "en-US".into(),
                 sample_rate: 48_000,
-                segmentation: Segmentation::Activity
+                segmentation: Segmentation::Activity,
+                diagnostics: false,
+                analysis: false,
             }
         );
         let m: ClientMsg =

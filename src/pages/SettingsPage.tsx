@@ -9,6 +9,7 @@ import { getModePref, setModePref, type ModePref } from '../app/prefs';
 import { ambientConsentKey, ambientDisclosure } from '../ambient/disclosure';
 import { clearTranslationCache, getCapabilities } from '../lib/translate';
 import { micPermission } from '../lib/audio';
+import { ASR_ENGINE } from '../lib/config';
 import type { Disclosure } from '../engine/privacy';
 
 const MODE_HINT: Record<ModePref, string> = {
@@ -165,6 +166,17 @@ export function SettingsPage({ language, onLanguageChange }: { language: Languag
             {cleared ? 'Cleared from this device' : 'Clear cached translations'}
           </Button>
         </div>
+      </Section>
+
+      <Section title="Communication Engine">
+        <Row
+          label="Engine Lab"
+          value={ASR_ENGINE === 'ce' ? 'Speech by the engine on this computer' : 'Test the engine (needs the local bridge)'}
+          onClick={() => {
+            window.location.hash = '#/engine';
+          }}
+          ariaLabel="Open the Communication Engine lab"
+        />
       </Section>
 
       <Section title="About">

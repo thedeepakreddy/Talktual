@@ -171,6 +171,35 @@ At the user's request, Talktual can run its calls on CE recognition.
     now waits until the frames are consumed);
   * a 2 s recognition queue dropped bursts (the bridge now uses 10 s).
 
+### Engine Lab: every phase in the Talktual front end
+
+At the user's request, a Talktual page `#/engine` ("Engine Lab", linked
+from Settings) tests every CE phase live against the bridge:
+* Phase 4: transcript (committed/provisional), finals, language, latencies,
+  capabilities, Reset/Abort;
+* Phase 3: activity, quality, conditions, segments;
+* Phase 2: stream state, negotiated format, counters;
+* Phase 1: runtime state, health, metrics;
+* an event log with privacy classes.
+
+The bridge gained optional diagnostics:
+* `info`, `health` and `reset` requests;
+* per-session CE events and 1 s status snapshots.
+
+Protocol v1 is unchanged for Talktual calls.
+
+The code is `src/engineLab/{labState.ts,useEngineLab.ts}` (a pure reducer
+plus a controller) and `src/pages/EnginePage.tsx`. Tests:
+* reducer and page tests driven by a recorded bridge session
+  (`src/engineLab/__fixtures__/bridge-session.jsonl`);
+* a bridge diagnostics test;
+* an e2e step: the page in Chromium with the real model and a synthetic
+  mic, all four panels populated, more than 10 events, no page errors.
+
+The bridge diagnostics test also exposed a CE worker defect, now fixed: a
+reset requested just before the capture stream ended was skipped (the
+worker now honours it at stream end).
+
 ## 5. Streaming transcript and revision semantics
 
 (ADR-0021.) Per utterance: revisions 0…n without gaps; each carries the
@@ -368,6 +397,7 @@ outside `communication-engine/` changed.
 | **Optional adapter** `adapters/ce-asr-sherpa/scripts/verify.sh` (fmt, clippy `-D warnings`, tests, real-model tests, `cargo deny`, resources) | **exit 0**: 1 unit test, **2 real-model tests passed** (fixture recognition, model sharing, determinism, language refusal; real model inside the `Engine` at 48 kHz stereo); advisories, bans, licenses and sources ok |
 | **Talktual bridge** `adapters/talktual-bridge/scripts/verify.sh` (fmt, clippy `-D warnings`, protocol tests with the scripted adapter, real model over the WebSocket, `cargo deny`) | **exit 0**: 1 unit + 3 protocol tests (partials → final → end, origin/language/rate/abort enforcement, 3 concurrent sessions), **1 real-model test** (fixture streamed in real time: push-to-talk @ 16 kHz and hands-free @ 48 kHz with Phase 3 activity) |
 | **Talktual e2e with CE** `node e2e/ce-bridge.mjs` (2 Chromium pages, production build with `VITE_ASR_ENGINE=ce`, signaling server, bridge, **real model**, Chromium fake mic playing a **synthetic** TTS fixture) | **4/4 passed, on 2 consecutive runs**: consent discloses the CE route; push-to-talk → AudioWorklet → CE → transcript → translator → other peer; opt-in transcript log; no page errors; Web Speech never started. Transcripts: "…where the train station is"; in some loops "…drain station…" (a model error) |
+| Talktual after the Engine Lab | tsc pass; `npm test` **547 passed** (537 + 10 new); `npm run test:server` 60 passed; `npm run build` pass; `e2e/smoke.mjs` 17/17; `e2e/ce-bridge.mjs` **5/5** (including the Engine Lab with the real model) |
 | Talktual after the integration | tsc pass; `npm test` **543 passed** (537 + 6 new); `npm run test:server` 60 passed; `npm run build` pass; a `VITE_ASR_ENGINE=ce` build passes; existing `e2e/smoke.mjs` 17/17 (default path unchanged) |
 | Adapter with Rust 1.85 | refused by design (`aes 0.9.4`, a build dependency of `sherpa-onnx-sys`, requires 1.89); the adapter declares `rust-version = "1.89"` and lives outside the workspace |
 

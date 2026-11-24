@@ -11,6 +11,7 @@ import { LensPage } from './pages/LensPage';
 import { RewindPage } from './pages/RewindPage';
 import { VoicePage } from './pages/VoicePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { EnginePage } from './pages/EnginePage';
 import { Language, detectLanguage, findLanguage } from './types';
 import { unlockAudio } from './lib/audio';
 import { prewarm } from './lib/translate';
@@ -151,6 +152,7 @@ export default function App() {
         {route === 'rewind' && <RewindPage go={go} />}
         {route === 'voice' && <VoicePage language={language} />}
         {route === 'settings' && <SettingsPage language={language} onLanguageChange={changeLanguage} />}
+        {route === 'engine' && <EnginePage language={language} />}
       </AppShell>
     </MotionConfig>
   );

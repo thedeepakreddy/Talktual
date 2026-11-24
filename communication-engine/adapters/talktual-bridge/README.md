@@ -60,6 +60,26 @@ Communication Engine bridge running on this computer". Hold **Push to
 talk**, speak, release. Your words appear as you speak and are translated
 for the other window. Hands-free mode works too.
 
+**4b. Engine Lab: test every phase.** Open
+<http://localhost:5173/#/engine> (also reachable from Settings ›
+Communication Engine › Engine Lab). Press **Connect**, then hold **Hold to
+talk**, or switch to **Hands-free** and press Start. The page shows, live from
+the engine:
+
+| Panel | What you can check |
+|---|---|
+| Phase 4 · Speech recognition & language | the live transcript (committed text in bold, provisional tail muted); finals with reason, revision count, audio length and utterance language; latency percentiles, mode, drops; stream language; recognizer capabilities. **Reset recognizer** and **Abort** exercise cancellation |
+| Phase 3 · Audio intelligence | voice activity, level, SNR, noise floor, usability and reasons, active conditions, closed segments (toggle with "Run audio intelligence") |
+| Phase 2 · Audio capture | stream state, negotiated device/delivered format, frames, blocks, overflow, discontinuities, ring fill |
+| Phase 1 · Runtime, sessions, health | runtime state, health, sessions, engine metrics (**Refresh health**) |
+| CE event log | every engine event of your session, newest first, by topic, with its privacy class (transcript text is never shown in the log) |
+
+Things worth trying:
+* talking in a noisy room (quality, conditions);
+* pausing mid-sentence (segments, endpoints, revisions);
+* very short words like "yes" or "no" (language abstention);
+* Reset while talking.
+
 **5. Measure (optional).** To score the test, run the bridge yourself with
 the transcript log, read the sentences in
 [`human-test/sentences-en.txt`](human-test/sentences-en.txt) in order (one
@@ -102,7 +122,13 @@ See [`src/protocol.rs`](src/protocol.rs):
   mono frames, then `stop` or `abort`;
 * bridge: `ready`, `utterance`, `partial` (committed + provisional),
   `final` (text, reason, language, durationMs), `cancelled`, `activity`,
-  `warning`, `error`, `end`.
+  `warning`, `error`, `end`;
+* optional diagnostics (Engine Lab): `info`, `health` and `reset`
+  requests; `"diagnostics": true` adds `ce-event` (every CE event of the
+  session, flattened as topic, kind, privacy and data) and a 1 s `status`
+  (audio stream, analysis, recognition, metrics); `"analysis": true` runs
+  Phase 3 in push-to-talk too. Clients that don't ask get exactly the
+  v1 messages.
 
 ## Verify
 

@@ -1,8 +1,9 @@
 // Destinations (hash routes, so links and the back button work without a server router).
 import { useCallback, useEffect, useState } from 'react';
 
-export type Route = 'home' | 'connect' | 'air' | 'lens' | 'rewind' | 'voice' | 'settings';
-export const ROUTES: Route[] = ['home', 'connect', 'air', 'lens', 'rewind', 'voice', 'settings'];
+export type Route = 'home' | 'connect' | 'air' | 'lens' | 'rewind' | 'voice' | 'settings' | 'engine';
+/** `engine` is the Communication Engine lab: reachable from Settings and #/engine, not in the main navigation. */
+export const ROUTES: Route[] = ['home', 'connect', 'air', 'lens', 'rewind', 'voice', 'settings', 'engine'];
 
 export function parseRoute(hash: string): Route {
   const r = hash.replace(/^#\/?/, '').split(/[/?]/)[0];

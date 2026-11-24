@@ -71,7 +71,7 @@ export function presentCeText(text: string): string {
   return fixed.charAt(0).toUpperCase() + fixed.slice(1);
 }
 
-function toPcm16(chunk: Float32Array): ArrayBuffer {
+export function toPcm16(chunk: Float32Array): ArrayBuffer {
   const out = new Int16Array(chunk.length);
   for (let i = 0; i < chunk.length; i++) {
     const v = Math.max(-1, Math.min(1, chunk[i] || 0));
