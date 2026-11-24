@@ -199,6 +199,9 @@ pub struct Scenario {
     pub reference: Vec<Region>,
     /// Utterance ends on the grid (each followed by ≥ 1 s of non-speech).
     pub utterance_ends: Vec<u32>,
+    /// Per input utterance: [first labelled start, last labelled end) on
+    /// the grid (`None` if nothing was labelled), in input order.
+    pub utterance_spans: Vec<Option<Region>>,
     /// Condition.
     pub condition: Condition,
 }
@@ -270,6 +273,7 @@ pub fn build(
     let mut speech = lead;
     let mut reference = Vec::new();
     let mut ends = Vec::new();
+    let mut spans = Vec::new();
     for (k, (_, u)) in utterances.iter().enumerate() {
         if k > 0 {
             speech.extend_from_slice(&gap);
@@ -282,6 +286,11 @@ pub fn build(
         if let Some(last) = regs.last() {
             ends.push(off + last.1);
         }
+        spans.push(
+            regs.first()
+                .zip(regs.last())
+                .map(|(a, b)| (a.0 + off, b.1 + off)),
+        );
         reference.extend(regs.iter().map(|r| (r.0 + off, r.1 + off)));
         speech.extend_from_slice(&u);
     }
@@ -333,6 +342,7 @@ pub fn build(
         samples,
         reference,
         utterance_ends: ends,
+        utterance_spans: spans,
         condition,
     }
 }

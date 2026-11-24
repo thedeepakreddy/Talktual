@@ -718,7 +718,17 @@ impl StreamRecognizer {
         let id = self.next_utterance;
         self.next_utterance += 1;
         self.counters.utterances += 1;
-        self.adapter.position_hint(start);
+        // Stream-absolute position at the adapter rate (the oracle aligns
+        // with references by it; real adapters ignore it).
+        let abs = match self.anchor {
+            Some(a) => u64::try_from(
+                u128::from(self.to_frame(start)) * u128::from(self.rate)
+                    / u128::from(a.in_rate.max(1)),
+            )
+            .unwrap_or(u64::MAX),
+            None => start,
+        };
+        self.adapter.position_hint(abs);
         let u = Open {
             id,
             start,
@@ -745,6 +755,9 @@ impl StreamRecognizer {
     }
 
     /// The end boundary that applies to the open utterance, if any.
+    /// Activity onsets inside audio already received belong to the open
+    /// utterance (a pause shorter than the segment-close silence) and are
+    /// dropped; ends of earlier stretches of audio are stale.
     fn end_boundary(&mut self) -> Option<(u64, FinalReason, u64)> {
         let start = self.utt.as_ref()?.start;
         while let Some(b) = self.boundaries.front().copied() {
@@ -755,11 +768,13 @@ impl StreamRecognizer {
                     speech_end,
                 } => {
                     if speech_end <= start {
-                        // Stale: it ended an earlier stretch of audio.
                         self.boundaries.pop_front();
                         continue;
                     }
                     return Some((target, reason, speech_end));
+                }
+                Boundary::Start(s) if s < self.pos => {
+                    self.boundaries.pop_front();
                 }
                 Boundary::Start(_) => return None,
             }
@@ -1146,7 +1161,13 @@ impl StreamRecognizer {
         self.block_starts.clear();
         self.boundaries.clear();
         self.last_end = 0;
-        self.activity_active = false;
+        // Activity that was in progress continues after the gap (the gap
+        // may be the recognizer's own drops while Phase 3 saw everything):
+        // resume at the first audio after it. A Phase 3 onset that follows
+        // falls inside the resumed utterance and is absorbed.
+        if self.hints == HintSource::Activity && self.activity_active {
+            self.boundaries.push_back(Boundary::Start(0));
+        }
         self.pending_discontinuity = Some(context);
         res
     }
