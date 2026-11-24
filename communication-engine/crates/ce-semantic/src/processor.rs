@@ -150,7 +150,9 @@ fn same_class(d: &Draft, o: &SemanticObservation) -> bool {
         (DraftPayload::Entity(a), ObservationPayload::Entity(b)) => a.category == b.category,
         (DraftPayload::Reference(_), ObservationPayload::Reference(_)) => true,
         (DraftPayload::Act(_), ObservationPayload::Act(_)) => true,
-        (DraftPayload::Relation { kind, .. }, ObservationPayload::Relation(r)) => *kind == r.relation,
+        (DraftPayload::Relation { kind, .. }, ObservationPayload::Relation(r)) => {
+            *kind == r.relation
+        }
         _ => false,
     }
 }

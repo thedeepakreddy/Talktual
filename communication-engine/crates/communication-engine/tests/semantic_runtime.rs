@@ -400,3 +400,45 @@ async fn streams_are_isolated_and_session_close_drains() {
     assert_eq!(stops, 2);
     h.engine.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn logs_and_metrics_carry_no_semantic_content() {
+    let sink = std::sync::Arc::new(ce_testkit::RecordingSink::default());
+    let s2 = sink.clone();
+    let mut h = audio_harness_custom(audio_config(), FakeDriver::Manual, move |b| {
+        b.asr_adapter(two_utterances()).observability(s2)
+    })
+    .await;
+    h.grant_capture().await;
+    let (mut reader, id) = open(&h).await;
+    h.engine.start_semantics(id, None).await.unwrap();
+    h.engine
+        .start_recognition(id, Some(continuous()))
+        .await
+        .unwrap();
+    feed(&h, &mut [&mut reader], 120).await;
+    wait_semantic(&mut h, |e| {
+        matches!(e, SemanticEvent::UtteranceFinalized { utterance: 1, .. })
+    })
+    .await;
+    h.engine.stop_recognition(id).await.unwrap();
+    wait_semantic(&mut h, |e| matches!(e, SemanticEvent::Stopped { .. })).await;
+    let logs = sink.rendered();
+    assert!(
+        logs.contains("semantic.started") && logs.contains("semantic.ended"),
+        "{logs}"
+    );
+    for word in ["forty", "dollars", "split", "total"] {
+        assert!(
+            !logs.to_lowercase().contains(word),
+            "{word} leaked into logs"
+        );
+    }
+    let health = serde_json::to_string(&h.engine.health().await.unwrap()).unwrap();
+    for word in ["forty", "split"] {
+        assert!(!health.contains(word), "{word} leaked into health");
+    }
+    let metrics = serde_json::to_string(&h.engine.metrics()).unwrap();
+    assert!(!metrics.contains("forty"));
+    h.engine.shutdown().await.unwrap();
+}

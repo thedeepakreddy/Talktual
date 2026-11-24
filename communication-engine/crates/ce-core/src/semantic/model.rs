@@ -976,7 +976,10 @@ mod tests {
         let v = serde_json::to_value(&rel).unwrap();
         assert_eq!(v["type"], "relation");
         assert_eq!(v["relation"], "on_day");
-        assert_eq!(serde_json::from_value::<ObservationPayload>(v).unwrap(), rel);
+        assert_eq!(
+            serde_json::from_value::<ObservationPayload>(v).unwrap(),
+            rel
+        );
         let refr = ObservationPayload::Reference(ReferenceResolution {
             mention: "IT".into(),
             kind: ReferenceKind::Pronoun,
@@ -989,11 +992,16 @@ mod tests {
         let act = ObservationPayload::Act(CommunicativeAct {
             taxonomy: "ce.acts".into(),
             taxonomy_version: "1.0.0".into(),
-            decision: ActDecision::Labeled { label: "request".into() },
+            decision: ActDecision::Labeled {
+                label: "request".into(),
+            },
             alternatives: vec![],
         });
         let text = serde_json::to_string(&act).unwrap();
-        assert_eq!(serde_json::from_str::<ObservationPayload>(&text).unwrap(), act);
+        assert_eq!(
+            serde_json::from_str::<ObservationPayload>(&text).unwrap(),
+            act
+        );
     }
 
     #[test]
