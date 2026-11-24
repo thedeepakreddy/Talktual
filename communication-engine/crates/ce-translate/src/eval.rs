@@ -120,28 +120,37 @@ pub fn load_terminology() -> Result<TerminologyProfile, CeError> {
 
 // ------------------------------------------------------------------ metrics
 
-/// 13a-style tokenization: punctuation and symbols become separate tokens.
+/// sacreBLEU's `13a` tokenizer (the mteval-v13a rules): ASCII
+/// punctuation in ``{|}~ [\]^_` !"#$%& ()*+ :;<=>?@ /`` is split off;
+/// `.` and `,` are split unless both neighbours are digits; `-` is split after a
+/// digit. Non-ASCII punctuation (e.g. `¿`) is **not** split, exactly as in
+/// sacreBLEU.
 pub fn tokenize(s: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for c in s.chars() {
-        if c.is_whitespace() {
-            if !cur.is_empty() {
-                out.push(std::mem::take(&mut cur));
-            }
-        } else if c.is_alphanumeric() || c == '\'' {
-            cur.push(c);
+    let is_punct =
+        |c: char| matches!(c, '{'..='~' | '['..='`' | ' '..='&' | '('..='+' | ':'..='@' | '/');
+    let chars: Vec<char> = s.replace('\n', " ").chars().collect();
+    let mut out = String::with_capacity(s.len() * 2);
+    for (i, &c) in chars.iter().enumerate() {
+        let prev = if i > 0 { chars[i - 1] } else { ' ' };
+        let next = chars.get(i + 1).copied().unwrap_or(' ');
+        if c != ' ' && is_punct(c) {
+            out.push(' ');
+            out.push(c);
+            out.push(' ');
+        } else if (c == '.' || c == ',') && !(prev.is_ascii_digit() && next.is_ascii_digit()) {
+            // 13a: split unless both neighbours are digits ("1,000", "3.50").
+            out.push(' ');
+            out.push(c);
+            out.push(' ');
+        } else if c == '-' && prev.is_ascii_digit() {
+            out.push(' ');
+            out.push(c);
+            out.push(' ');
         } else {
-            if !cur.is_empty() {
-                out.push(std::mem::take(&mut cur));
-            }
-            out.push(c.to_string());
+            out.push(c);
         }
     }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
-    out
+    out.split_whitespace().map(str::to_owned).collect()
 }
 
 fn ngrams<T: Ord + Clone>(v: &[T], n: usize) -> BTreeMap<Vec<T>, usize> {
@@ -154,7 +163,10 @@ fn ngrams<T: Ord + Clone>(v: &[T], n: usize) -> BTreeMap<Vec<T>, usize> {
     m
 }
 
-/// Corpus BLEU (0–100).
+/// Corpus BLEU (0–100), as sacreBLEU's `corpus_bleu` defaults: `13a`
+/// tokenization, case-sensitive, 4-grams, brevity penalty, `exp`
+/// smoothing (an order with no match gets precision 1/(2^k·total), k
+/// counting such orders).
 pub fn bleu(hyps: &[String], refs: &[String]) -> f64 {
     let (mut matches, mut totals) = ([0usize; 4], [0usize; 4]);
     let (mut hl, mut rl) = (0usize, 0usize);
@@ -171,13 +183,24 @@ pub fn bleu(hyps: &[String], refs: &[String]) -> f64 {
                 .sum::<usize>();
         }
     }
-    if hl == 0 || matches.contains(&0) {
+    // As sacreBLEU: no match of any order (#141) or no hypothesis → 0.
+    if hl == 0 || matches.iter().all(|m| *m == 0) {
         return 0.0;
     }
-    let logp: f64 = (0..4)
-        .map(|i| (matches[i] as f64 / totals[i] as f64).ln())
-        .sum::<f64>()
-        / 4.0;
+    let mut smooth = 1.0f64;
+    let mut logp = 0.0f64;
+    for i in 0..4 {
+        if totals[i] == 0 {
+            return 0.0;
+        }
+        let p = if matches[i] == 0 {
+            smooth *= 2.0;
+            1.0 / (smooth * totals[i] as f64)
+        } else {
+            matches[i] as f64 / totals[i] as f64
+        };
+        logp += p.ln() / 4.0;
+    }
     let bp = if hl >= rl {
         1.0
     } else {
@@ -464,12 +487,29 @@ mod tests {
         let r = s(&["the cat sat on the mat today"]);
         assert!((bleu(&r, &r) - 100.0).abs() < 1e-9);
         assert!((chrf(&r, &r) - 100.0).abs() < 1e-9);
+        // No match of any order: 0, exactly as sacreBLEU 2.4.3.
         assert_eq!(bleu(&s(&["zzz yyy xxx www"]), &r), 0.0);
+        // One unigram match: exp smoothing keeps it above zero; this is
+        // the value sacreBLEU 2.4.3 reports for this pair (7.5454).
+        let z = bleu(&s(&["the yyy xxx www"]), &r);
+        assert!((z - 7.5454).abs() < 1e-3, "{z}");
         assert!(chrf(&s(&["zzz"]), &r) < 5.0);
         let near = s(&["the cat sat on a mat today"]);
         let b = bleu(&near, &r);
         assert!(b > 0.0 && b < 100.0);
-        assert_eq!(tokenize("¿Dónde está?"), s(&["¿", "Dónde", "está", "?"]));
+        assert_eq!(
+            tokenize("¿Dónde está?"),
+            s(&["¿Dónde", "está", "?"]),
+            "13a splits ASCII punctuation only"
+        );
+        assert_eq!(
+            tokenize("It costs 3.50, ok."),
+            s(&["It", "costs", "3.50", ",", "ok", "."])
+        );
+        assert_eq!(
+            tokenize("room 4-5 l'hôtel"),
+            s(&["room", "4", "-", "5", "l'hôtel"])
+        );
         assert_eq!(bleu(&s(&[""]), &r), 0.0);
     }
 
