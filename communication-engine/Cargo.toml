@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/ce-core", "crates/ce-audio", "crates/ce-audio-intel", "crates/ce-speech", "crates/communication-engine", "crates/ce-testkit"]
+# Optional, separately built adapters (native dependencies, own MSRV).
+exclude = ["adapters/ce-asr-sherpa"]
 
 [workspace.package]
 version = "0.1.0"

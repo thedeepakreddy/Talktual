@@ -5,10 +5,11 @@ ADR-0021 (transcript semantics), ADR-0022 (language observations).
 Evaluation: [phase-4-evaluation.md](../phases/phase-4-evaluation.md).
 
 **Status.** The full pipeline exists and is tested with a deterministic
-scripted adapter and a reference **oracle** adapter. **No real ASR model is
-integrated** (a model download needs approval), so CE does not yet
-recognize speech; no recognition accuracy, model latency or model memory
-is claimed.
+scripted adapter and a reference **oracle** adapter. A real English
+recognizer, the sherpa-onnx streaming Zipformer INT8 (ADR-0023), is
+available as the optional crate `adapters/ce-asr-sherpa`, built outside
+the workspace. Its results so far are on synthetic TTS speech only
+([phase-4-real-asr.md](../phases/phase-4-real-asr.md)).
 
 ## Components
 
@@ -79,7 +80,8 @@ aggregate.
 | `adapter` | first registered | adapter id |
 | `segmentation` | `ActivityHints` | or `Continuous` |
 | `chunk_ms` | 100 | audio per adapter call (10–1000) |
-| `preroll_ms` | 500 | audio kept for backdated onsets (0–2000) |
+| `preroll_ms` | 1000 | audio kept for backdated onsets and lead-in (0–2000) |
+| `lead_in_ms` | 500 | audio fed before a Phase 3 onset (≤ pre-roll, ≤ 1000); chosen on dev with the real model |
 | `partials` / `partial_interval_ms` | true / 200 | partial cadence in audio time |
 | `stability` | 3 hyp / 800 ms / holdback 1 | commit policy |
 | `finalization` | segment end on, endpoint tier off, adapter endpoint on, max 20 s, trailing 200 ms | |

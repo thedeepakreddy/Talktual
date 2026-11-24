@@ -34,6 +34,7 @@ fn continuous() -> RecognitionConfig {
 fn activity() -> RecognitionConfig {
     RecognitionConfig {
         partial_interval_ms: 50,
+        lead_in_ms: 0,
         ..RecognitionConfig::default()
     }
 }
@@ -626,4 +627,59 @@ fn memory_stays_bounded_over_long_streams_and_hint_floods() {
     }
     assert!(r.buffered().2 <= 64);
     assert!(r.status().counters.hint_dropped >= 900);
+}
+
+#[test]
+fn lead_in_starts_utterances_before_the_onset_from_the_preroll() {
+    let f = ScriptedFactory::new(vec![UtteranceScript::progressive("ok then", 200)]);
+    let cfg = RecognitionConfig {
+        lead_in_ms: 300,
+        ..activity()
+    };
+    let (mut r, mut out) = recognizer(cfg, &f, true, false);
+    push_all(&mut r, &blocks(0, 0, 100, 16_000, 1), &mut out);
+    r.push_hint(&onset(9_600), &mut out).unwrap();
+    let started = out.iter().find_map(|e| match e {
+        SpeechEvent::UtteranceStarted { meta } => Some(meta.clone()),
+        _ => None,
+    });
+    // 300 ms before the onset (the onset arrived 400 ms late; the 1 s
+    // pre-roll still holds it), and the range says so.
+    assert_eq!(started.unwrap().frame_range.0, 9_600 - 4_800);
+    // With a 500 ms pre-roll the same late hint can only reach back to
+    // the ring start: lead-in is limited by the pre-roll, never invented.
+    let (mut r, mut out) = recognizer(
+        RecognitionConfig {
+            lead_in_ms: 300,
+            preroll_ms: 500,
+            ..activity()
+        },
+        &f,
+        true,
+        false,
+    );
+    push_all(&mut r, &blocks(0, 0, 100, 16_000, 1), &mut out);
+    r.push_hint(&onset(9_600), &mut out).unwrap();
+    let started = out.iter().find_map(|e| match e {
+        SpeechEvent::UtteranceStarted { meta } => Some(meta.clone()),
+        _ => None,
+    });
+    assert_eq!(started.unwrap().frame_range.0, 8_000);
+    // An onset near the stream start cannot go below frame 0.
+    let (mut r, mut out) = recognizer(
+        RecognitionConfig {
+            lead_in_ms: 300,
+            ..activity()
+        },
+        &f,
+        true,
+        false,
+    );
+    push_all(&mut r, &blocks(0, 0, 20, 16_000, 1), &mut out);
+    r.push_hint(&onset(1_600), &mut out).unwrap();
+    let started = out.iter().find_map(|e| match e {
+        SpeechEvent::UtteranceStarted { meta } => Some(meta.clone()),
+        _ => None,
+    });
+    assert_eq!(started.unwrap().frame_range.0, 0);
 }

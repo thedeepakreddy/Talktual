@@ -1,0 +1,37 @@
+[package]
+name = "ce-asr-sherpa"
+description = "Optional Communication Engine ASR adapter: sherpa-onnx streaming Zipformer (Phase 4 real-ASR baseline)."
+version = "0.1.0"
+edition = "2024"
+# sherpa-onnx-sys's build dependencies (zip → aes, icu) need Rust 1.89;
+# the Communication Engine workspace itself stays at 1.85. This crate is
+# deliberately outside the workspace (see README.md).
+rust-version = "1.89"
+license = "UNLICENSED"
+publish = false
+repository = "https://github.com/thedeepakreddy/Talktual"
+
+# Not a member of the CE workspace: its build downloads/links native
+# sherpa-onnx + ONNX Runtime libraries and needs a newer compiler, which
+# must not affect the workspace's gates.
+[workspace]
+
+[dependencies]
+ce-core = { path = "../../crates/ce-core" }
+ce-speech = { path = "../../crates/ce-speech" }
+sherpa-onnx = { version = "=2.0.3", default-features = true }
+
+[dev-dependencies]
+ce-audio-intel = { path = "../../crates/ce-audio-intel" }
+ce-testkit = { path = "../../crates/ce-testkit" }
+communication-engine = { path = "../../crates/communication-engine" }
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "time"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+print_stdout = "warn"

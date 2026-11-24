@@ -181,8 +181,18 @@ pub struct RecognitionConfig {
     /// Audio per adapter call, ms (10..=1000). Default 100.
     pub chunk_ms: u32,
     /// Audio kept before an activity onset so the utterance can start at
-    /// the backdated boundary, ms (0..=2000). Default 500.
+    /// the backdated boundary minus `lead_in_ms` even when the Phase 3 hint
+    /// arrives late, ms (0..=2000). Default 1000 (≈ 64 KB per stream at
+    /// 16 kHz).
     pub preroll_ms: u32,
+    /// Audio fed before a Phase 3 activity onset, ms (0..=preroll_ms,
+    /// at most 1000). Energy-based onsets fire after soft word beginnings
+    /// (unvoiced /t/, /h/, …); a real recognizer needs that audio. The
+    /// utterance's frame range includes it (nothing is shifted). Default
+    /// 500, chosen on the dev split with the real sherpa-onnx baseline
+    /// (pipeline WER 0.271 at 0 ms; 0.115–0.125 from 500 to 800 ms; the
+    /// smallest best value is used; ADR-0023).
+    pub lead_in_ms: u32,
     /// Emit partial hypotheses (if the adapter supports them). Default true.
     pub partials: bool,
     /// Minimum audio time between partial revisions, ms. Default 200.
@@ -207,7 +217,8 @@ impl Default for RecognitionConfig {
             adapter: None,
             segmentation: SegmentationMode::ActivityHints,
             chunk_ms: 100,
-            preroll_ms: 500,
+            preroll_ms: 1_000,
+            lead_in_ms: 500,
             partials: true,
             partial_interval_ms: 200,
             stability: StabilityPolicy::default(),
@@ -266,6 +277,9 @@ impl RecognitionConfig {
         }
         if self.preroll_ms > 2_000 {
             return Err(bad("preroll_ms", "0..=2000"));
+        }
+        if self.lead_in_ms > self.preroll_ms.min(1_000) {
+            return Err(bad("lead_in_ms", "0..=min(preroll_ms, 1000)"));
         }
         if !(50..=5_000).contains(&self.partial_interval_ms) {
             return Err(bad("partial_interval_ms", "50..=5000"));
@@ -384,6 +398,7 @@ mod tests {
         let cases: Vec<Mutation> = vec![
             Box::new(|c| c.chunk_ms = 5),
             Box::new(|c| c.preroll_ms = 5_000),
+            Box::new(|c| c.lead_in_ms = 1_200),
             Box::new(|c| c.partial_interval_ms = 10),
             Box::new(|c| {
                 c.stability.stable_after_hypotheses = 0;

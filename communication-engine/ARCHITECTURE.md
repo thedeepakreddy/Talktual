@@ -25,9 +25,12 @@ adds `ce-speech` — the ASR adapter boundary, revisioned streaming
 transcripts with stable/committed text and finalization, Phase 3 hint
 integration, text language observations with explicit scope and
 abstention, supervised bounded recognition workers, and replay/evaluation
-(see [speech.md](docs/architecture/speech.md)). **No real ASR model is
-integrated yet** (a model download awaits approval): recognition runs with
-a scripted adapter (tests) and an oracle reference adapter (evaluation).
+(see [speech.md](docs/architecture/speech.md)). A real English recognizer
+(sherpa-onnx streaming Zipformer INT8) is an optional adapter in
+`adapters/ce-asr-sherpa`. It is built outside the workspace because it
+links native libraries and needs Rust ≥ 1.89, and it has been evaluated on
+synthetic speech only. Tests use a scripted adapter, and pipeline
+evaluation uses an oracle adapter.
 There is no diarization, translation, semantic, voice or TTS
 functionality, nothing that infers personal traits, and no latency or
 device claims (no audio hardware has been tested).
@@ -159,4 +162,5 @@ normalization contract · 0013 capture authorization gate · 0014 audio
 intelligence architecture · 0015 VAD selection · 0016 analysis results and
 units · 0017 analysis privacy · 0018 analysis resource policy · 0019
 speech architecture · 0020 ASR and language-ID selection · 0021 transcript
-revision semantics · 0022 language observations.
+revision semantics · 0022 language observations · 0023 real-ASR baseline
+(sherpa-onnx).

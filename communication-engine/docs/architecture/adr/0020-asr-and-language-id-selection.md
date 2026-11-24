@@ -1,7 +1,8 @@
 # ADR-0020 — ASR and language-identification selection
 
-Status: Accepted (Phase 4) · Date: 2026-11-24 · Real ASR: **blocked
-pending approval of a model download**
+Status: Accepted (Phase 4) · Date: 2026-11-24 · Real ASR: the
+recommended model was **approved and integrated** as an optional adapter
+(ADR-0023)
 
 ## ASR candidates (crates.io data of 2026-11-24)
 
@@ -15,8 +16,9 @@ pending approval of a model download**
 | ort | 2.0.0-rc.15 | MIT / Apache-2.0 | n/a | ONNX Runtime bindings; MSRV 1.92 > CE's 1.85 |
 
 **Decision.** Every real option needs a model download (and most a native
-runtime), which requires the user's approval; none was downloaded, and no
-real-ASR quality, latency or resource number exists. The pipeline is built
+runtime), which requires the user's approval. Before approval, none was
+downloaded. After approval, the recommended sherpa-onnx streaming
+Zipformer was integrated (ADR-0023; results in `phase-4-real-asr.md`). The pipeline is built
 and evaluated with the **scripted** adapter (tests) and the **reference
 oracle** adapter (evaluation; ADR-0019). Recommended first real adapter,
 once approved: **sherpa-onnx streaming zipformer** (true streaming,

@@ -316,7 +316,9 @@ async fn phase3_activity_hints_delimit_utterances_end_to_end() {
     assert_eq!(r.final_reason, Some(FinalReason::SegmentEnd));
     assert_eq!(r.meta.hints, HintSource::Activity);
     let (f0, f1) = r.meta.frame_range;
-    assert!((3_000..=3_400).contains(&f0), "starts at the onset: {f0}");
+    // The onset is at ≈ 3200 (hop 20); the default 500 ms lead-in reaches
+    // back to the stream start.
+    assert_eq!(f0, 0, "starts lead_in_ms before the onset: {f0}");
     assert!(f1 >= 80 * 160, "covers the activity: {f1}");
     // Exactly one utterance: nothing is recognized in silence.
     let st = h.engine.recognition_status(id).await.unwrap();

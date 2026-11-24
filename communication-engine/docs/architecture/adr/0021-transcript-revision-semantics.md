@@ -37,7 +37,10 @@ Status: Accepted (Phase 4) · Date: 2026-11-24
   discarded). Cancelled revisions keep what was committed and drop the
   provisional tail.
 * **Delimitation by hints, not rigid boundaries.** Phase 3 activity onsets
-  queue a start at the backdated onset (served from a `preroll_ms` ring);
+  queue a start `lead_in_ms` (default 500) before the backdated onset,
+  served from a `preroll_ms` ring (default 1000). The lead-in was added
+  after the real model showed that onsets fire after soft word beginnings
+  (ADR-0023), and the utterance's frame range includes it;
   onsets inside an open utterance (pauses shorter than the segment-close
   silence) are absorbed; ends of earlier stretches are discarded as stale;
   hints about audio not yet received wait for it, so they map onto the

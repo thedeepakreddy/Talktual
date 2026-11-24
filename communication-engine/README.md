@@ -13,9 +13,10 @@ segments and endpoints, silence, quality, signal conditions, adaptive and
 resource policy). Phase 4 adds the streaming speech-recognition pipeline (adapter boundary,
 revisioned transcripts, finalization, timestamps, Phase 3 hints, bounded
 supervised workers) and text language observations (whichlang, with
-abstention); **no real ASR model is integrated yet** — the pipeline runs
-with a scripted adapter and an oracle reference adapter until a model
-download is approved. There is no diarization, translation, voice or TTS,
+abstention). Real English recognition is available through the optional
+sherpa-onnx streaming Zipformer adapter (`adapters/ce-asr-sherpa`, built
+separately; evaluated on synthetic speech only); tests use a scripted
+adapter and pipeline evaluation an oracle adapter. There is no diarization, translation, voice or TTS,
 and **no audio hardware has been tested** — no latency or device claims.
 All APIs are provisional (facade API `0.1`). See the
 [Phase 1](docs/phases/phase-1-report.md),
@@ -51,6 +52,7 @@ communication-engine/
   crates/ce-speech/                    speech: ASR adapter boundary, transcripts, language ID, recognizer, eval
   fixtures/speech/                     synthetic TTS fixtures, transcript manifest + provenance
   fixtures/language/                   authored language-ID corpus + provenance (Phase 4)
+  adapters/ce-asr-sherpa/              optional real ASR adapter (sherpa-onnx; outside the workspace)
   crates/communication-engine/         runtime (private) + public facade
     examples/runtime_smoke.rs          end-to-end example, used as a CI gate
     tests/                             integration tests (public API only)

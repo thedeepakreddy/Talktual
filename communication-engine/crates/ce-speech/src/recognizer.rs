@@ -556,7 +556,8 @@ impl StreamRecognizer {
                 self.activity_active = *state == ActivityState::Active;
                 if self.activity_active && self.hints == HintSource::Activity {
                     if let Some(i) = self.to_index(meta.frame_range.0) {
-                        self.queue(Boundary::Start(i));
+                        let lead = ms_to_samples(self.cfg.lead_in_ms, self.rate);
+                        self.queue(Boundary::Start(i.saturating_sub(lead)));
                     }
                 }
             }

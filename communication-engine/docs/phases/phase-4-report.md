@@ -7,13 +7,17 @@ container, 4 vCPU Intel Xeon @ 2.30 GHz, **no audio hardware**), Rust
 
 **Read this first.**
 
-* **No real ASR model is integrated.** Every real option needs a model
-  download (and most a native runtime); that needs your approval, which
-  this phase did not have. CE therefore does **not** yet recognize speech.
-  The full pipeline is built and evaluated with a deterministic
-  **scripted** adapter (tests) and an **oracle reference** adapter
-  (evaluation). No recognition accuracy, model latency, model RTF or model
-  memory is claimed anywhere.
+* **Real ASR baseline (approved, optional).** The sherpa-onnx streaming
+  Zipformer English INT8 model runs behind the unchanged adapter boundary
+  in a separately built crate, `adapters/ce-asr-sherpa` (ADR-0023).
+  Genuine model results are in [phase-4-real-asr.md](phase-4-real-asr.md).
+  They come from **synthetic TTS speech in replay** (held-out clean
+  pipeline WER 0.121, 8/66 words), because real speech corpora are not
+  approved; accuracy on human speech is unknown.
+* The scripted adapter (tests) and the oracle reference adapter (pipeline
+  evaluation) are kept unchanged. Every number in this report is labelled
+  **real model**, **oracle**, **synthetic**, **replay**, **fake backend**
+  or **compile-only**.
 * **No audio hardware was available or tested.** Runtime evidence uses the
   test kit's fake backend; evaluation uses synthetic TTS speech in replay.
 * Language identification is real (whichlang) but evaluated on **authored
@@ -47,12 +51,16 @@ container, 4 vCPU Intel Xeon @ 2.30 GHz, **no audio hardware**), Rust
 | ADR | Decision |
 |---|---|
 | [0019](../architecture/adr/0019-speech-architecture.md) | One new crate `ce-speech`; adapter boundary with cheap discovery and worker-thread loading; deterministic per-stream recognizer shared by live and replay; one supervised thread per recognition fed by its own bounded tap and a bounded hint queue; core-owned orchestration |
-| [0020](../architecture/adr/0020-asr-and-language-id-selection.md) | ASR: whisper.cpp, sherpa-onnx, vosk, candle, ort compared (license, maintenance, streaming, model size, native deps, MSRV); **real ASR blocked pending approval**; recommended first adapter sherpa-onnx streaming zipformer. LID: whatlang, whichlang, lingua compared; **whichlang 0.1.1** selected on dev (0.95 vs 0.81 accuracy), MIT, zero dependencies |
+| [0020](../architecture/adr/0020-asr-and-language-id-selection.md) | ASR: whisper.cpp, sherpa-onnx, vosk, candle, ort compared (license, maintenance, streaming, model size, native deps, MSRV); recommended first adapter sherpa-onnx streaming zipformer, **later approved and integrated** (ADR-0023). LID: whatlang, whichlang, lingua compared; **whichlang 0.1.1** selected on dev (0.95 vs 0.81 accuracy), MIT, zero dependencies |
 | [0021](../architecture/adr/0021-transcript-revision-semantics.md) | Gapless revision numbers, snapshot + delta, append-only commits until the final, only finals amend (flagged), stale/duplicate rejection, hint-based delimitation, exact timestamps, no uncalibrated probabilities |
+| [0023](../architecture/adr/0023-real-asr-baseline-sherpa.md) | Approved baseline `sherpa-onnx-streaming-zipformer-en-2023-06-26` INT8 (Apache-2.0) via `sherpa-onnx` 2.0.3 in an optional crate **outside the workspace** (native libraries, Rust ≥ 1.89); only the INT8 files are extracted; `lead_in_ms` 500 and `preroll_ms` 1000 chosen on dev with the real model |
 | [0022](../architecture/adr/0022-language-observations.md) | Utterance / stream / (reserved) span scopes never conflated; provenance and fingerprints; abstention (`InsufficientEvidence` below 10 letters, `LowConfidence`, `Ambiguous`, `Unsupported`); code-switching not claimed; language of text, never of the person |
 
-Dependency added: `whichlang 0.1.1` (MIT, no transitive dependencies).
-`cargo deny check` passes (section 10). No other third-party dependency.
+Dependency added to the workspace: `whichlang 0.1.1` (MIT, no transitive
+dependencies). The optional adapter crate adds `sherpa-onnx` /
+`sherpa-onnx-sys` 2.0.3 (Apache-2.0) with its own `deny.toml`. That policy
+is CE's plus permissive licenses used only by the sys crate's build script.
+`cargo deny check` passes for both (section 10).
 
 ## 3. Architecture, contracts, dataflow and lifecycle
 
@@ -102,6 +110,16 @@ New crate `crates/ce-speech` (`forbid(unsafe_code)`):
 | `eval` | manifests, scenarios, replay, metrics, LID evaluation, digest |
 | `metrics` | bounded nearest-rank percentiles |
 
+Optional crate `adapters/ce-asr-sherpa` (outside the workspace;
+`forbid(unsafe_code)` in its own code):
+
+| Item | Responsibility |
+|---|---|
+| `src/lib.rs` | `SherpaConfig` (approved INT8 preset, endpoint rules, threads, tail padding), `SherpaFactory` (honest capabilities, shared model), adapter over sherpa-onnx online streams |
+| `examples/evaluate_real.rs` | resources, isolated decoding, partials, dev lead-in sweep, pipeline under all conditions, commit policies, formats/drops/throttling — through the unchanged `ce_speech::eval` |
+| `tests/model.rs` | real-model tests (`#[ignore]` unless the model is provisioned): fixture recognition, model sharing, determinism, language refusal; the real model inside the `Engine` at 48 kHz stereo on the fake backend |
+| `scripts/fetch-model.sh`, `scripts/verify.sh`, `deny.toml`, `README.md` | checksum-verified provisioning (INT8 files only), the adapter's gates, license policy, usage |
+
 Files changed relative to `main` (54 files, ≈ 11 000 lines added, 70
 removed): `ce-core/src/speech/{config,mod,model}.rs` (new), `ce-core`
 `command.rs`, `config.rs`, `event.rs`, `health.rs`, `lib.rs`; `ce-audio`
@@ -111,11 +129,13 @@ removed): `ce-core/src/speech/{config,mod,model}.rs` (new), `ce-core`
 `src/runtime/core.rs`, `core/speech.rs` (new), `core/intel.rs`,
 `core/audio.rs`, `metrics.rs`, `Cargo.toml`, `examples/speech_smoke.rs`
 (new), `tests/speech_recognition.rs` (new), `tests/common/mod.rs`,
-`tests/audio_faults.rs` (timeout only); workspace `Cargo.toml`/`Cargo.lock`;
+`tests/audio_faults.rs` (timeout only); workspace `Cargo.toml` (now also
+`exclude = ["adapters/ce-asr-sherpa"]`) and `Cargo.lock`;
+`adapters/ce-asr-sherpa/**` (new);
 `fixtures/speech/manifest.json` (new), `fixtures/language/{lid_corpus.json,
 PROVENANCE.md}` (new); `scripts/verify.sh`; docs (ADR-0019…0022,
-`speech.md`, `events.md`, `privacy.md`, `phase-4-evaluation.md`, this
-report, README, ARCHITECTURE).
+ADR-0023, `speech.md`, `events.md`, `privacy.md`, `phase-4-evaluation.md`,
+`phase-4-real-asr.md`, this report, README, ARCHITECTURE).
 
 ## 5. Streaming transcript and revision semantics
 
@@ -142,7 +162,12 @@ a recognizer-only gap the rest of an active utterance was lost until the
 next onset (now it resumes at the first audio after the gap; 3 × 100 ms
 drops: oracle WER 0.015 instead of 0.73); (3) the oracle's position hint
 was relative to the post-gap anchor (an evaluation-adapter defect; now
-stream-absolute).
+stream-absolute). (4) Found only with the **real model**: utterances began
+exactly at the Phase 3 onset, which fires after soft word beginnings, so
+initial words were lost ("TURN LEFT" → "LEFT"; clean test WER 0.288).
+Utterances now start `lead_in_ms` (500, chosen on dev) before the onset,
+served from a 1000 ms pre-roll; the frame range includes it (clean test
+WER 0.121).
 
 ## 6. Language intelligence: capabilities and limitations
 
@@ -177,36 +202,78 @@ abstention by reason, confusion and mixed outcomes.
 
 ## 8. Metrics, actual results and honest limitations
 
-Labels: **synthetic replay, oracle** unless stated.
+### 8.1 Real model (sherpa-onnx Zipformer INT8) — REAL MODEL on SYNTHETIC speech, REPLAY
+
+Held-out test split (6 TTS utterances, 66 words); defaults
+(`ActivityHints`, `lead_in_ms` 500). Full tables, dev results, the lead-in
+sweep and partial traces: [phase-4-real-asr.md](phase-4-real-asr.md).
+
+| Scenario (test) | Finals / refs | Missed / split / merged | **WER** (edits/words) | **CER** | First partial p50 / p95 | Final after speech end p50 / p95 |
+|---|---|---|---|---|---|---|
+| isolated utterances (model alone, no pipeline) | 6 / 6 | – | 0.167 (11/66) | 0.078 | – | – |
+| clean | 6 / 6 | 0 / 0 / 0 | **0.121 (8/66)** | 0.044 | 750 / 1000 ms | 770 / 790 ms |
+| white 20 dB | 6 / 6 | 0 / 0 / 0 | 0.288 (19/66) | 0.136 | 760 / 1040 ms | 630 / 690 ms |
+| pink 10 dB | 6 / 6 | 0 / 0 / 0 | 0.591 (39/66) | 0.305 | 780 / 1050 ms | 980 / 1310 ms |
+| white 10 dB | 6 / 6 | 1 / 1 / 0 | 0.652 (43/66) | 0.462 | 780 / 1040 ms | 540 / 680 ms |
+| white 5 dB | 3 / 6 | 3 / 0 / 0 | 0.894 (59/66) | 0.675 | 740 / 750 ms | 530 / 670 ms |
+| music 10 dB | 4 / 6 | 2 / 0 / 3 | 0.773 (51/66) | 0.509 | 1650 / 1650 ms | 1710 / 1710 ms |
+| clipped +20 dB | 6 / 6 | 0 / 0 / 0 | 0.439 (29/66) | 0.263 | 750 / 1050 ms | 810 / 910 ms |
+| quiet −30 dB | 8 / 6 | 0 / 2 / 0 | 0.591 (39/66) | 0.521 | 1010 / 1060 ms | 260 / 680 ms |
+| 48 kHz stereo / 44.1 kHz 512-frame / 8 kHz | 6 / 6 | 0 / 0 / 0 | 0.167 / 0.136 / 0.227 | 0.056 / 0.041 / 0.086 | 730–762 / 1005–1018 ms | 750–778 / 780–801 ms |
+| 3 × 100 ms recognizer drops | 8 / 6 | 0 / 2 / 0 | 0.242 (16/66) | 0.121 | 750 / 1000 ms | 360 / 790 ms |
+| throttled (no partials) | 6 / 6 | 0 / 0 / 0 | 0.121 (8/66) | 0.044 | none (by design) | 770 / 790 ms |
+| model endpointing only (no analysis) | 4 / 6 | 2 / 0 / 4 | 0.182 (12/66) | 0.107 | – | – |
+
+* **Partials**: ≈ 2.2 revisions per second of speech, 10.5 per utterance.
+  The last word appears as a fragment and is completed ("BO" → "BOX").
+  Committed text trails the hypothesis by about one word. 2.7 visible
+  corrections per utterance; **0 finals amended committed text** (dev and
+  test). First committed text p50 1300 ms after speech start.
+* **Errors** (clean test): walk → WALKED, blocks → BOX, speak → PEOPLE,
+  learning → EARNING, "bridge is" → BRIDGES, today → TO DAY. Noise degrades
+  the model strongly (white 20 dB more than doubles WER). At ≤ 10 dB SNR
+  and with music, Phase 3 segmentation fails as well.
+* **Lead-in fix** (found with the real model, tuned on dev): before it,
+  utterance-initial words were lost and clean test WER was 0.288 (19/66).
+* **Language** (whichlang on real transcripts, clean test): 5 utterances
+  `en`, 1 abstention (the one-word "No").
+* Against the targets proposed before the model existed: final ≤ 1000 ms
+  p95 after speech end — met (790 ms); zero merged/split on clean and
+  20 dB — met; amendments ≤ 5 % — met (0 %); model RTF ≤ 0.3 — met
+  (0.06–0.09); first partial ≤ 500 ms p95 — **not met** (1000 ms; the
+  model emits its first non-empty hypothesis after ≈ 0.6–0.8 s of speech).
+
+### 8.2 Pipeline with the oracle — ORACLE, SYNTHETIC, REPLAY (not ASR quality)
 
 | Scenario (test split) | Finals / refs | Missed / split / merged | Oracle WER | First partial p50 / p95 | Final after speech end p50 / p95 |
 |---|---|---|---|---|---|
 | clean, activity hints | 6 / 6 | 0 / 0 / 0 | 0.000 | 300 / 400 ms | 770 / 790 ms |
 | white 20 dB | 6 / 6 | 0 / 0 / 0 | 0.000 | 320 / 440 ms | 630 / 690 ms |
-| white 10 dB | 6 / 6 | 1 / 1 / 0 | 0.258 | 340 / 960 ms | 540 / 680 ms |
+| white 10 dB | 6 / 6 | 1 / 1 / 0 | 0.197 | 340 / 840 ms | 540 / 680 ms |
 | white 5 dB | 3 / 6 | 3 / 0 / 0 | 0.348 | 340 / 350 ms | 530 / 670 ms |
-| pink 10 dB | 6 / 6 | 0 / 0 / 0 | 0.000 | 310 / 450 ms | 980 / 1310 ms |
+| pink 10 dB | 6 / 6 | 0 / 0 / 0 | 0.000 | 320 / 450 ms | 980 / 1310 ms |
 | music 10 dB | 2 / 6 | 4 / 0 / 2 | 0.000 | – | – |
 | 48 kHz stereo / 44.1 kHz 512-frame / 8 kHz | 6 / 6 | 0 / 0 / 0 | 0.000 | 300–310 / 407–418 ms | 750–778 / 780–801 ms |
 | 3 × 100 ms recognizer drops | 8 / 6 | 0 / 2 / 0 | 0.015 | 300 / 400 ms | 360 / 790 ms |
 | throttled | 6 / 6 | 0 / 0 / 0 | 0.000 | none (by design) | 770 / 790 ms |
 
 * The pipeline loses nothing on clean, moderately noisy, clipped, quiet and
-  re-formatted input; losses at white ≤ 10 dB and with music are the
-  **Phase 3 detector's** (same failure modes in the Phase 3 report).
-* Final latency (≈ 0.6–1.0 s after speech end) is dominated by Phase 3's
-  default segment-close silence plus `trailing_ms`; `on_endpoint_tier` can
-  finalize earlier (implemented and unit-tested, not tuned).
-* Commit policy (dev, with synthetic revision noise): default 3 hyp /
-  800 ms / hold 1 kept — 0 amendments, 3.75 visible corrections per
-  utterance, first commit p50 870 ms; 2 hypotheses commit 200 ms earlier
-  with the same corrections on 4 dev utterances; re-tune with a real
-  adapter. Test: 0 amendments.
-* **Not measured**: any real-ASR quality (WER/CER, punctuation, casing),
-  model latency, RTF, CPU/RAM or warm-up; timing error of word timestamps
-  (no adapter with real word timings); language ID on ASR output.
-* **Proposed targets** for the first real adapter are in the evaluation
-  document (from this evidence; not results).
+  re-formatted input. Losses at white ≤ 10 dB and with music belong to the
+  **Phase 3 detector** (the same failure modes appear in the Phase 3
+  report). Oracle utterances start ≈ 500 ms before the labelled speech:
+  that is the lead-in.
+* Final latency (≈ 0.6–1.0 s after speech end, oracle and real model
+  alike) is dominated by Phase 3's default segment-close silence plus
+  `trailing_ms`. `on_endpoint_tier` can finalize earlier; it is implemented
+  and unit-tested but not tuned.
+* Commit policy: the default (3 hyp / 800 ms / hold 1) was kept after dev
+  comparisons with the oracle noise model and with the real model; it gave
+  0 amendments in both.
+* **Not measured**:
+  * accuracy on human speech (corpora not approved);
+  * punctuation and casing (the model has neither);
+  * word-timestamp timing error (not exposed by the adapter);
+  * other platforms and hardware.
 
 ## 9. Resource, latency and robustness evidence
 
@@ -231,18 +298,31 @@ Labels: **synthetic replay, oracle** unless stated.
   shutdown order; 4 concurrent streams sharing one loaded model; 20
   start/stop cycles without leaks (all adapters released, statuses
   bounded); engine-wide and per-adapter concurrency limits.
-* **Determinism**: replay digests identical across runs.
+* **Determinism**: replay digests identical across runs (oracle and real
+  model with 1 thread).
+* **Real model resources** (REAL MODEL, this machine, 1 ONNX thread):
+  * load ≈ 2.0 s (1964 ms in the final run; 2.6–2.9 s in earlier runs);
+    a shared reuse takes < 10 µs;
+  * peak RSS 23 → 152 MB after loading (+≈ 129 MB); evaluation process
+    peak 199 MB;
+  * recognizer RTF 0.06–0.09 (model + CE) for one stream;
+  * 4 concurrent streams sharing one model: 2.20 s wall for 4 × 27.9 s of
+    audio;
+  * inside the `Engine` (fake backend, 48 kHz stereo): capture never
+    delayed over 3 s of audio.
 
 ## 10. Tests and regression results
 
-All results below were run in this session on the final tree (no audio
-hardware; Linux x86_64).
+All results below were run on the final tree, after the real-ASR
+integration and the `lead_in_ms` / `preroll_ms` default changes (no audio
+hardware; Linux x86_64). The Talktual gates were re-run as well; no file
+outside `communication-engine/` changed.
 
 | Gate | Result |
 |---|---|
 | `scripts/verify.sh` (fmt, clippy `-D warnings` all targets + all features, tests, docs `-D warnings`, smoke examples, Phase 3 and Phase 4 optimized regression gates, cross-target checks, `cargo deny`) | **exit 0, "all gates passed"** |
-| Tests, default features (`cargo test --workspace --all-targets`) | **270 passed, 0 failed** (baseline at session start: 238) |
-| Tests, all features incl. doctests and the cpal adapter on ALSA's null device | **274 passed, 0 failed** |
+| Tests, default features (`cargo test --workspace --all-targets`) | **271 passed, 0 failed** (baseline at session start: 238) |
+| Tests, all features incl. doctests and the cpal adapter on ALSA's null device | **275 passed, 0 failed** |
 | Smoke examples | `runtime_smoke`, `audio_smoke`, `analysis_smoke`, `speech_smoke`: PASS |
 | Phase 4 held-out regression gate (`ce-speech/tests/evaluation.rs`, release) | pass |
 | MSRV: `cargo +1.85.0 check --workspace --all-targets --all-features` | pass |
@@ -251,6 +331,8 @@ hardware; Linux x86_64).
 | Talktual `npm test` | **537 passed** (30 files) |
 | Talktual `npm run test:server` | **60 passed, 0 failed** |
 | Talktual `npm run build` | pass (existing chunk-size warning only) |
+| **Optional adapter** `adapters/ce-asr-sherpa/scripts/verify.sh` (fmt, clippy `-D warnings`, tests, real-model tests, `cargo deny`, resources) | **exit 0**: 1 unit test, **2 real-model tests passed** (fixture recognition, model sharing, determinism, language refusal; real model inside the `Engine` at 48 kHz stereo); advisories, bans, licenses and sources ok |
+| Adapter with Rust 1.85 | refused by design (`aes 0.9.4`, a build dependency of `sherpa-onnx-sys`, requires 1.89); the adapter declares `rust-version = "1.89"` and lives outside the workspace |
 
 New Phase 4 tests: ce-core speech contracts (validation, serialization,
 fingerprints, tags, events); ce-audio multi-subscriber tap; ce-speech unit
@@ -283,36 +365,47 @@ timeout noted in section 1.
   library crates for `wasm32-unknown-unknown`: all pass (via
   `verify.sh`). Compiling is not running: nothing was executed on those
   platforms.
-* `ce-speech` is pure Rust with no native dependency; a real adapter
-  (sherpa-onnx / whisper.cpp) would add native builds per platform, to be
-  verified when approved.
+* `ce-speech` is pure Rust with no native dependency. The optional
+  sherpa-onnx adapter was built, tested and evaluated on **Linux x86_64
+  only**. sherpa-onnx ships native libraries for macOS, Windows, Linux
+  aarch64, Android and iOS, but none were built or tested here. The CE
+  workspace's cross-target checks do not include the adapter.
 
 ## 12. Deviations, risks and unresolved issues
 
-* **Real ASR baseline not implemented** (spec §11 "if permitted"):
-  blocked pending your approval of a model download. Everything else is
-  built so that adding it is one adapter.
-* **Case/punctuation-sensitive WER** implemented but not reported (no
-  adapter produces punctuation/casing).
-* **Word-timestamp timing error** not measured (no adapter with real word
-  timings; the scripted adapter's are synthetic).
-* **Code-switching**: not supported (contract reserved), by evidence.
-* **Commit policy** chosen on oracle noise; must be re-tuned with real
-  model revisions.
-* **Phase 3 dependencies**: music and very low SNR defeat the activity
-  detector, and hence activity-delimited recognition. `Continuous`
-  delimitation needs an adapter with endpointing.
-* **Hint/audio skew**: in the live runtime analysis and recognition run on
-  separate threads; a Phase 3 onset older than `preroll_ms` (500 ms) when
-  it reaches the recognizer clips the utterance start. Not observed in
-  tests; the pre-roll is configurable up to 2 s.
+* **Real ASR evaluated on synthetic speech only.** Real speech corpora are
+  not approved, and the sample recordings inside the model archive were
+  deliberately not extracted. Accuracy on human speech is unknown; the
+  test set is 66 words.
+* **Optional adapter outside the workspace** (ADR-0023). It needs Rust
+  ≥ 1.89 and native libraries, so it has its own gates and is not part of
+  CE's CI or cross-target checks. It is Linux x86_64 only so far. Its
+  provisioning downloads about 334 MB (model archive 310 MB, native
+  libraries 24 MB) and keeps about 95 MB.
+* **Defaults changed by real-model evidence**: `lead_in_ms` 0 → 500 and
+  `preroll_ms` 500 → 1000. Both were chosen on dev; the dev sweep is
+  non-monotonic on only 4 utterances.
+* **First partial p95 is 1000 ms** with the real model, above the 500 ms
+  target proposed earlier (the model emits its first word after
+  ≈ 0.6–0.8 s of speech).
+* **Noise robustness of the model is weak** on synthetic noise (white
+  20 dB: WER 0.288). Phase 3 segmentation still fails at ≤ 10 dB SNR and
+  with music.
+* **Case/punctuation WER and word-timestamp timing error** are not
+  measurable: the model has no punctuation or casing, and the adapter
+  exposes no word timings (word end times would have to be invented).
+* **Code-switching**: not supported (contract reserved), based on the
+  evidence.
+* **Hint/audio skew**: the effective lead-in shrinks when a Phase 3 hint
+  reaches the recognizer more than `preroll_ms − lead_in_ms` (500 ms)
+  late. This was not observed in tests.
 * **Intermittent Phase 2 test** (section 1): mitigated with a longer
-  timeout, root cause not proven.
-* **LID corpus**: small and authored; mild selection leakage disclosed.
-* Stopped/abandoned worker threads in a stuck adapter `load()` or
-  `accept()` cannot be killed (Rust threads); they are detached, send
-  nothing, and are joined (bounded) at shutdown — a non-cooperative real
-  adapter could keep a thread alive until process exit.
+  timeout; root cause not proven.
+* **LID corpus** is small and authored; mild selection leakage is
+  disclosed.
+* Worker threads stuck inside an adapter's `load()` or `accept()` cannot
+  be killed. They are detached, send nothing, and are joined (bounded) at
+  shutdown.
 
 ## 13. Acceptance checklist
 
@@ -320,12 +413,12 @@ timeout noted in section 1.
 |---|---|
 | Baseline and user changes preserved; Phase 1–3 and Talktual gates recorded | Done (sections 1, 10) |
 | Research/ADRs and dependency/license review completed | Done (ADR-0019…0022; `cargo deny` pass) |
-| Modular ASR adapter and deterministic fake exist | Done (adapter traits; scripted + oracle) |
+| Modular ASR adapter and deterministic fake exist | Done (adapter traits; scripted + oracle; real sherpa-onnx baseline as an optional adapter) |
 | Revisioned streaming transcript, stable/committed text, finalization and timestamps implemented/tested | Done |
 | Gap, reset, discontinuity, degraded context and stale revision handling verified | Done (unit, sequence, runtime, replay) |
 | Language-ID capability scoped, uncertainty-aware and evidence-backed | Done (text; evaluated on authored corpus) |
 | Bounded work, supervision, cancellation, concurrency and fault containment tested | Done |
-| Replay and evaluation with provenance, held-out methodology and quality/latency/resource/robustness results | Done for the **pipeline (oracle)** and LID; **real-ASR quality blocked** (no model) |
+| Replay and evaluation with provenance, held-out methodology and quality/latency/resource/robustness results | Done: oracle pipeline, LID, and the **real model** (WER/CER, latency, partials, resources, robustness) — on **synthetic speech**; human-speech evaluation awaits corpus approval |
 | Unit, integration, fault, replay, stress, regression, docs and dependency gates pass or limitations documented | See section 10 |
 | Talktual regressions pass; no unsupported hardware or quality claims | Done |
 | Report, ADRs, examples and readiness review completed | Done (`speech_smoke`, `evaluate_speech`) |
@@ -333,22 +426,24 @@ timeout noted in section 1.
 ## 14. Phase 5 readiness assessment
 
 **Recommendation: ready for Phase 5 work that consumes the Phase 4
-contracts (transcript revisions, finals, language observations) — with
-one gating condition: a real ASR adapter must be approved, integrated and
-evaluated before any Phase 5 result can be judged on real speech.**
+contracts, with one remaining condition before any claim about real
+conversations: evaluate on human speech.**
 
-* The contracts Phase 5 would build on (utterance identity, revision and
-  finalization semantics, timestamps aligned with Phase 3, language
-  observations with abstention, privacy classes, lifecycle events) are
-  implemented, documented and tested; Phase 5 can be developed and tested
-  against the scripted and oracle adapters today.
-* Before Phase 5 claims anything about real conversations: approve a model
-  download (recommended: sherpa-onnx streaming zipformer, English int8,
-  ≈ 20–70 MB; alternative whisper.cpp `tiny.en`, ≈ 31–75 MB), add it as an
-  optional feature, run the existing evaluation unchanged (it already
-  reports WER/CER, revision churn, latencies and RTF per adapter), re-tune
-  the commit policy on dev, and obtain consented real-speech recordings
-  (or a properly licensed public set such as LibriSpeech, CC BY 4.0 — also
-  a download needing approval).
-* Hardware validation (real microphones, real-time scheduling) remains
-  outstanding from Phases 2–3 and is unaffected by Phase 4.
+* The contracts Phase 5 builds on are implemented, documented and tested,
+  and now exercised by a real streaming recognizer:
+  * utterance identity, revision and finalization semantics;
+  * timestamps aligned with Phase 3;
+  * language observations with abstention;
+  * privacy classes and lifecycle events.
+* The real baseline works end to end: clean synthetic speech gives WER
+  0.121, finals ≈ 0.8 s after speech end, RTF < 0.1 on one CPU thread and
+  about 130 MB of model memory. It is weak in noise. Phase 5 can be
+  developed against it, and against the scripted and oracle adapters for
+  deterministic tests.
+* Before Phase 5 results are judged on real conversations:
+  1. approve a consented or properly licensed real-speech set (e.g.
+     LibriSpeech test-clean, CC BY 4.0) and run `evaluate_real`
+     unchanged on it;
+  2. re-check `lead_in_ms` and the commit policy on its dev split;
+  3. build and verify the adapter on the target platforms;
+  4. validate on real audio hardware (outstanding since Phases 2–3).
