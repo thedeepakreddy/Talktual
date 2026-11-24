@@ -69,6 +69,18 @@ signal conditions; overlap detection not claimed. Analysis events are
 runs only on authorized capture streams under `Capture` consent; revocation
 ends it and discards queued audio.
 
+## Speech and language (Phase 4)
+
+Transcript events are classified `Content` and language observations
+`Personal` on the event envelope (`SpeechEvent::data_class`); everything
+else is `Operational` (ADR-0022). Raw audio and transcript text are never
+logged: runtime observations carry stream ids, adapter ids, configuration
+fingerprints and end reasons only. Nothing is persisted or uploaded.
+Language observations describe the language of the text, never the
+speaker — no nationality, ethnicity, identity, location, emotion or health
+inference. Recognition runs only on authorized capture streams; revocation
+cancels the open utterance and discards queued audio.
+
 ## Voice governance (no implementation)
 
 CE implements no voice enrollment, cloning, conversion or TTS. Before any

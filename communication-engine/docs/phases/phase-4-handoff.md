@@ -1,4 +1,8 @@
-# Phase 4 handoff — Speech Recognition & Language Intelligence (IN PROGRESS)
+# Phase 4 handoff — Speech Recognition & Language Intelligence (HISTORICAL)
+
+> **Superseded.** Phase 4 was completed from this handoff; see
+> [phase-4-report.md](phase-4-report.md). Kept as a record of the
+> mid-phase state.
 
 Written 2026-11-24 when the previous session ran out of budget. Read this
 whole file, then the Phase 4 PDF (authoritative), then continue. Nothing

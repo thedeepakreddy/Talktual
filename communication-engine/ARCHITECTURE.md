@@ -1,10 +1,12 @@
 # Communication Engine — Architecture
 
-Status: Phase 1 foundation, Phase 2 audio foundation and Phase 3 audio
-intelligence, implemented and verified on Linux x86_64 (see the
+Status: Phase 1 foundation, Phase 2 audio foundation, Phase 3 audio
+intelligence and Phase 4 speech recognition & language intelligence
+pipeline, implemented and verified on Linux x86_64 (see the
 [Phase 1](docs/phases/phase-1-report.md),
-[Phase 2](docs/phases/phase-2-report.md) and
-[Phase 3](docs/phases/phase-3-report.md) reports). APIs are
+[Phase 2](docs/phases/phase-2-report.md),
+[Phase 3](docs/phases/phase-3-report.md) and
+[Phase 4](docs/phases/phase-4-report.md) reports). APIs are
 **provisional**.
 
 The Communication Engine (CE) is a product-agnostic Rust foundation for a
@@ -18,9 +20,16 @@ timestamps, device-change handling and a capture authorization gate (see
 `ce-audio-intel` — voice activity, candidate segments and endpoints,
 silence windows, quality, a closed set of signal conditions, adaptive and
 resource policy — fed by a bounded, non-blocking tap on capture streams (see
-[audio-intelligence.md](docs/architecture/audio-intelligence.md)). There is
-**no** ASR, language detection, diarization, translation, semantic, voice
-or TTS functionality, nothing that infers personal traits, and no latency or
+[audio-intelligence.md](docs/architecture/audio-intelligence.md)). Phase 4
+adds `ce-speech` — the ASR adapter boundary, revisioned streaming
+transcripts with stable/committed text and finalization, Phase 3 hint
+integration, text language observations with explicit scope and
+abstention, supervised bounded recognition workers, and replay/evaluation
+(see [speech.md](docs/architecture/speech.md)). **No real ASR model is
+integrated yet** (a model download awaits approval): recognition runs with
+a scripted adapter (tests) and an oracle reference adapter (evaluation).
+There is no diarization, translation, semantic, voice or TTS
+functionality, nothing that infers personal traits, and no latency or
 device claims (no audio hardware has been tested).
 
 ## 1. Crates and dependency direction
@@ -32,7 +41,12 @@ device claims (no audio hardware has been tested).
   SDKs,     │  EventSubscription         │  feature `tracing`: TracingSink
   tests)    └─────────────┬──────────────┘
                           │ re-exports as `contracts`
-                          │ re-exports as `audio`, `audio_intel`
+                          │ re-exports as `audio`, `audio_intel`, `speech`
+            ┌─────────────▼──────────────┐
+            │ ce-speech (Phase 4)        │  ASR adapter boundary, scripted/oracle
+            │                            │  adapters, transcript revisions, LID
+            │                            │  (whichlang), recognizer, workers, eval
+            └─────────────┬──────────────┘
             ┌─────────────▼──────────────┐
             │ ce-audio-intel (Phase 3)   │  framer/features, VAD adapters, hysteresis,
             │                            │  segments, quality, conditions, policy,
@@ -115,6 +129,8 @@ engine.capabilities().await?;                           // discovery (+ find_cap
 engine.start().await?;                                  // resolve → validate → init → start
 let s = engine.create_session(SessionConfig::default()).await?;
 engine.health().await?;                                 // probes modules
+engine.start_analysis(stream, None).await?;             // Phase 3
+engine.start_recognition(stream, None).await?;          // Phase 4 (adapters via builder.asr_adapter)
 engine.execute(Command::…).await?;                      // typed, serializable commands
 engine.shutdown().await?;                               // bounded, reports per module
 ```
@@ -141,4 +157,6 @@ contract · 0004 event model · 0005 lifecycle · 0006 errors · 0007 privacy ·
 backend selection · 0011 audio stream architecture · 0012 audio
 normalization contract · 0013 capture authorization gate · 0014 audio
 intelligence architecture · 0015 VAD selection · 0016 analysis results and
-units · 0017 analysis privacy · 0018 analysis resource policy.
+units · 0017 analysis privacy · 0018 analysis resource policy · 0019
+speech architecture · 0020 ASR and language-ID selection · 0021 transcript
+revision semantics · 0022 language observations.
