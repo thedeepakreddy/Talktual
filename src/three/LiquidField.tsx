@@ -9,7 +9,7 @@ precision highp float;
 uniform float uTime;
 uniform vec2 uRes;
 uniform float uLight;
-uniform vec3 uMood;      // weights: x = top pool, y = bottom pool, z = centre bloom
+uniform vec4 uMood;      // weights: x = top-right pool, y = bottom-left pool, z = centre bloom, w = smoke in the other corners
 varying vec2 vUv;
 ${SIMPLEX3}
 float fbm(vec3 p){
@@ -36,7 +36,18 @@ void main(){
   float bottom = exp(-dot(bp, bp) * 3.0);
   float centre = exp(-dot(cp, cp) * 5.0);
   float pools = uMood.x * top + uMood.y * bottom + uMood.z * centre;
-  float heat = clamp(pools * (0.62 + 0.55 * f), 0.0, 1.0);
+  // Orange smoke curling up from the other two corners: ridged noise makes
+  // tendrils, drifting upward a little faster than the liquid field.
+  vec2 lp = (uv - vec2(-0.06, 1.06)) * iso;
+  vec2 rp = (uv - vec2(1.08, -0.05)) * iso;
+  float tl = exp(-dot(lp, lp) * 3.2);
+  float br = exp(-dot(rp, rp) * 3.0);
+  vec3 sp = vec3(p * 2.1 + q * 1.5 + vec2(0.0, -t * 2.2), t * 1.3);
+  float ridge = 1.0 - abs(snoise(sp));
+  float ridge2 = 1.0 - abs(snoise(sp * 2.05 + 4.0));
+  float wisps = pow(ridge, 3.0) * 0.7 + pow(ridge2, 4.0) * 0.45;
+  float smoke = uMood.w * (tl + br) * (0.22 + 0.95 * wisps);
+  float heat = clamp(pools * (0.62 + 0.55 * f) + smoke * 0.9, 0.0, 1.0);
 
   vec3 col;
   if (uLight < 0.5) {
@@ -67,10 +78,10 @@ void main(){
 }
 `;
 
-const MOODS: Record<FieldMood, [number, number, number]> = {
-  rich: [1.0, 0.92, 0.16],
-  session: [0.34, 0.78, 0.0],
-  calm: [0.62, 0.5, 0.0],
+const MOODS: Record<FieldMood, [number, number, number, number]> = {
+  rich: [1.0, 0.92, 0.16, 0.95],
+  session: [0.34, 0.78, 0.0, 0.7],
+  calm: [0.62, 0.5, 0.0, 0.7],
 };
 
 /**
@@ -110,7 +121,7 @@ export function LiquidField({ mood }: { mood: FieldMood }) {
 
       const scene = new THREE.Scene();
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-      const target = new THREE.Vector3(...MOODS[moodRef.current]);
+      const target = new THREE.Vector4(...MOODS[moodRef.current]);
       const uniforms = {
         uTime: { value: 0 },
         uRes: { value: new THREE.Vector2(1, 1) },
@@ -143,7 +154,7 @@ export function LiquidField({ mood }: { mood: FieldMood }) {
         const m = uniforms.uMood.value;
         m.lerp(target, reduced ? 1 : 0.06);
         renderer.render(scene, camera);
-        const settled = m.distanceTo(target) < 0.002;
+        const settled = Math.hypot(m.x - target.x, m.y - target.y, m.z - target.z, m.w - target.w) < 0.002;
         return !reduced || !settled;
       }, 30);
 

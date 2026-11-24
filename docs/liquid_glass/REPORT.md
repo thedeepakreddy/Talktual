@@ -73,3 +73,14 @@ Evidence:
 - `docs/voice_wave/orb-and-wave-dark-light.jpg`: the orb and the wave in both themes
 
 The Liquid Orb replaced the earlier molten `VoiceOrb` on Home.
+
+## Round 4 — the logo's wave as the voice visual (replaces the orb)
+| Request | Done |
+| --- | --- |
+| "Crazy animation from the app logo's wave", Liquid Glass, premium | `LogoWave`: the mark's two waves as orange liquid-glass slabs (inner light, cap, crest line, caustics) that unfold into a full-width living waveform with the same crest DNA, and fold back |
+| RGB colour reflection | Iridescent thin-film rims; an RGB-split sweeping reflection; three lagging colour copies of each edge, so dispersion appears with motion |
+| Next-level physics | Elastic-string edges (128 nodes, 240 Hz), tension on the deviation from the target shape (holds the logo exactly at rest), splashes on voice jumps, spring morph with overshoot, 3D swirl mid-transition |
+| More orange smoke in the other corners | Ridged-noise smoke tendrils rising from top-left and bottom-right |
+| No Three.js / animation bugs | Found and fixed during QA: string tension flattening the logo, glow stubs on near-zero slabs, and a `Vector4.distanceTo` runtime error in the field (would have thrown every frame). The browser test now covers Home as well as AIR and fails on any error or WebGL warning |
+
+Evidence: `docs/voice_wave/logo-to-wave-sequence-dark.jpg` (fake-clock frames) and `logo-and-wave-dark-light.jpg`.
