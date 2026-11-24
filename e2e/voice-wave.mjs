@@ -1,55 +1,74 @@
-// Voice wave: renders it in AIR driven by SCRIPTED recognizer events (simulated
-// recognizer, real Chromium canvas), in dark and light, and checks that it is
-// flat when nothing is reported. Screenshots → docs/voice_wave/.
+// Liquid Orb ↔ Sujit wave: renders AIR in real Chromium driven by SCRIPTED
+// recognizer events (simulated recognizer) in dark and light, and checks that
+//  - while listening in silence it stays an orb (morph ≈ 0),
+//  - reported speech turns it into the wave (morph → 1),
+//  - after silence it returns to the orb,
+//  - no page errors, console errors, or Three.js / WebGL warnings.
+// Frames of the transformation → docs/voice_wave/.
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
 import { loadChromium, startStack, initScript, root } from './harness.mjs';
 
 const stack = await startStack({ apiPort: 8991, webPort: 4291, outDir: path.join(root, 'e2e/.dist-wave'), fetchOpts: { dict: { 'hu|en': { 'Jó napot kívánok mindenkinek itt': 'Good afternoon to everyone here' } } } });
 const chromium = await loadChromium();
 const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream'] });
 const outDir = path.join(root, 'docs/voice_wave');
+mkdirSync(outDir, { recursive: true });
 let code = 0;
 try {
   for (const scheme of ['dark', 'light']) {
     const ctx = await browser.newContext({ colorScheme: scheme, permissions: ['microphone'], viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     await ctx.addInitScript(initScript, {});
     const page = await ctx.newPage();
-    const errors = [];
-    page.on('pageerror', (e) => errors.push(e.message));
+    const problems = [];
+    page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+    page.on('console', (m) => {
+      const t = m.text();
+      // Screenshots read the canvas back, which the software GL driver reports as a stall; that is the test, not the app.
+      if (/GPU stall due to ReadPixels/.test(t)) return;
+      // The test server has no TTS key: /api/tts answers 503 by design and the browser voice speaks instead.
+      if (/Failed to load resource/.test(t) && /\/api\/tts/.test(m.location()?.url ?? '')) return;
+      if (m.type() === 'error' || (m.type() === 'warning' && /THREE|WebGL|GL_|shader/i.test(t))) problems.push(`${m.type()}: ${t}`);
+    });
     await page.goto(`${stack.web}/#/air`);
     await page.getByRole('button', { name: 'Start listening' }).click();
     const d = page.getByRole('dialog', { name: 'Listening to the room' });
     if (await d.isVisible().catch(() => false)) await d.getByRole('button', { name: 'Start listening' }).click();
     await page.waitForFunction(() => window.__srRunning());
-    const wave = page.getByTestId('voice-wave');
-    await page.waitForTimeout(600);
-    // Silence: nothing reported → the canvas holds only the idle line.
-    const ink = () => wave.locator('canvas[role="img"]').evaluate((c) => {
-      const g = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-      const rows = new Set();
-      for (let i = 3; i < g.length; i += 4) if (g[i] > 110) rows.add(Math.floor((i - 3) / 4 / c.width));
-      return rows.size / c.height; // vertical extent of drawn pixels, as a share of the canvas
-    });
-    const idleRows = await ink();
-    await wave.screenshot({ path: path.join(outDir, `air-idle-${scheme}.png`) });
-    // Scripted speech: interim words arriving.
-    const words = 'Jó napot kívánok mindenkinek itt'.split(' ');
-    for (let i = 1; i <= words.length; i++) {
-      await page.evaluate((t) => window.__say(t, false), words.slice(0, i).join(' '));
-      await page.waitForTimeout(110);
+    const stage = page.getByTestId('voice-wave');
+    const orb = stage.locator('[data-morph]');
+    await page.waitForFunction(() => document.querySelector('[data-testid="voice-wave"] [data-webgl="on"]'), null, { timeout: 15000 });
+    const morph = async () => Number(await orb.getAttribute('data-morph'));
+    await page.waitForTimeout(1200);
+    const idle = await morph();
+    await stage.screenshot({ path: path.join(outDir, `orb-idle-${scheme}.jpg`), type: 'jpeg', quality: 86 });
+
+    // Scripted speech: interim words arriving steadily.
+    const words = 'Jó napot kívánok mindenkinek itt és most is'.split(' ');
+    let peak = 0;
+    let shot = 0;
+    for (let round = 0; round < 3; round++) {
+      for (let i = 1; i <= words.length; i++) {
+        await page.evaluate((t) => window.__say(t, false), words.slice(0, i).join(' ') + (round ? ` ${round}` : ''));
+        await page.waitForTimeout(90);
+        const m = await morph();
+        peak = Math.max(peak, m);
+        if (scheme === 'dark' && shot < 4 && m > 0.12 * (shot + 1) + 0.05) {
+          await stage.screenshot({ path: path.join(outDir, `orb-morph-${++shot}-${scheme}.jpg`), type: 'jpeg', quality: 86 });
+        }
+      }
     }
-    const activeRows = await ink();
-    await wave.screenshot({ path: path.join(outDir, `air-speech-${scheme}.png`) });
-    await page.screenshot({ path: path.join(outDir, `air-screen-${scheme}.png`) });
+    await stage.screenshot({ path: path.join(outDir, `orb-wave-${scheme}.jpg`), type: 'jpeg', quality: 86 });
+    await page.screenshot({ path: path.join(outDir, `air-screen-${scheme}.jpg`), type: 'jpeg', quality: 86 });
     await page.evaluate((t) => window.__say(t, true), words.join(' '));
-    await page.waitForTimeout(3500);
-    const settledRows = await ink();
-    console.log(`${scheme}: drawn height idle ${(idleRows * 100).toFixed(0)}%, speaking ${(activeRows * 100).toFixed(0)}%, after silence ${(settledRows * 100).toFixed(0)}%`);
-    assert.ok(idleRows <= 0.3, 'idle is one thin (tilted) line');
-    assert.ok(activeRows > idleRows * 2, 'wave rises with reported speech');
-    assert.ok(settledRows <= idleRows + 0.05 && settledRows < activeRows / 2, 'wave settles back to a line after silence');
-    assert.deepEqual(errors, []);
+    await page.waitForFunction(() => Number(document.querySelector('[data-testid="voice-wave"] [data-morph]')?.getAttribute('data-morph')) < 0.05, null, { timeout: 8000 });
+    const settled = await morph();
+    console.log(`${scheme}: morph idle ${idle.toFixed(2)}, peak while speaking ${peak.toFixed(2)}, after silence ${settled.toFixed(2)}`);
+    assert.ok(idle <= 0.05, 'silent: stays an orb');
+    assert.ok(peak >= 0.6, 'reported speech: becomes the wave');
+    assert.ok(settled <= 0.05, 'after silence: back to the orb');
+    assert.deepEqual(problems, []);
     await ctx.close();
   }
   console.log('voice wave checks passed');

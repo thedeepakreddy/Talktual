@@ -8,7 +8,7 @@ import { Button, IconButton } from '../components/ui';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { micPermission } from '../lib/audio';
 import { detectBrowserCapabilities } from '../engine/capabilities';
-import { VoiceOrb } from '../three/VoiceOrb';
+import { LiquidOrb } from '../three/LiquidOrb';
 
 interface HomeProps {
   language: Language;
@@ -59,8 +59,8 @@ export function HomePage({ language, airFrom, onLanguageChange, onAirFromChange,
       </header>
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] lg:items-center lg:gap-14 lg:pt-14">
-        <div className="relative mx-auto mt-2 h-[188px] w-[188px] sm:h-[220px] sm:w-[220px] lg:order-2 lg:mt-0 lg:h-[400px] lg:w-[400px]">
-          <VoiceOrb ambient className="absolute inset-0" />
+        <div className="relative -mx-4 mt-1 h-[236px] sm:-mx-6 sm:h-[280px] lg:order-2 lg:mx-0 lg:mt-0 lg:h-[460px]">
+          <LiquidOrb ambient className="absolute inset-0" />
         </div>
 
         <section aria-labelledby="air-title" className="relative pt-6 lg:order-1 lg:pt-0">

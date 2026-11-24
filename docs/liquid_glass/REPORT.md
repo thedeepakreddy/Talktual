@@ -58,3 +58,18 @@ Plan: `DESIGN_PLAN.md`. The system as built: `/DESIGN.md` v3.0.0. Renders: `afte
 - WebGL and backdrop blur cost GPU time. Frame caps, idle init, pause-when-hidden and reduced motion help, but the battery impact on real phones is unmeasured.
 - Geist has no Arabic, Hebrew, Devanagari or CJK glyphs, so those scripts use the system font, as before.
 - The tablet and desktop session screens use a centred column; this is intentional for readability.
+
+## Round 3 — the Liquid Orb (owner reference: luminous glass sphere with an inner ribbon)
+| Request | Done |
+| --- | --- |
+| The reference orb's light, quality, reflection and style, in liquid glass, in UI colours | `LiquidOrb`: milky self-lit glass, orange/ember pools, a coloured limb, a crisp luminous edge, a prismatic fringe, speculars, an inner S-ribbon with ember edges, and fine lens streaks |
+| "Luminescence like the reference, not a glowing sun" | The corona was removed: the light comes from inside the glass, with only a tight bloom that follows the silhouette |
+| Reacts to sound; physics | Ripples, jelly squash and inner brightness follow the real level; spring–damper morph and squash; hysteresis |
+| Orb becomes the wave (crazy animation) and returns | The sphere flattens into a lens, then a line; the ribbon unfurls into the Sujit wave with 13 strands fanning out in 3D; a mid-transition swirl and ripple; it springs back after silence |
+| No Three.js or animation bugs | GPU contexts released on unmount; context-loss fallback; the browser test fails on any page error, console error or WebGL/Three.js warning; deterministic fake-clock frame captures checked |
+
+Evidence:
+- `docs/voice_wave/orb-to-wave-sequence-dark.jpg`: the orb → lens → wave → lens → orb sequence, captured with a fake clock
+- `docs/voice_wave/orb-and-wave-dark-light.jpg`: the orb and the wave in both themes
+
+The Liquid Orb replaced the earlier molten `VoiceOrb` on Home.

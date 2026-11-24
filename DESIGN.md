@@ -1,7 +1,7 @@
 ---
 name: Talktual
 direction: Molten glass — iOS 27-style liquid glass over a slow molten field, in iPhone 17 Pro Cosmic Orange
-version: 3.0.0
+version: 3.1.0
 status: current (supersedes 2.1.0 "Futuristic Audio"); owner brief of 2026-11-24 overrides the Phase 7 constitution's "no glass / gradients / glow / pills" rules
 source: src/index.css (tokens + materials), src/components/ui/* (primitives), src/components/icons.tsx (icon set), src/three/* (Three.js scenes), src/components/voice/* (Sujit wave)
 themes: [dark (Obsidian, showcase), light (Daylight)] — system by default, user-selectable (Settings › Appearance)
@@ -122,26 +122,47 @@ A full-screen shader: low-frequency domain-warped flow, with light pooling at th
 - a still frame under reduced motion
 - CSS gradient fallback
 
-### VoiceOrb
-A molten glass sphere (fresnel, specular, internal flow) used as the **Home hero**. There, it drifts slowly and decoratively and is labelled by the page as not listening.
+### Liquid Orb (`src/three/LiquidOrb.tsx`) — the voice visual
+Inspired by the owner's reference: a luminous glass sphere holding a twisting ribbon, in Cosmic Orange.
 
-### Sujit wave (`src/components/voice/SujitWaveform.tsx`)
-The voice visual in AIR (a full-width centred stage, 200–340 px, then 136 px once the transcript fills) and in calls (above the dock).
+**The orb:**
+- **Body:** milky glass that glows from within.
+- **Colour:** saturated orange and ember pools at the poles, drifting slowly.
+- **Edge:** the limb takes on colour, and the very edge is a crisp luminous line.
+- **Light around it:** a prismatic fringe, two speculars, and a *tight* bloom that hugs the silhouette (no corona), plus fine horizontal lens streaks.
+- **Ribbon:** an S-shaped frosted band with fine ember edge lines, floating inside.
 
-**Strands:**
-- seven lead strands plus fourteen filaments
-- one envelope that peaks in the middle
-- each strand in its own plane around a level axis, so the bundle turns in depth
-- the lead strand is white-hot with an orange glow; the ends taper
-- dark theme: additive light; light theme: ink with an ember lead
+**Orb ↔ wave:**
+- **Trigger:** sustained reported speech (> 0.3 for 140 ms) turns the orb into the **Sujit wave**.
+- **The change:**
+  - The sphere flattens into a lens, then a line of light.
+  - The ribbon unfurls across the full width.
+  - Thirteen strands fan out in 3D around a white-hot lead.
+  - It swirls and ripples halfway through.
+- **Return:** after 1.1 s of calm (< 0.1) it springs back.
 
-**Driven by `ActivityLevel` only:**
-- the recognizer's speech floor
-- decaying bumps per interim word
-- real mic loudness where a stream exists
-- height uses a perceptual curve, so ordinary speech swells the middle
+**Physics:**
+- the morph spring: k 24, ζ 0.6, with a slight overshoot
+- a jelly squash spring kicked by rising level
+- attack/release level smoothing
+- fixed 120 Hz sub-steps, for stability at any frame rate
 
-With no level, it shows one calm tapered line with a warm centre and the loop stops.
+**Honesty:** ripples, squash, glow and the morph come **only** from `ActivityLevel` (real recognizer events or real mic loudness). While listening in silence, only the light inside flows (a true state). When not listening, it is still and dimmed.
+
+**Uses:**
+- **AIR:** centred in the middle of the screen until translations arrive, then compact above them.
+- **Home hero:** decorative, with a slow drift, and it never becomes a wave there.
+
+**Robustness:**
+- Three.js is lazy-loaded.
+- One renderer per orb; the GPU context is released on unmount.
+- Device pixel ratio ≤ 2; it sleeps when settled or hidden.
+- The morph snaps without travel under reduced motion.
+- Fallbacks: a CSS orb when WebGL is missing or the context is lost.
+- The browser test asserts no page errors, console errors or Three.js/WebGL warnings.
+
+### Sujit wave, canvas (`src/components/voice/SujitWaveform.tsx`)
+The 2D canvas version of the wave, used in calls above the dock, with the same honest level source.
 
 ### UI motion
 - spring presses (`--ease-spring`)
