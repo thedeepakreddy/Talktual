@@ -1,0 +1,32 @@
+# cargo-deny policy for the Communication Engine workspace.
+# Run: cargo deny check   (see scripts/verify.sh)
+
+[graph]
+all-features = true
+
+[advisories]
+# Fail on any RustSec advisory affecting a dependency; unmaintained crates
+# in the dependency tree are reported as well.
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+# Permissive licenses compatible with a future commercial SDK. Anything else
+# needs an explicit review (Phase 1 spec, section 10).
+allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+confidence-threshold = 0.9
+
+[licenses.private]
+# Workspace crates are unpublished (license = "UNLICENSED" placeholder until
+# the owner chooses a license).
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

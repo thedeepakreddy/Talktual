@@ -128,6 +128,17 @@ Realtime behaviour lives in a React-free engine, `src/engine/CommunicationSessio
 
 Builds with `VITE_VOICEMIRROR=1` show a **Voice match** toggle. With the speaker's explicit, per-call consent, the device measures their pitch level while they talk (on device, nothing recorded or stored). It shares one coarse setting so the other person's translated voice follows that pitch level. It **does not clone or reproduce anyone's voice**; see [the evaluation](docs/phase3/PHASE3_EVALUATION_REPORT.md) for what it does and doesn't preserve. Server side: `VOICEMIRROR_ENABLED=1` and an optional `VOICEMIRROR_VOICE_CATALOG` (validated by `check-config`). Evaluation harness: `eval/voicemirror/`.
 
+## Communication Engine (Rust, Phase 1 foundation)
+
+`communication-engine/` is a separate, product-agnostic Rust workspace: the
+foundation (contracts, runtime, registry, bounded event flow, lifecycle,
+cancellation, sessions, test kit and facade) for a reusable communication
+engine. Talktual will be its first consumer; nothing in the web app uses it
+yet, and it does not replace `src/engine/`. It has no audio, speech,
+translation or voice functionality. See
+[communication-engine/README.md](communication-engine/README.md) and its
+[Phase 1 report](communication-engine/docs/phases/phase-1-report.md).
+
 ## Audit and engineering reports
 
 - Phase 1 (stabilization): [docs/phase1/](docs/phase1/STABILIZATION_REPORT.md)
