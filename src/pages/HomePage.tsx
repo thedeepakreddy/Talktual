@@ -8,7 +8,7 @@ import { Button, IconButton } from '../components/ui';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { micPermission } from '../lib/audio';
 import { detectBrowserCapabilities } from '../engine/capabilities';
-import { LiquidOrb } from '../three/LiquidOrb';
+import { LogoWave } from '../three/LogoWave';
 
 interface HomeProps {
   language: Language;
@@ -58,9 +58,9 @@ export function HomePage({ language, airFrom, onLanguageChange, onAirFromChange,
         </IconButton>
       </header>
 
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] lg:items-center lg:gap-14 lg:pt-14">
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(360px,520px)] lg:items-center lg:gap-14 lg:pt-14">
         <div className="relative -mx-4 mt-1 h-[236px] sm:-mx-6 sm:h-[280px] lg:order-2 lg:mx-0 lg:mt-0 lg:h-[460px]">
-          <LiquidOrb ambient className="absolute inset-0" />
+          <LogoWave ambient className="absolute inset-0" />
         </div>
 
         <section aria-labelledby="air-title" className="relative pt-6 lg:order-1 lg:pt-0">
