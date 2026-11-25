@@ -37,6 +37,9 @@ pub(crate) struct Metrics {
     pub(crate) deadline_misses: AtomicU64,
     /// Live per-worker signal forwarders (gauge).
     pub(crate) worker_forwarders: AtomicU64,
+    /// Live abandoned stage workers (gauge).
+    pub(crate) abandoned_workers: AtomicU64,
+    pub(crate) starts_refused_abandoned: AtomicU64,
     /// Set by producers when a queue rejects; cleared by the core when it
     /// publishes the coalesced `QueueSaturated` event.
     pub(crate) ingress_saturated: AtomicBool,
@@ -80,6 +83,8 @@ impl Metrics {
             timeline_anomalies: self.timeline_anomalies.load(Relaxed),
             deadline_misses: self.deadline_misses.load(Relaxed),
             worker_forwarders: self.worker_forwarders.load(Relaxed),
+            abandoned_workers: self.abandoned_workers.load(Relaxed),
+            starts_refused_abandoned: self.starts_refused_abandoned.load(Relaxed),
         }
     }
 }

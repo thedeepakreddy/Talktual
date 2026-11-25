@@ -23,7 +23,8 @@ requires the absence of starvation or a justified priority.
   Every ready data arm is chosen with non-zero probability on each
   iteration, so none can be starved by another.
 * **Module exit**: module events emitted before the exit are processed
-  first. The exit arm drains pending ingress before reaping the module.
+  first. The exit arm drains the ingress queued at that moment (bounded,
+  audit AUD-14) before reaping the module.
   This guarantee used to come from the arm order, and it is now explicit.
 * Per-stream FIFO order within a channel is unchanged. Cross-channel
   order was never guaranteed: consumers order by the envelope `sequence`

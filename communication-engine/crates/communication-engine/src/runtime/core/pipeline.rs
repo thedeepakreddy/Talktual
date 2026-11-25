@@ -132,6 +132,32 @@ impl Pipeline {
     }
 }
 
+/// Test-only fault injection (feature `test-hooks`; Phase 7 audit AUD-03).
+#[cfg(feature = "test-hooks")]
+#[derive(Debug)]
+pub(crate) enum TestHook {
+    /// From now on, keep a clone of every translation worker's own signal
+    /// sender (keeps its forwarder alive).
+    RetainTranslationSenders,
+    /// Send `event` through the retained sender of the translation worker
+    /// of `generation` on `stream`: the real forwarder tags it with that
+    /// generation and the core admits or rejects it.
+    InjectTranslation {
+        stream: AudioStreamId,
+        generation: u64,
+        event: Box<TranslationEvent>,
+        reply: tokio::sync::oneshot::Sender<CeResult<()>>,
+    },
+}
+
+/// The result of the checks made before a pipeline starts.
+struct Prepared {
+    session: SessionId,
+    rate: u32,
+    graph: ValidatedGraph,
+    degraded: BTreeMap<StageKind, (FaultClass, String)>,
+}
+
 /// Orchestration bookkeeping owned by the core.
 #[derive(Default)]
 pub(crate) struct Pipelines {
@@ -141,7 +167,20 @@ pub(crate) struct Pipelines {
     finished: BTreeMap<AudioStreamId, (PipelineStatus, PipelineSpec)>,
     finished_order: Vec<AudioStreamId>,
     stale_reported: VecDeque<(StageKind, AudioStreamId, u64)>,
+    /// Generations of workers cleaned up after a failed start: they never
+    /// became current, so their signals are dropped without a stale-output
+    /// report (AUD-07). Bounded.
+    discarded: VecDeque<u64>,
     pending: VecDeque<Pending>,
+    /// Feature `test-hooks`: retained translation worker senders.
+    #[cfg(feature = "test-hooks")]
+    retained: Option<
+        Vec<(
+            AudioStreamId,
+            u64,
+            mpsc::Sender<ce_translate::TranslationSignal>,
+        )>,
+    >,
 }
 
 impl std::fmt::Debug for Pipelines {
@@ -230,6 +269,106 @@ impl Core {
         self.pipelines.generations.issue()
     }
 
+    /// Feature `test-hooks`: remember a translation worker's sender.
+    #[cfg(feature = "test-hooks")]
+    pub(super) fn retain_translation_sender(
+        &mut self,
+        stream: AudioStreamId,
+        generation: u64,
+        tx: &mpsc::Sender<ce_translate::TranslationSignal>,
+    ) {
+        if let Some(r) = self.pipelines.retained.as_mut() {
+            r.push((stream, generation, tx.clone()));
+        }
+    }
+
+    /// Feature `test-hooks`: run a test hook.
+    #[cfg(feature = "test-hooks")]
+    pub(super) fn test_hook(&mut self, hook: TestHook) {
+        match hook {
+            TestHook::RetainTranslationSenders => {
+                self.pipelines.retained.get_or_insert_with(Vec::new);
+            }
+            TestHook::InjectTranslation {
+                stream,
+                generation,
+                event,
+                reply,
+            } => {
+                let found = self.pipelines.retained.as_ref().and_then(|r| {
+                    r.iter()
+                        .find(|(s, g, _)| *s == stream && *g == generation)
+                        .map(|(_, _, tx)| tx.clone())
+                });
+                let result = match found {
+                    Some(tx) => tx
+                        .try_send(ce_translate::TranslationSignal::Event(*event))
+                        .map_err(|_| {
+                            CeError::internal("test.inject_failed", "worker channel full or closed")
+                        }),
+                    None => Err(CeError::invalid_input(
+                        "test.no_retained_sender",
+                        "no retained sender for this stream and generation",
+                    )),
+                };
+                let _ = reply.send(result);
+            }
+        }
+    }
+
+    /// Abandoned stage workers whose threads are still alive, all stages.
+    /// Computed from the worker handles (a thread that exited no longer
+    /// counts, whether or not housekeeping has reaped it yet), so the
+    /// accounting cannot double-count, underflow or drift.
+    pub(super) fn abandoned_live(&self) -> usize {
+        self.intel_abandoned_live()
+            + self.speech_abandoned_live()
+            + self.semantic_abandoned_live()
+            + self.translation_abandoned_live()
+    }
+
+    /// Publish the abandoned-worker gauge.
+    pub(super) fn refresh_abandoned_gauge(&self) {
+        self.metrics
+            .abandoned_workers
+            .store(self.abandoned_live() as u64, Relaxed);
+    }
+
+    /// AUD-01: refuse a new stage worker while the live abandoned workers
+    /// are at `orchestration.max_abandoned_workers`. Runs on the single
+    /// control task before the worker is spawned, so concurrent requests
+    /// are serialized and cannot overshoot the check.
+    pub(super) fn admit_worker_start(&mut self, stage: StageKind) -> CeResult<()> {
+        let live = self.abandoned_live();
+        self.refresh_abandoned_gauge();
+        let max = self.config.orchestration.max_abandoned_workers as usize;
+        if live >= max {
+            Metrics::inc(&self.metrics.starts_refused_abandoned, 1);
+            self.log(
+                Observation::log(Level::Warn, "orchestration.abandoned_workers_exhausted")
+                    .field("stage", stage.as_str())
+                    .field("abandoned", live),
+            );
+            return Err(CeError::new(
+                ErrorCategory::QueueSaturated,
+                "orchestration.abandoned_workers_exhausted",
+                "too many abandoned stage workers are still running; new workers are refused until they exit",
+            )
+            .with_context("stage", stage.as_str())
+            .with_context("abandoned", live.to_string())
+            .with_context("max", max.to_string()));
+        }
+        Ok(())
+    }
+
+    /// A worker of `generation` was cleaned up after its start failed.
+    pub(super) fn discard_generation(&mut self, generation: u64) {
+        self.pipelines.discarded.push_back(generation);
+        while self.pipelines.discarded.len() > STALE_REPORTED_KEPT {
+            self.pipelines.discarded.pop_front();
+        }
+    }
+
     /// Admit a tagged signal of `stage` for `stream`; report a stale one.
     pub(super) fn admit_signal(
         &mut self,
@@ -240,6 +379,15 @@ impl Core {
     ) -> bool {
         match admit(current, generation) {
             Admission::Current => true,
+            Admission::Stale { .. } if self.pipelines.discarded.contains(&generation) => {
+                self.log(
+                    Observation::log(Level::Debug, "orchestration.discarded_worker_signal")
+                        .field("stage", stage.as_str())
+                        .field("stream", stream)
+                        .field("generation", generation),
+                );
+                false
+            }
             Admission::Stale { current } => {
                 Metrics::inc(&self.metrics.stale_outputs_rejected, 1);
                 self.log(
@@ -391,6 +539,29 @@ impl Core {
         // A required stage ended normally (its source ended, or it was
         // stopped directly), or every stage has ended: the pipeline ends.
         let all_ended = p.stages.iter().all(|s| s.state != StageState::Running);
+        // A `SourceEnded` end is the pipeline winding down (its source
+        // stage's own end may simply not have been processed yet).
+        if requirement == Requirement::Optional && !all_ended && end == StageEnd::Stopped {
+            // AUD-05: an optional stage that ended while the pipeline runs
+            // leaves it running without that stage: degraded, explicitly.
+            if let Ok(to) = p.state.transition_to(PipelineState::Degraded) {
+                p.state = to;
+            }
+            if let Some(st) = p.stage_mut(stage) {
+                st.reason = Some("orchestration.stage_ended".into());
+            }
+            self.emit(
+                EventPayload::Orchestration(OrchestrationEvent::StageDegraded {
+                    stream,
+                    epoch,
+                    stage,
+                    fault: FaultClass::Cancellation,
+                    code: "orchestration.stage_ended".into(),
+                }),
+                Some(session),
+            );
+            return;
+        }
         if requirement == Requirement::Required || all_ended {
             p.finish_queued = true;
             let reason = if end == StageEnd::SourceEnded {
@@ -528,8 +699,15 @@ impl Core {
 
     /// Check that a stage can be started on `stream` (adapters, no worker
     /// already running) without starting anything.
-    fn preflight(&self, stream: AudioStreamId, s: &ResolvedStage) -> CeResult<()> {
-        if self.stage_generation(s.kind, stream).is_some() {
+    fn preflight(&self, stream: AudioStreamId, s: &ResolvedStage, replacing: bool) -> CeResult<()> {
+        let owned_by_pipeline = replacing
+            && self
+                .pipelines
+                .running
+                .get(&stream)
+                .and_then(|p| p.stages.iter().find(|st| st.kind == s.kind))
+                .is_some_and(|st| st.generation == self.stage_generation(s.kind, stream));
+        if !owned_by_pipeline && self.stage_generation(s.kind, stream).is_some() {
             return Err(CeError::lifecycle(
                 "orchestration.stage_already_running",
                 "a worker of this stage already runs on the stream outside the pipeline",
@@ -563,13 +741,42 @@ impl Core {
         }
     }
 
-    async fn stop_stage(&mut self, kind: StageKind, stream: AudioStreamId) {
-        let _ = match kind {
+    /// Stop one stage worker (bounded) and report how it went (AUD-06).
+    async fn stop_stage(&mut self, kind: StageKind, stream: AudioStreamId) -> StopOutcome {
+        let Some(generation) = self.stage_generation(kind, stream) else {
+            return StopOutcome::NotRunning;
+        };
+        let result = match kind {
             StageKind::Analysis => self.stop_analysis(stream).await,
             StageKind::Recognition => self.stop_recognition(stream).await,
             StageKind::Semantics => self.stop_semantics(stream).await,
             StageKind::Translation => self.stop_translation(stream).await,
         };
+        if let Err(e) = result {
+            self.log(
+                Observation::log(Level::Warn, "orchestration.stage_stop_failed")
+                    .field("stream", stream)
+                    .field("stage", kind.as_str())
+                    .field("code", e.code()),
+            );
+        }
+        match self
+            .pipelines
+            .running
+            .get(&stream)
+            .and_then(|p| p.ends.get(&kind))
+        {
+            Some((g, _, timed_out)) if *g == generation => {
+                if *timed_out {
+                    StopOutcome::TimedOut
+                } else {
+                    StopOutcome::Clean
+                }
+            }
+            // Not a pipeline stage (or no end noted): judge by liveness.
+            _ if self.stage_generation(kind, stream) != Some(generation) => StopOutcome::Clean,
+            _ => StopOutcome::TimedOut,
+        }
     }
 
     async fn await_stage(&mut self, kind: StageKind, stream: AudioStreamId, deadline: Instant) {
@@ -581,12 +788,17 @@ impl Core {
         }
     }
 
-    /// Validate and start a pipeline.
-    pub(super) async fn start_pipeline(
-        &mut self,
+    /// Every check that can be made before anything is started or stopped:
+    /// specification, stream, pipeline slot, graph, abandoned-worker cap and
+    /// per-stage pre-flight. `replacing`: the stream's running pipeline is
+    /// about to be replaced (restart), so its slot and its own stage workers
+    /// are not conflicts (AUD-02).
+    fn prepare_pipeline(
+        &self,
         stream: AudioStreamId,
-        spec: PipelineSpec,
-    ) -> CeResult<CommandOutcome> {
+        spec: &PipelineSpec,
+        replacing: bool,
+    ) -> CeResult<Prepared> {
         spec.validate()?;
         let (session, rate) = {
             let audio = self.audio.as_ref().ok_or_else(|| {
@@ -621,14 +833,14 @@ impl Core {
             }
             (info.session_id, info.format.delivered.sample_rate)
         };
-        if self.pipelines.running.contains_key(&stream) {
+        if !replacing && self.pipelines.running.contains_key(&stream) {
             return Err(CeError::lifecycle(
                 "orchestration.already_running",
                 "this stream already has a pipeline",
             ));
         }
         let max = self.config.orchestration.max_pipelines as usize;
-        if self.pipelines.running.len() >= max {
+        if !replacing && self.pipelines.running.len() >= max {
             return Err(CeError::new(
                 ErrorCategory::QueueSaturated,
                 "orchestration.capacity_exhausted",
@@ -642,18 +854,51 @@ impl Core {
             .map(|s| ResolvedStage::resolve(s, |k| self.default_stage_config(k)))
             .collect();
         let graph = ce_orchestrate::validate(resolved, spec.stop, spec.deadlines)?;
+        // AUD-01: no stage could start while the abandoned-worker cap is
+        // reached; fail before anything starts (or is stopped, on restart).
+        let live = self.abandoned_live();
+        let max_abandoned = self.config.orchestration.max_abandoned_workers as usize;
+        if live >= max_abandoned {
+            return Err(CeError::new(
+                ErrorCategory::QueueSaturated,
+                "orchestration.abandoned_workers_exhausted",
+                "too many abandoned stage workers are still running; new workers are refused until they exit",
+            )
+            .with_context("abandoned", live.to_string())
+            .with_context("max", max_abandoned.to_string()));
+        }
         // Pre-flight before anything starts: required problems fail the
         // pipeline now; optional ones degrade the stage (and its optional
         // dependents) explicitly.
         let mut degraded: BTreeMap<StageKind, (FaultClass, String)> = BTreeMap::new();
         for s in &graph.stages {
-            if let Err(e) = self.preflight(stream, s) {
+            if let Err(e) = self.preflight(stream, s, replacing) {
                 if s.requirement == Requirement::Required {
                     return Err(e);
                 }
                 degraded.insert(s.kind, (FaultClass::of(&e), e.code().to_string()));
             }
         }
+        Ok(Prepared {
+            session,
+            rate,
+            graph,
+            degraded,
+        })
+    }
+
+    /// Validate and start a pipeline.
+    pub(super) async fn start_pipeline(
+        &mut self,
+        stream: AudioStreamId,
+        spec: PipelineSpec,
+    ) -> CeResult<CommandOutcome> {
+        let Prepared {
+            session,
+            rate,
+            graph,
+            mut degraded,
+        } = self.prepare_pipeline(stream, &spec, false)?;
         let epoch = self.pipelines.epochs.issue();
         let stages: Vec<StageStatus> = graph
             .stages
@@ -746,10 +991,20 @@ impl Core {
                             st.reason = Some(e.code().to_string());
                         }
                     }
+                    let mut outcomes = Vec::new();
                     for k in started.iter().rev() {
-                        self.stop_stage(*k, stream).await;
+                        let outcome = self.stop_stage(*k, stream).await;
+                        if let Some(st) = self
+                            .pipelines
+                            .running
+                            .get_mut(&stream)
+                            .and_then(|p| p.stage_mut(*k))
+                        {
+                            st.stop = Some(outcome);
+                        }
+                        outcomes.push((*k, outcome));
                     }
-                    self.fail_pipeline(stream, Some(s.kind), FaultClass::of(&e), &e);
+                    self.fail_pipeline(stream, Some(s.kind), FaultClass::of(&e), &e, outcomes);
                     return Err(e.with_context("stage", s.kind.as_str()));
                 }
             }
@@ -831,6 +1086,7 @@ impl Core {
         stage: Option<StageKind>,
         fault: FaultClass,
         error: &CeError,
+        rollback: Vec<(StageKind, StopOutcome)>,
     ) {
         let Some(mut p) = self.pipelines.running.remove(&stream) else {
             return;
@@ -850,6 +1106,17 @@ impl Core {
                 stage,
                 fault,
                 error: report,
+            }),
+            Some(p.session),
+        );
+        // How the rollback went, stage by stage (AUD-06).
+        self.emit(
+            EventPayload::Orchestration(OrchestrationEvent::PipelineStopped {
+                stream,
+                epoch: p.epoch,
+                reason: PipelineEndReason::Failed,
+                outcomes: rollback,
+                counters: Box::new(p.observer.counters().clone()),
             }),
             Some(p.session),
         );
@@ -903,7 +1170,7 @@ impl Core {
                         // what it has, within the bound.
                         self.await_stage(kind, stream, deadline).await;
                     } else {
-                        self.stop_stage(kind, stream).await;
+                        let _ = self.stop_stage(kind, stream).await;
                     }
                     match self
                         .pipelines
@@ -1090,8 +1357,11 @@ impl Core {
             None => self.pipelines.finished.get(&stream).map(|(_, s)| s.clone()),
         };
         let spec = spec.or(stored).ok_or_else(|| not_found(stream))?;
-        spec.validate()?;
-        if self.pipelines.running.contains_key(&stream) {
+        // AUD-02: validate the replacement before touching the running
+        // pipeline; on failure it keeps running unchanged.
+        let replacing = self.pipelines.running.contains_key(&stream);
+        self.prepare_pipeline(stream, &spec, replacing)?;
+        if replacing {
             self.stop_procedure(
                 stream,
                 PipelineEndReason::Restart,
@@ -1191,5 +1461,52 @@ impl Core {
             let status = p.status(stream, Some(PipelineEndReason::Shutdown));
             self.pipelines.remember(stream, status, p.spec);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The per-worker forwarder is bounded and propagates backpressure
+    /// (audit AUD-04): while the core's channel is not drained, a worker
+    /// can queue at most its own channel's capacity plus the one signal
+    /// held by the forwarder and the core channel's capacity; then sends
+    /// fail (a worker's `blocking_send` would block). Draining delivers
+    /// every accepted signal, in order, tagged; the forwarder ends with its
+    /// sender.
+    #[tokio::test]
+    async fn tagged_sender_is_bounded_ordered_and_ends_with_its_worker() {
+        let metrics = Arc::new(Metrics::default());
+        let (out_tx, mut out_rx) = mpsc::channel::<Tagged<u32>>(1);
+        let tx = tagged_sender(7, out_tx, metrics.clone());
+        assert_eq!(metrics.worker_forwarders.load(Relaxed), 1);
+        let mut accepted = 0u32;
+        let mut full_streak = 0;
+        // Fill until the whole path stays full across forwarder turns.
+        while full_streak < 8 {
+            match tx.try_send(accepted) {
+                Ok(()) => {
+                    accepted += 1;
+                    full_streak = 0;
+                }
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    full_streak += 1;
+                    tokio::task::yield_now().await;
+                }
+                Err(e) => panic!("{e}"),
+            }
+            assert!(accepted <= 1_000, "unbounded");
+        }
+        let bound = WORKER_SIGNAL_CAPACITY as u32 + 1 + 1;
+        assert!(accepted <= bound, "accepted {accepted} > {bound}");
+        assert!(accepted >= WORKER_SIGNAL_CAPACITY as u32);
+        drop(tx);
+        for expected in 0..accepted {
+            let t = out_rx.recv().await.expect("delivered");
+            assert_eq!((t.generation, t.signal), (7, expected));
+        }
+        assert!(out_rx.recv().await.is_none(), "forwarder ended");
+        assert_eq!(metrics.worker_forwarders.load(Relaxed), 0);
     }
 }

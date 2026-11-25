@@ -52,6 +52,8 @@ use ce_semantic::SemanticSignal;
 use ce_speech::worker::SpeechSignal;
 use ce_translate::TranslationSignal;
 use intel::{INTEL_SIGNAL_CAPACITY, IntelState};
+#[cfg(feature = "test-hooks")]
+pub(crate) use pipeline::TestHook;
 use pipeline::{Pipelines, Tagged};
 pub(crate) use semantic::SemanticProviders;
 use semantic::{SEMANTIC_SIGNAL_CAPACITY, SemanticState};
@@ -86,6 +88,9 @@ pub(crate) enum CoreMsg {
         request: StreamRequest,
         reply: oneshot::Sender<CeResult<OpenedAudio>>,
     },
+    /// Test-only fault injection (feature `test-hooks`).
+    #[cfg(feature = "test-hooks")]
+    Test(pipeline::TestHook),
     /// Start analysis with a caller-supplied detector (not serializable).
     StartAnalysisWith {
         stream_id: ce_core::ids::AudioStreamId,
@@ -102,6 +107,8 @@ impl std::fmt::Debug for CoreMsg {
             CoreMsg::Register { .. } => f.write_str("Register"),
             CoreMsg::OpenAudio { .. } => f.write_str("OpenAudio"),
             CoreMsg::StartAnalysisWith { .. } => f.write_str("StartAnalysisWith"),
+            #[cfg(feature = "test-hooks")]
+            CoreMsg::Test(_) => f.write_str("Test"),
         }
     }
 }
@@ -349,6 +356,7 @@ impl Core {
             if self.pipelines.has_pending() {
                 self.process_pipeline_actions().await;
             }
+            self.refresh_abandoned_gauge();
         }
         self.log(Observation::log(Level::Debug, "runtime.core_exited"));
     }
@@ -358,8 +366,12 @@ impl Core {
             DataMsg::Ingress(ingress) => self.handle_ingress(ingress),
             DataMsg::Exit => {
                 // Events a module emitted before exiting are processed first.
-                while let Ok(ingress) = self.ingress_rx.try_recv() {
-                    self.handle_ingress(ingress);
+                // Bounded: at most what is queued now (AUD-14).
+                for _ in 0..self.ingress_rx.len() {
+                    match self.ingress_rx.try_recv() {
+                        Ok(ingress) => self.handle_ingress(ingress),
+                        Err(_) => break,
+                    }
                 }
                 self.reap_actors().await;
             }
@@ -841,6 +853,11 @@ impl Core {
             } => {
                 let result = self.open_audio(session_id, request).await;
                 let _ = reply.send(result);
+                false
+            }
+            #[cfg(feature = "test-hooks")]
+            CoreMsg::Test(hook) => {
+                self.test_hook(hook);
                 false
             }
             CoreMsg::StartAnalysisWith {

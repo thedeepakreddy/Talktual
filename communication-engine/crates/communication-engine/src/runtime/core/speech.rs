@@ -141,6 +141,14 @@ fn is_hint(e: &AnalysisEvent) -> bool {
 }
 
 impl Core {
+    /// Abandoned workers of this stage whose threads are still alive.
+    pub(super) fn speech_abandoned_live(&self) -> usize {
+        self.speech
+            .as_ref()
+            .map(|s| s.abandoned.iter().filter(|h| !h.is_finished()).count())
+            .unwrap_or(0)
+    }
+
     fn speech_mut(&mut self) -> CeResult<&mut SpeechState> {
         self.speech.as_mut().ok_or_else(unavailable)
     }
@@ -195,6 +203,7 @@ impl Core {
     ) -> CeResult<CommandOutcome> {
         let cfg = config.unwrap_or_else(|| self.config.speech.recognition.clone());
         cfg.validate()?;
+        self.admit_worker_start(StageKind::Recognition)?;
         let generation = self.next_generation();
         let metrics = self.metrics.clone();
         let session = {
@@ -279,6 +288,7 @@ impl Core {
             if let Some(s) = self.speech.as_mut() {
                 s.abandoned.push(handle);
             }
+            self.discard_generation(generation);
             return Err(e);
         }
         let status = handle.status();

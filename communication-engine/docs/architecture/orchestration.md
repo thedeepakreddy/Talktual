@@ -153,8 +153,18 @@ and `starting|running|degraded → failed`. Transitions are validated.
   dependency order, and increment `reset_epoch`. Identifiers and
   correlation are kept: utterance numbers are never reused, and
   translation sequences continue (Phase 6 D2).
-* **Restart**: stop, then start with the stored spec and a new pipeline
-  `epoch`. Every stage worker gets a new generation.
+* **Restart**: the replacement (stored or given) is fully checked
+  first. That covers the specification, stream, graph, abandoned-worker
+  cap and per-stage pre-flight. If any check fails, the running pipeline
+  is left untouched (audit AUD-02). Then the pipeline is stopped and
+  started with a new `epoch`. Every stage worker gets a new generation.
+  A start-time failure of a valid replacement rolls back, and is reported
+  with per-stage outcomes (`pipeline_stopped{reason: failed}`, AUD-06).
+* **Optional stage stopped directly**: while the pipeline runs, it
+  degrades the pipeline (`stage_degraded`, code `orchestration.stage_ended`,
+  AUD-05).
+* **Stop deadline**: one shared deadline bounds a whole stop (AUD-13). A
+  slow upstream stop can leave downstream stages reported `timed_out`.
 * **Source end**: when the stream ends and every stage has ended, the
   pipeline is `stopped` with reason `source_ended`.
 
@@ -246,6 +256,17 @@ stale-generation signals are dropped (§3).
   * observer tables are bounded (256 utterances; reservoirs of 512).
 * **Retries**: none are added. Phase 6's bounded, explicit retry policy
   is unchanged.
+* **Abandoned workers** (audit AUD-01):
+  * A worker abandoned at a stop timeout or a stall keeps its OS thread
+    (threads cannot be killed) and its forwarder until the thread exits.
+  * The core counts these from the worker handles, live (a thread that
+    exited no longer counts). No new stage worker starts while the count
+    is at `orchestration.max_abandoned_workers`.
+  * The resulting bound on abandoned threads is the cap − 1 plus the
+    workers running when the cap was reached.
+  * The gauges are `abandoned_workers` and `starts_refused_abandoned`.
+* **Diagnostics** (AUD-09): at most 32 findings per kind and stage per
+  epoch are published; the rest are counted.
 
 ## 6. Privacy
 

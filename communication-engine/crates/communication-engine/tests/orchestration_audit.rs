@@ -2,7 +2,9 @@
 //! gates; run with
 //! `cargo test -p communication-engine --test orchestration_audit -- --ignored --nocapture`.
 //! They record observed behaviour (fake audio, scripted adapters, manual
-//! test clock); see `docs/phases/phase-7-audit.md`.
+//! test clock); see `docs/phases/phase-7-audit.md`. After the audit
+//! corrections they assert the **corrected** behaviour (R1, R2, R5); the
+//! original observations are kept in the audit report.
 
 #![allow(clippy::print_stderr)]
 
@@ -134,11 +136,24 @@ async fn r1_hung_workers_accumulate_threads_and_forwarders() {
     let (mut r, id) = open(&h).await;
     let t0 = threads();
     let mut rows = Vec::new();
-    for round in 1..=8 {
-        h.engine
+    let cap = audio_config().orchestration.max_abandoned_workers as usize;
+    let mut refused = 0;
+    for round in 1..=(cap + 4) {
+        if let Err(e) = h
+            .engine
             .start_pipeline(id, spec("t.hung", Requirement::Required, StopMode::Cancel))
             .await
-            .unwrap();
+        {
+            assert_eq!(e.code(), "orchestration.abandoned_workers_exhausted");
+            refused += 1;
+            rows.push((
+                round,
+                None,
+                h.engine.metrics().worker_forwarders,
+                threads() as i64 - t0 as i64,
+            ));
+            continue;
+        }
         feed(&h, &mut r, 30).await;
         tokio::time::sleep(Duration::from_millis(30)).await;
         let st = h.engine.stop_pipeline(id).await.unwrap();
@@ -159,11 +174,11 @@ async fn r1_hung_workers_accumulate_threads_and_forwarders() {
     for row in &rows {
         eprintln!("{row:?}");
     }
+    // Corrected (AUD-01): growth stops at the cap; further starts are refused.
     let last = rows.last().unwrap();
-    assert!(
-        last.2 >= 8,
-        "forwarders grow with abandoned workers: {rows:?}"
-    );
+    assert_eq!(last.2 as usize, cap, "{rows:?}");
+    assert_eq!(refused, 4, "{rows:?}");
+    assert_eq!(h.engine.metrics().abandoned_workers as usize, cap);
 }
 
 /// AUD-R2: an optional stage stopped directly (per-stage command) leaves
@@ -206,9 +221,10 @@ async fn r2_optional_stage_stopped_directly_is_not_reported_as_degraded() {
         "pipeline state {:?}; translation stage state {:?}; stage_degraded events {degraded_events}",
         st.state, tr.state
     );
-    assert_eq!(st.state, PipelineState::Running);
+    // Corrected (AUD-05).
+    assert_eq!(st.state, PipelineState::Degraded);
     assert_eq!(tr.state, StageState::Ended);
-    assert_eq!(degraded_events, 0);
+    assert_eq!(degraded_events, 1);
 }
 
 /// AUD-R3: attempt to reproduce a stale output end to end — restart the
@@ -295,6 +311,12 @@ async fn r4_command_latency_under_load() {
         sb.counters.causal_violations,
         sb.counters.timeline_anomalies
     );
+    for l in &sa.latency {
+        eprintln!(
+            "stream a latency {:?}: count {} p50 {:.4} ms p95 {:.4} ms max {:.4} ms",
+            l.metric, l.count, l.p50_ms, l.p95_ms, l.max_ms
+        );
+    }
     let m = h.engine.metrics();
     eprintln!(
         "translation_inputs_dropped {}; semantic_inputs_dropped {}; stale {}",
@@ -335,6 +357,7 @@ async fn r5_restart_with_an_invalid_graph_stops_the_running_pipeline_first() {
         st.ended,
         h.engine.recognition_status(id).await.unwrap().running
     );
+    // Corrected (AUD-02): the running pipeline is kept.
     assert_eq!(err.code(), "orchestration.missing_dependency");
-    assert_eq!(st.state, PipelineState::Stopped);
+    assert_eq!(st.state, PipelineState::Running);
 }

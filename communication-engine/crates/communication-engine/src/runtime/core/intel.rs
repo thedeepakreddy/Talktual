@@ -95,6 +95,14 @@ fn no_analysis(id: AudioStreamId) -> CeError {
 }
 
 impl Core {
+    /// Abandoned workers of this stage whose threads are still alive.
+    pub(super) fn intel_abandoned_live(&self) -> usize {
+        self.intel
+            .as_ref()
+            .map(|s| s.abandoned.iter().filter(|h| !h.is_finished()).count())
+            .unwrap_or(0)
+    }
+
     fn intel_mut(&mut self) -> CeResult<&mut IntelState> {
         self.intel.as_mut().ok_or_else(|| {
             CeError::new(
@@ -114,6 +122,7 @@ impl Core {
     ) -> CeResult<CommandOutcome> {
         let cfg = config.unwrap_or_else(|| self.config.analysis.clone());
         cfg.validate()?;
+        self.admit_worker_start(StageKind::Analysis)?;
         let generation = self.next_generation();
         let metrics = self.metrics.clone();
         let session = {
@@ -174,6 +183,7 @@ impl Core {
             if let Some(intel) = self.intel.as_mut() {
                 intel.abandoned.push(handle);
             }
+            self.discard_generation(generation);
             return Err(e);
         }
         let status = handle.status();

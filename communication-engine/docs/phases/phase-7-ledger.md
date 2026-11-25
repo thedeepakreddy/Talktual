@@ -40,7 +40,7 @@ ADR-0033.
 | GOL-2 | Stream/session/utterance/frame/event correlation and causality | observer correlation by (stream, utterance, revision), envelope session/correlation ids, generation and epoch | U causal; R | VERIFIED | — |
 | GOL-3 | Timestamp provenance, clock domains, offsets, uncertainty, discontinuities | `orc::timeline` (media time, reported monotonic, offset, segment, uncertainty) | U timeline; O | VERIFIED | uncertainty is `unknown` unless the audio layer reports a bound |
 | GOL-4 | Partial/final revisions and downstream updates | `orc::reconcile`, causal check | U, O | VERIFIED | — |
-| GOL-5 | Bounded queues, backpressure, concurrency, deadline and cancellation policies | existing queues; forwarders (64); `max_pipelines`; deadline policy; stop modes | U, R | VERIFIED | — |
+| GOL-5 | Bounded queues, backpressure, concurrency, deadline and cancellation policies | existing queues; forwarders (64); `max_pipelines`; abandoned-worker cap (AUD-01); deadline policy; stop modes | U, R, `orchestration_corrections` | VERIFIED | core-channel saturation not forced (see EVL-6) |
 | GOL-6 | Lifecycle, reset, restart, shutdown, stale rejection, recovery | pipeline state machine; generations; epochs | U, R | VERIFIED | — |
 | GOL-7 | Optional modules, partial pipelines, explicit degraded operation | required/optional; `stage_degraded` | U, R | VERIFIED | — |
 | GOL-8 | Privacy-safe metrics, diagnostics, correlation | operational events and status (ids, counts, durations) | R privacy test | VERIFIED | — |
@@ -127,7 +127,7 @@ ADR-0033.
 | CAU-2 | Causal references, not arrival order | checks use the source (utterance, revision) of each output | U | VERIFIED | — |
 | CAU-3 | Respect ASR partial/stable/revision/final semantics | reconcile follows ADR-0021 | U | VERIFIED | — |
 | CAU-4 | Reconcile downstream state on revisions; no duplicate append | `superseded`/`duplicate` classes; Phase 5–6 replacement unchanged | U | VERIFIED | — |
-| CAU-5 | Reject stale outputs after stop/reset/restart by generation | admission by generation on every stage signal | U epoch; R restart (new generations; no prior-run output after the new `stage_started`) | PARTIAL | the race (a signal in flight while a worker is replaced) is logic-tested and inspected, not reproduced end to end deterministically |
+| CAU-5 | Reject stale outputs after stop/reset/restart by generation | admission by generation on every stage signal | U epoch; R restart; **`stale_output_runtime`** (feature `test-hooks`): end to end through a replaced or abandoned worker's real sender, forwarder, admission and publication, including 20 signals interleaved with live output (AUD-03) | VERIFIED | scope: the test sends the late signal through the worker's real sender; the worker thread producing one itself (the natural race) was not forced |
 | CAU-6 | Translation Started resets consumer state; sequences are not global identity | observer translation view | U | VERIFIED | — |
 | CAU-7 | Semantic/translation outputs identify their source revision | existing `SourceRef` and `TranslationSource`; checked | U | VERIFIED | — |
 | CAU-8 | Explicit dedup, idempotency, stale policy | `arch` §3–§4 | docs; U | VERIFIED | — |
@@ -136,8 +136,8 @@ ADR-0033.
 
 | ID | Requirement | Implementation | Evidence | Status | Disposition |
 |---|---|---|---|---|---|
-| SCH-1 | Bound concurrency, queues, state, tasks and threads | `max_pipelines`; one forwarder per worker; existing caps | U, R | VERIFIED | — |
-| SCH-2 | No starvation among eligible streams; justify priority | unbiased data select; control priority (ADR-0033) | U fairness; ADR | VERIFIED | — |
+| SCH-1 | Bound concurrency, queues, state, tasks and threads | `max_pipelines`; one forwarder per worker; **abandoned-worker cap** `max_abandoned_workers` with live accounting and typed refusal (AUD-01); existing caps | U; R; `aud01_*` (cap, concurrency, recovery, lifecycle); R1 | VERIFIED | bound = cap − 1 + workers running when the cap is reached (documented). Before the audit this row was VERIFIED without that bound: AUD-01 showed unbounded growth |
+| SCH-2 | No starvation among eligible streams; justify priority | unbiased data select; control priority (ADR-0033) | U fairness (`next_data`); `aud04_…` (a saturated stage does not stop another stream); audit R4 (command latency under a burst) | PARTIAL | scheduler fairness while a stage's *core* channel is saturated was not forced end to end (AUD-04) |
 | SCH-3 | CPU-heavy work off ingress/callback paths | unchanged | inspection | VERIFIED | — |
 | SCH-4 | Per-stage capacity and overflow behaviour | `arch` §5 table | docs | VERIFIED | — |
 | SCH-5 | Critical lifecycle/control/final events never silently dropped | finals are never coalesced (Phase 4–6); stale rejections reported | R | VERIFIED | — |
@@ -153,13 +153,13 @@ ADR-0033.
 | ID | Requirement | Implementation | Evidence | Status | Disposition |
 |---|---|---|---|---|---|
 | LIF-1 | Explicit, validated transitions | `PipelineState::can_transition_to` | C | VERIFIED | — |
-| LIF-2 | Validate deps/config before startup | graph validation and pre-flight | R | VERIFIED | — |
+| LIF-2 | Validate deps/config before startup | graph validation and pre-flight, **also before restart teardown** (AUD-02) | R; `aud02_*` | VERIFIED | — |
 | LIF-3 | Stop: drain, cancel or abandon with bounded timeout | `StopMode`; per-stage outcomes | R | VERIFIED | — |
 | LIF-4 | Reset without corrupting ids or correlation | reset in order; utterance and sequence continuity | R | VERIFIED | — |
 | LIF-5 | Propagate cancellation safely | stop order; forwarder cancellation | R | VERIFIED | — |
 | LIF-6 | Distinguish required from optional failures | `Requirement` | U, R | VERIFIED | — |
 | LIF-7 | Optional failure gives explicit degraded mode; required failure stops | runtime handling | R | VERIFIED | — |
-| LIF-8 | Restart gives a new epoch/generation; prior results rejected | epoch, generations | R | VERIFIED | — |
+| LIF-8 | Restart gives a new epoch/generation; prior results rejected | epoch, generations | R; `stale_output_runtime` | VERIFIED | — |
 | LIF-9 | Shutdown reports unclean termination honestly; no restart loops | existing shutdown report; no auto-restart | R | VERIFIED | — |
 | LIF-10 | Recovery observable and verified | restart after failure | R | VERIFIED | — |
 
@@ -171,7 +171,7 @@ ADR-0033.
 | FAI-2 | Fault-isolate optional modules | degraded mode | R | VERIFIED | — |
 | FAI-3 | Emit a reason for degraded operation | `stage_degraded{reason}` | R | VERIFIED | — |
 | FAI-4 | Test saturation, delays, hangs, cancellation, restart, out-of-order, recovery | O, R | O, R | VERIFIED | — |
-| FAI-5 | Prevent memory/task leaks and runaway retries | bounded tables; forwarders end with workers; no retries | U; R long run | VERIFIED | — |
+| FAI-5 | Prevent memory/task leaks and runaway retries | bounded tables; abandoned-worker cap (AUD-01); forwarders end with workers; no retries | U; R; `aud01_*`; R1 | VERIFIED | hung threads persist until they exit (not killable); they are bounded by the cap |
 
 ## 13. Privacy
 
@@ -206,7 +206,7 @@ ADR-0033.
 | OBS-5 | Backpressure, coalescing, drop and rejection counts | existing plus new counters | VERIFIED |
 | OBS-6 | Timeline normalization, discontinuities, uncertainty | timeline status | VERIFIED |
 | OBS-7 | Recovery, degraded mode and shutdown outcomes | events | VERIFIED |
-| OBS-8 | Concurrency/resource counts | pipelines and forwarders in status | VERIFIED |
+| OBS-8 | Concurrency/resource counts | pipelines, `worker_forwarders`, `abandoned_workers`, `starts_refused_abandoned` | VERIFIED |
 | OBS-9 | Trace/correlation ids and config fingerprints | envelope ids; fingerprint | VERIFIED |
 | OBS-10 | No sensitive payloads in diagnostics | R privacy test | VERIFIED |
 
@@ -217,12 +217,12 @@ ADR-0033.
 | EVL-1 | Graph validation and causal correctness | U, O | VERIFIED |
 | EVL-2 | Temporal mapping, uncertainty, discontinuities | U, O | VERIFIED |
 | EVL-3 | Revision, stale/duplicate, restart correctness | U, O, R | VERIFIED |
-| EVL-4 | Multi-stream isolation and fairness | R multi-stream; U fairness | VERIFIED |
+| EVL-4 | Multi-stream isolation and fairness | R multi-stream; `aud04_…`; U fairness | PARTIAL: isolation verified; core-channel saturation fairness not forced |
 | EVL-5 | Cancellation, deadlines, lifecycle, recovery | R | VERIFIED |
-| EVL-6 | Backpressure under sustained and burst load | existing Phase 3–6 queue tests; forwarders bounded at 64 | PARTIAL: no new sustained or burst test of the forwarder hop |
+| EVL-6 | Backpressure under sustained and burst load | `aud04_…` (sustained two-stream load, blocked stage: bounded backlog, coalescing, no refused inputs, recovery); `tagged_sender_is_bounded…` (forwarder backpressure) | PARTIAL: core-channel saturation not forced |
 | EVL-7 | Fault injection, long-duration and repeated lifecycle | R: panics, hangs, missing adapters, 20 rounds; O: 2,000 utterances | PARTIAL: no long wall-clock run |
 | EVL-8 | Bounded queues, state, memory, tasks | U, R | VERIFIED |
-| EVL-9 | Latency: ingress-to-dispatch, queue wait, module duration, overhead, end-to-end | `phase-7-evaluation.md`: observer overhead on the real clock; translation queue and adapter times; end-to-end only on the manual test clock | PARTIAL: no real-clock end-to-end, no real model or hardware |
+| EVL-9 | Latency: ingress-to-dispatch, queue wait, module duration, overhead, end-to-end | `phase-7-evaluation.md`: observer overhead isolated (121–137 ns) and in the runtime (p50 1.0–1.2 µs, p95 2.6–3.0 µs, release, wall clock); translation queue and adapter times; end-to-end only on the manual test clock | PARTIAL: no real-clock end-to-end, no real model or hardware |
 | EVL-10 | Repeat tests; variance, environment, workload | evaluation | VERIFIED |
 | EVL-11 | Separate synthetic from real evidence | evaluation and report | VERIFIED |
 
@@ -235,7 +235,7 @@ ADR-0033.
 | TST-3 | Out-of-order, duplicate, stale | U, O | VERIFIED |
 | TST-4 | Stale results after reset, stop, restart | U, R | VERIFIED |
 | TST-5 | Translation Started and sequence reset | U, O | VERIFIED |
-| TST-6 | Queue saturation, overflow, backpressure, coalescing | existing Phase 3–6 tests (unchanged queues and coalescing) | PARTIAL: no new Phase 7 saturation test |
+| TST-6 | Queue saturation, overflow, backpressure, coalescing | `aud04_…`; `tagged_sender_is_bounded…`; existing Phase 3–6 tests | VERIFIED (stage level; see EVL-6) |
 | TST-7 | Concurrent multi-stream isolation | R | VERIFIED |
 | TST-8 | Cancellation, timeout, hung worker, shutdown | R | VERIFIED |
 | TST-9 | Clock discontinuity, gaps, unknown timing | U, O | VERIFIED |
@@ -258,7 +258,7 @@ ADR-0033.
 | DOC-9 | ADRs | ADR-0030 to ADR-0033 | VERIFIED |
 | DOC-10 | Tests and fixtures | U, O, R | VERIFIED |
 | DOC-11 | Handoff | `phase-7-handoff.md` | VERIFIED |
-| DOC-12 | Git commits/PR and closure evidence | report §Git; PR and closure after the audit | PARTIAL — the audit and closure are pending |
+| DOC-12 | Git commits/PR and closure evidence | report §11 and §13; audit and corrections committed | PARTIAL — the verification audit and closure are pending |
 
 ## 19. Acceptance criteria
 
@@ -269,3 +269,17 @@ audit and closure) is **pending** by design.
 
 The stop conditions were respected (report §scope). The risk register is
 addressed in report §limitations.
+
+## Audit corrections
+
+The Phase 7 audit (`phase-7-audit.md`, `cf250b8`) returned REQUIRES
+CORRECTIONS. The rows above were updated for AUD-01 to AUD-15, and the
+audit's §13 gives each finding's disposition.
+
+Counts after the corrections:
+* `R` also covers `orchestration_corrections.rs` (7 tests) and
+  `stale_output_runtime.rs` (2 tests, feature `test-hooks`).
+* `O` has 9 replay tests.
+* Plus the `tagged_sender` unit test.
+* `orchestration_audit.rs` (5 tests) holds `#[ignore]`d reproductions.
+

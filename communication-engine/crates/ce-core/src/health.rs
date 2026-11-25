@@ -156,6 +156,14 @@ pub struct MetricsSnapshot {
     /// abandoned-but-not-exited stage worker).
     #[serde(default)]
     pub worker_forwarders: u64,
+    /// Abandoned stage workers whose threads are still alive (Phase 7
+    /// gauge; refreshed by the core after every control-loop iteration).
+    #[serde(default)]
+    pub abandoned_workers: u64,
+    /// Stage worker starts refused because `max_abandoned_workers` was
+    /// reached (Phase 7).
+    #[serde(default)]
+    pub starts_refused_abandoned: u64,
 }
 
 /// Health and status of the runtime and every module.

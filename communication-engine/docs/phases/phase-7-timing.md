@@ -47,7 +47,8 @@ Related: [architecture](../architecture/orchestration.md) · ADR-0032 ·
    later revision of the same unit may move its start.
 7. **Gaps**: audio discontinuities (`DeviceOverflow`, `DeliveryOverflow`
    with lost frames, and `StreamRestart`, which has no frame advance) are
-   recorded as `gap`, with lost frames summed. A stream restart shows up
+   recorded as `gap`, with lost frames summed. A gap is a stream-level
+   fact: its `timeline` event has `stage: null` (audit AUD-08). A stream restart shows up
    on the outputs as a re-anchor.
 8. **Uncertainty** of the monotonic mapping is `unknown`. CE does not
    assume device and host clocks are synchronized, and normalization is
@@ -78,11 +79,19 @@ Related: [architecture](../architecture/orchestration.md) · ADR-0032 ·
 Findings are published **after** the stage event they concern. Within a
 worker generation, payloads are never altered or dropped (ADR-0032).
 
+**Diagnostic volume** (audit AUD-09): at most 32 findings of one kind
+and stage are published per pipeline epoch. Further ones are counted in
+`suppressed_findings`, and the violation counters remain complete.
+
 ## 4. Configuration and compatibility guide
 
 * **Engine settings**, `EngineConfig.orchestration`:
   * `max_pipelines`: 1..=64, default 8;
-  * `observer_utterances`: 16..=4096, default 256.
+  * `observer_utterances`: 16..=4096, default 256;
+  * `max_abandoned_workers`: 1..=1024, default 16 (audit AUD-01). While
+    this many abandoned stage workers still have live threads, every new
+    stage worker start (direct or through a pipeline) is refused with
+    `orchestration.abandoned_workers_exhausted`.
 * **`PipelineSpec`**:
   * `stages`: 1..=8 `StageSpec { kind, requirement, config? }`. A missing
     `config` uses the engine default for that stage.
@@ -115,8 +124,9 @@ worker generation, payloads are never altered or dropped (ADR-0032).
   * `orchestration.empty_pipeline`, `config_mismatch`, `duplicate_stage`,
     `missing_dependency`, `required_depends_on_optional` and `cycle`;
   * `orchestration.unavailable`, `not_capture`, `stream_ended`,
-    `already_running`, `capacity_exhausted`, `stage_already_running` and
-    `not_found`;
+    `already_running`, `capacity_exhausted`, `stage_already_running`,
+    `abandoned_workers_exhausted` and `not_found`;
   * at run time: `orchestration.required_stage_failed`, `stage_failed`,
-    `stage_stalled`, `stop_timed_out` and `dependency_unavailable`;
+    `stage_stalled`, `stop_timed_out`, `dependency_unavailable` and
+    `stage_ended` (an optional stage stopped directly);
   * `config.orchestration_invalid`.

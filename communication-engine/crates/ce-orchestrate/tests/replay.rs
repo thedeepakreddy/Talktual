@@ -258,7 +258,7 @@ fn timeline_reanchors_unknown_timing_out_of_order_and_gaps() {
         now,
     );
     assert!(f.contains(&Finding::Timeline {
-        stage: StageKind::Recognition,
+        stage: Some(StageKind::Recognition),
         kind: TimelineKind::ReAnchor,
         frame: Some(32_000)
     }));
@@ -415,4 +415,40 @@ fn the_real_analyzer_satisfies_the_timeline_checks() {
         assert!(timed > 4, "{c:?}: the analyzer produced timed results");
         assert!(findings.is_empty(), "{c:?}: {findings:?}");
     }
+}
+
+/// AUD-09: a producer that keeps violating one rule cannot flood the bus:
+/// at most `FINDINGS_PER_KIND` findings of a kind are returned per epoch;
+/// the counters still count every violation.
+#[test]
+fn repeated_findings_are_limited_and_counted() {
+    let mut o = observer(DeadlinePolicy::default());
+    let now = mt(ANCHOR * 10);
+    let r = rev(0, 0, RevisionStatus::Partial, ANCHOR);
+    o.on_transcript(&r, now);
+    let mut published = 0;
+    for _ in 0..100 {
+        published += o.on_transcript(&r, now).len();
+    }
+    assert_eq!(
+        published,
+        ce_orchestrate::observer::FINDINGS_PER_KIND as usize
+    );
+    let c = o.counters();
+    assert_eq!(c.causal_violations, 100, "every violation is counted");
+    assert_eq!(c.suppressed_findings, 100 - 32);
+}
+
+/// AUD-08: an audio gap is a stream-level fact, not a recognition finding.
+#[test]
+fn audio_gaps_are_stream_level() {
+    let mut o = observer(DeadlinePolicy::default());
+    assert_eq!(
+        o.on_audio_gap(Some(10)),
+        vec![Finding::Timeline {
+            stage: None,
+            kind: TimelineKind::Gap,
+            frame: None
+        }]
+    );
 }

@@ -481,3 +481,64 @@ and real-clock latency evidence remain open limitations, not defects.
 * The race in AUD-03 was attempted but not forced.
 * Saturation was not reproduced.
 * Single container.
+
+---
+
+## 13. Corrections addendum (authorized; added after the audit)
+
+Everything above is the audit **as originally written** at `cf250b8`.
+Its findings and severities are unchanged. This section records how each
+finding was dispositioned in the correction commit (see report §13 for
+the hash).
+
+| Finding | Disposition | Correction | Evidence (executed) |
+|---|---|---|---|
+| AUD-01 HIGH | **CORRECTED** | Engine-wide cap `orchestration.max_abandoned_workers` (1..=1024, default 16), described in detail below. | `orchestration_corrections`: `aud01_the_abandoned_worker_cap…` (cap, refusal for every stage, recovery when threads exit), `aud01_concurrent_requests…` (12 simultaneous starts at the cap all refused; no growth), `aud01_restart_and_reset_at_the_cap…` (restart refused and the running pipeline kept; reset allowed; bounded shutdown). R1 now: forwarders and threads 1→16, then rounds 17–20 refused, gauge 16. |
+| AUD-02 MEDIUM | **CORRECTED** | `restart_pipeline` runs `prepare_pipeline(…, replacing = true)` — specification, stream, graph, abandoned cap and per-stage pre-flight — **before** stopping. On failure the running pipeline is untouched: no event, same epoch, same workers. | `aud02_an_invalid_restart…`: missing dependency, missing adapter, invalid configuration, duplicate stage, missing target and required-on-optional, each preserving state; then a valid restart works. `aud02_aud06_a_valid_replacement_that_fails_at_start…`: start-time failure rolls back, reported. R5 now keeps the pipeline. |
+| AUD-03 MEDIUM | **CORRECTED (evidence), with stated scope** | Feature `test-hooks` (test-only): the core keeps a clone of each translation worker's own signal sender; a test sends through it. The signal crosses the real forwarder (generation tag), the stage's core channel, admission and publication. | `stale_output_runtime` (all-features gate): positive control published; reset keeps the generation and is published; after restart the old generation is rejected with `current = new` and never published; 20 old-generation signals interleaved with the new worker's live output were all rejected and none published; an abandoned worker's signal is rejected with `current = none`. Synchronization is by events and counters, not fixed sleeps. |
+| AUD-04 MEDIUM | **PARTIALLY CORRECTED** | Stage-level saturation test added. | `aud04_a_saturated_stage…`: one stream's translation blocked during 2.4 s of sustained two-stream load; backlog > 0 and ≤ 64; 0 inputs refused (partials coalesced, finals kept); the other stream translated (≥ 2 finals) meanwhile; status round trips < 1 s (bound); forwarder count unchanged; finals translated after release; coalescing confirmed; clean shutdown. The per-worker forwarder backpressure has a unit test (`tagged_sender_is_bounded…`). **Not forced**: saturation of a stage's *core* channel in the running engine, and hence scheduler fairness under that saturation end to end. Fairness of `next_data` remains unit-tested only. SCH-2 and EVL-4 are re-marked PARTIAL. |
+| AUD-05 LOW | **CORRECTED** | An optional stage stopped directly while the pipeline runs makes it `degraded` (`stage_degraded`, code `orchestration.stage_ended`). A `source_ended` end is the pipeline winding down and does not degrade it. | `aud05_…`; R2 now `Degraded`. |
+| AUD-06 LOW | **CORRECTED** | `stop_stage` returns a `StopOutcome` and logs stop errors. Rollback outcomes are set on the stages and published as `pipeline_stopped{reason: failed, outcomes}` after `pipeline_failed`. | `aud02_aud06_…` (recognition `clean`). |
+| AUD-07 LOW | **CORRECTED, NOT TESTED** | Workers cleaned up after a failed start have their generation recorded as discarded (bounded, 64). Their signals are dropped with a debug log and no stale-output report. | Inspection only: there is no fault hook to force a tap-attach failure. |
+| AUD-08 LOW | **CORRECTED** | `OrchestrationEvent::Timeline.stage` and `Finding::Timeline.stage` are `Option<StageKind>`; audio gaps use `None` (stream level). This is a Phase 7 contract change (not yet accepted). | replay `audio_gaps_are_stream_level` |
+| AUD-09 LOW | **CORRECTED** | The observer publishes at most `FINDINGS_PER_KIND` (32) findings per (kind, stage) per epoch. The rest are counted in `suppressed_findings`; violation counters stay complete. | replay `repeated_findings_are_limited_and_counted` (100 duplicates: 32 published, 68 suppressed, 100 counted) |
+| AUD-10 LOW | **CORRECTED (methodology)** | The example builds inputs outside the timed loop, times construction separately, and asserts a coarse 5 µs mean threshold in the gate. The runtime's own reservoir was measured too. | Observer only: **121–137 ns/event** (3 invocations × 5 runs). Runtime per-event observer cost (`overhead` reservoir; release; wall clock; R4): **p50 1.0–1.2 µs, p95 2.6–3.0 µs, max ≤ 54 µs** over 3 runs. The original ~150 ns figure included inline input construction. The runtime figure is about 10× the isolated figure and is the representative one. |
+| AUD-11 INFO | **OPEN** | — | The bridge compile still needs approval of a native download (not requested, as instructed). |
+| AUD-12 INFO | **ACCEPTED** | By design (ADR-0033). | Repeated runs pass. |
+| AUD-13 INFO | **ACCEPTED, documented** | One shared stop deadline bounds the whole stop; downstream stages can be reported `timed_out` because upstream used the budget. | `orchestration.md` §3 |
+| AUD-14 LOW | **CORRECTED, NOT SEPARATELY TESTED** | The module-exit arm drains at most the messages queued on entry (`Receiver::len`). | Inspection; Phase 1 module and exit tests pass. |
+| AUD-15 LOW | **CORRECTED** | The report, ledger, evaluation, timing, handoff, architecture and ADR-0031/0033 were amended. Claims now match the evidence above. | this commit |
+
+### Details: AUD-01 abandoned-worker cap
+
+* **Live accounting**: the count comes from the abandoned workers'
+  thread handles (`!is_finished()`), not from a separate counter. A
+  worker counts while its thread is alive and stops counting when the
+  thread exits, whether or not housekeeping has reaped it. This means no
+  double counting, no underflow and no premature release. Reset, restart
+  and shutdown never decrement it.
+* **Enforcement**: every stage worker start (analysis, recognition,
+  semantics, translation, directly or through a pipeline) is checked on
+  the single control task before the worker is spawned. A start at or
+  over the cap is refused with `QueueSaturated`
+  `orchestration.abandoned_workers_exhausted`. Pipeline pre-flight checks
+  the cap before starting anything or stopping a pipeline being
+  restarted.
+* **Observability**: the gauges `MetricsSnapshot.abandoned_workers` and
+  `starts_refused_abandoned`.
+* **Guaranteed bound**: workers that were already running when the cap
+  was reached can still be abandoned later. The guaranteed bound is
+  therefore: abandoned workers ≤ `max_abandoned_workers − 1` plus the
+  workers running when the cap was reached, and that last term is itself
+  bounded by the stages' running limits. The cap is not a hard ceiling on
+  the abandoned count.
+
+### Newly discovered during the corrections
+
+* **Overhead figures**: the runtime's per-event observer cost is about
+  10× the isolated figure reported in Phase 7 (see AUD-10). The report and
+  evaluation are corrected.
+* **No new correctness defect** was found. The corrections changed one
+  Phase 7 contract field (AUD-08) and added one setting and two gauges
+  (AUD-01). All are additive except the `Timeline.stage` type, which
+  belongs to Phase 7 itself.

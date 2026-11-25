@@ -124,6 +124,14 @@ fn unavailable() -> CeError {
 }
 
 impl Core {
+    /// Abandoned workers of this stage whose threads are still alive.
+    pub(super) fn semantic_abandoned_live(&self) -> usize {
+        self.semantic
+            .as_ref()
+            .map(|s| s.abandoned.iter().filter(|h| !h.is_finished()).count())
+            .unwrap_or(0)
+    }
+
     fn semantic_mut(&mut self) -> CeResult<&mut SemanticState> {
         self.semantic.as_mut().ok_or_else(unavailable)
     }
@@ -174,6 +182,7 @@ impl Core {
     ) -> CeResult<CommandOutcome> {
         let cfg = config.unwrap_or_else(|| self.config.semantic.semantic.clone());
         cfg.validate()?;
+        self.admit_worker_start(StageKind::Semantics)?;
         let generation = self.next_generation();
         let metrics = self.metrics.clone();
         let session = {

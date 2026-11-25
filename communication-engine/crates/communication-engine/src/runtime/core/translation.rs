@@ -132,6 +132,14 @@ fn unavailable() -> CeError {
 }
 
 impl Core {
+    /// Abandoned workers of this stage whose threads are still alive.
+    pub(super) fn translation_abandoned_live(&self) -> usize {
+        self.translation
+            .as_ref()
+            .map(|s| s.abandoned.iter().filter(|h| !h.is_finished()).count())
+            .unwrap_or(0)
+    }
+
     fn translation_mut(&mut self) -> CeResult<&mut TranslationStateMap> {
         self.translation.as_mut().ok_or_else(unavailable)
     }
@@ -208,6 +216,7 @@ impl Core {
     ) -> CeResult<CommandOutcome> {
         let cfg = config.unwrap_or_else(|| self.config.translation.translation.clone());
         cfg.validate()?;
+        self.admit_worker_start(StageKind::Translation)?;
         let generation = self.next_generation();
         let metrics = self.metrics.clone();
         let session = {
@@ -272,6 +281,8 @@ impl Core {
             .with_context("max", max.to_string()));
         }
         let tx = tagged_sender(generation, state.tx.clone(), metrics);
+        #[cfg(feature = "test-hooks")]
+        self.retain_translation_sender(id, generation, &tx);
         let mut adapters = Vec::with_capacity(selected.len());
         for (f, caps) in &selected {
             adapters.push(AdapterSlot {

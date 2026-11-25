@@ -292,6 +292,10 @@ pub struct OrchestrationCounters {
     pub stale_outputs_rejected: u64,
     /// Translation worker runs observed (`Started`).
     pub translation_runs: u64,
+    /// Findings counted but not published as events (more than
+    /// `FINDINGS_PER_KIND` of one kind and stage in an epoch).
+    #[serde(default)]
+    pub suppressed_findings: u64,
 }
 
 /// A stage of a pipeline, as it is now.
@@ -463,8 +467,8 @@ pub enum OrchestrationEvent {
     Timeline {
         /// Stream.
         stream: AudioStreamId,
-        /// Stage of the output (recognition for audio gaps).
-        stage: StageKind,
+        /// Stage of the output; `None` for stream-level facts (audio gaps).
+        stage: Option<StageKind>,
         /// Kind.
         kind: TimelineKind,
         /// Sample-clock frame where it was observed, if known.

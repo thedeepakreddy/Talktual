@@ -6,8 +6,9 @@
 * **Environment**: Linux x86_64 cloud container, 4 vCPU, Rust 1.97.0;
   MSRV 1.85.0 also run.
 * **No audio hardware, GPU, real speech or real model.**
-* **Status: implemented; independent audit and closure pending (spec
-  §23–24). Not a production certification (Phase 15).**
+* **Status: implemented; audited (`phase-7-audit.md`: REQUIRES
+  CORRECTIONS); corrections implemented (§13). Verification audit and
+  closure pending. Not a production certification (Phase 15).**
 
 Related: [ledger](phase-7-ledger.md) · [evaluation](phase-7-evaluation.md)
 · [timing and configuration](phase-7-timing.md) ·
@@ -119,7 +120,7 @@ there are no new third-party dependencies, and no models.
 
 | Status | Rows |
 |---|---|
-| PARTIAL | CAU-5 (the race is not reproduced end to end), CMP-4 (no adapter contract-version check), EVL-6 and TST-6 (no new saturation or burst test of the forwarder hop), EVL-7 and TST-10 (no long wall-clock run), EVL-9 (no real-clock end-to-end, real model or hardware), DOC-12 (audit and closure pending) |
+| PARTIAL (after the corrections) | SCH-2 and EVL-4 (scheduler fairness under core-channel saturation not forced end to end), EVL-6 (core-channel saturation not forced; stage-level saturation verified), CMP-4 (no adapter contract-version check), EVL-7 and TST-10 (no long wall-clock run), EVL-9 (no real-clock end-to-end, real model or hardware), DOC-12 (closure pending) |
 | PENDING | ACC-18: independent audit and closure |
 | VERIFIED | all others, with the evidence named per row |
 
@@ -170,10 +171,15 @@ See `phase-7-evaluation.md`. Highlights:
   on fixtures produced **0 causal violations and 0 timeline anomalies**.
   This is the false-positive control.
 * Injected violations of every kind are reported.
-* **Observer overhead**: about **149–152 ns per event**, an upper bound
-  that includes input construction. Measured in release on the real
-  clock over 4 invocations of 5 runs each; the final gate run gave 149 ns
-  mean with SD 1 ns.
+* **Observer overhead** (corrected after audit AUD-10):
+  * the isolated observer costs **121–137 ns per event**, with inputs
+    pre-built (release, real clock, 3 invocations × 5 runs);
+  * the **runtime** per-event observer cost (the `overhead` reservoir;
+    release; wall clock; two streams with live workers) is **p50
+    1.0–1.2 µs, p95 2.6–3.0 µs, max ≤ 54 µs** over 3 runs. This is the
+    representative figure.
+  * The originally reported ~150 ns included inline input construction
+    and excluded the runtime wrapper.
 * End-to-end latency was **not** measured on a real clock, model or
   device.
 
@@ -182,7 +188,8 @@ See `phase-7-evaluation.md`. Highlights:
 | Resource | Bound |
 |---|---|
 | Per-worker forwarding channel | 64 |
-| Forwarders | one per worker; they return to 0 after repeated lifecycles (tested) |
+| Forwarders | one per worker; they return to 0 after repeated lifecycles **of workers that exit** (tested). A hung, abandoned worker keeps its own until its thread exits. |
+| Abandoned workers (AUD-01) | new starts are refused at `max_abandoned_workers` (16 by default) live abandoned threads. The bound is the cap − 1 plus the workers running when the cap was reached (tested). |
 | Pipelines | at most `max_pipelines` (8 by default) |
 | Finished pipelines remembered | 16 |
 | Observer | `observer_utterances` (256 by default) |
@@ -199,12 +206,15 @@ latency figures exist for real models or devices.
 2. Timestamp normalization is not synchronization. The mapping
    uncertainty is reported as `unknown`.
 3. Low observer overhead does not prove end-to-end latency.
-4. **The stale-generation race is logic-tested, not reproduced end to
-   end.** Abandoned workers already suppress most late sends; admission
-   covers the remaining window.
-5. A hung, abandoned worker keeps its forwarder task until its thread
-   exits. This is bounded by the abandoned workers and visible in the
-   gauge.
+4. **Stale-output rejection is verified end to end** across the real
+   forwarder, admission and publication, using a test-only hook
+   (AUD-03). The late signal is sent by the test through the replaced
+   worker's real sender. The worker thread itself producing a late
+   signal (the natural race) was not forced; 60 rapid restarts never
+   produced one.
+5. A hung, abandoned worker keeps its OS thread and forwarder task until
+   its thread exits. The abandoned-worker cap (AUD-01) bounds this; the
+   gauges are `abandoned_workers` and `worker_forwarders`.
 6. A required stage stopped directly through per-stage commands ends the
    pipeline. Mixing direct control with pipelines is discouraged.
 7. Pipelines cannot take a custom voice-activity detector.
@@ -231,7 +241,9 @@ only on request, after the audit.
 
 ## 12. Recommendation
 
-**Ready for the independent audit.** Phase 7's engine-side orchestration
+**Original recommendation (before the audit): ready for the independent
+audit.** The audit returned REQUIRES CORRECTIONS; see §13 for the
+corrections and their status. Phase 7's engine-side orchestration
 is implemented and verified with synthetic and replay evidence:
 * graph validation;
 * generations and epochs;
@@ -243,3 +255,75 @@ is implemented and verified with synthetic and replay evidence:
 
 The PARTIAL items in §5 should be weighed by the audit. Acceptance is
 the user's decision after the audit and closure.
+
+## 13. Audit and corrections
+
+The audit (`phase-7-audit.md`, commit `cf250b8`) found:
+* AUD-01 HIGH: abandoned workers' threads and forwarders were unbounded;
+* AUD-02, AUD-03 and AUD-04 MEDIUM;
+* eight LOW findings;
+* three informational findings.
+
+Its recommendation was **REQUIRES CORRECTIONS**.
+
+The authorized corrections are listed with their dispositions in audit
+§13:
+* **Corrected**: AUD-01, 02, 05, 06, 08, 09, 10 and 15.
+* **Corrected in code, without a dedicated test**: AUD-07 and AUD-14.
+* **Verified end to end, with stated scope**: AUD-03.
+* **Partially corrected**: AUD-04. Stage-level saturation and forwarder
+  backpressure are verified; core-channel saturation is not forced.
+* **Open**: AUD-11, which needs approval for the bridge's native
+  download.
+* **Accepted**: AUD-12 and AUD-13.
+
+### Changes (summary)
+
+* **Contracts**:
+  * the `orchestration.max_abandoned_workers` setting;
+  * the `abandoned_workers` and `starts_refused_abandoned` metrics;
+  * the `suppressed_findings` counter;
+  * `Timeline.stage` is now `Option<StageKind>`.
+* **Runtime**:
+  * the live abandoned-worker accounting and refusal at every stage
+    start;
+  * `prepare_pipeline`, which restart runs before teardown;
+  * rollback outcomes;
+  * degradation when an optional stage is stopped directly;
+  * quiet discard of workers whose start failed;
+  * the bounded module-exit drain;
+  * the test-only feature `test-hooks`.
+* **Observer**: the findings limiter (32 per kind and stage per epoch).
+* **Example**: pre-built inputs, construction timed separately, and a
+  coarse 5 µs regression guard.
+
+### Tests added
+
+| File | Tests |
+|---|---|
+| `orchestration_corrections.rs` | AUD-01 ×3, AUD-02 ×2 (one also AUD-06), AUD-05, AUD-04 |
+| `stale_output_runtime.rs` (feature `test-hooks`) | 2 |
+| `ce-orchestrate` replay | limiter; gap attribution |
+| `core/pipeline.rs` | forwarder backpressure unit test |
+| `orchestration_audit.rs` (`#[ignore]`d) | reproductions R1, R2 and R5 now assert the corrected behaviour |
+
+### Verification after the corrections (all executed; output observed)
+
+| Gate | Result |
+|---|---|
+| `scripts/verify.sh` | **all gates passed**, exit 0: fmt, clippy (all features, `-D warnings`), tests, rustdoc, smoke examples, Phase 3–7 gates, cross targets (none skipped) and `cargo deny` (duplicate-crate warnings only, as at baseline) |
+| Tests, default features | **409 passed, 0 failed** (399 before the corrections) |
+| Tests, all features (includes `test-hooks`) | **415 passed, 0 failed** (403 before) |
+| MSRV 1.85.0, `--workspace --all-targets` | **409 passed, 0 failed** |
+| MSRV 1.85.0, `--features test-hooks --test stale_output_runtime` | **2 passed** |
+| Repeated: `orchestration_runtime`, `orchestration_corrections`, `stale_output_runtime` | **3/3 runs, all passed** (11, 7 and 2 tests) |
+| Audit reproductions (`--ignored`) | 5/5 passed with the corrected expectations |
+| Observer overhead gate | 124 ns/event mean (pre-built inputs) |
+| Talktual | `tsc` pass; `npm test` **549**; `npm run test:server` **60**; `npm run build` pass |
+| Talktual bridge compile | **not run**: needs approval of a native library download (unchanged) |
+
+### Recommendation
+
+**Corrections implemented; ready for the verification audit and
+closure.** Phase 7 is **not** closed by this work, and Phase 8 has not
+started.

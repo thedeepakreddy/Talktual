@@ -238,6 +238,13 @@ pub struct OrchestrationSettings {
     pub max_pipelines: u32,
     /// Utterances the observer remembers per pipeline (16..=4096). Default 256.
     pub observer_utterances: u32,
+    /// Abandoned stage workers whose threads are still alive, engine-wide,
+    /// at which **new stage worker starts are refused** (1..=1024; default
+    /// 16). An abandoned worker (stop timeout or stall) keeps its thread
+    /// and its signal forwarder until the thread exits; this cap bounds
+    /// that burden. Total stage threads stay below this value plus the
+    /// running-worker limits of the stages (see `orchestration.md` §5).
+    pub max_abandoned_workers: u32,
 }
 
 impl Default for OrchestrationSettings {
@@ -245,6 +252,7 @@ impl Default for OrchestrationSettings {
         Self {
             max_pipelines: 8,
             observer_utterances: 256,
+            max_abandoned_workers: 16,
         }
     }
 }
@@ -257,6 +265,9 @@ impl OrchestrationSettings {
         }
         if !(16..=4096).contains(&self.observer_utterances) {
             return Err(bad("observer_utterances", "16..=4096"));
+        }
+        if !(1..=1024).contains(&self.max_abandoned_workers) {
+            return Err(bad("max_abandoned_workers", "1..=1024"));
         }
         Ok(())
     }

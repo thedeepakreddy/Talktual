@@ -1,7 +1,8 @@
 # Phase 7 handoff
 
-State at the end of Phase 7 implementation. **The independent audit and
-closure have not happened yet.**
+State after the Phase 7 implementation, its audit (`phase-7-audit.md`:
+REQUIRES CORRECTIONS) and the authorized corrections (audit §13).
+**The verification audit and closure have not happened yet.**
 
 Read this with:
 * `phase-7-report.md` (status and evidence);
@@ -41,8 +42,16 @@ Read this with:
   `restart_pipeline` and `pipeline_status`. The commands are
   `StartPipeline`, `StopPipeline`, `ResetPipeline`, `RestartPipeline` and
   `QueryPipeline`.
-* Tests: `crates/communication-engine/tests/orchestration_runtime.rs`; the
-  fairness unit test in `core.rs` (`scheduling_tests`).
+* Tests:
+  * `crates/communication-engine/tests/orchestration_runtime.rs`;
+  * `orchestration_corrections.rs`: the audit corrections;
+  * `stale_output_runtime.rs`: needs `--features test-hooks`;
+  * `orchestration_audit.rs`: `#[ignore]`d reproductions; run with
+    `--ignored --nocapture`;
+  * the fairness unit test in `core.rs` (`scheduling_tests`) and the
+    forwarder test in `core/pipeline.rs`.
+* Test-only feature `test-hooks`: retains translation worker senders for
+  fault injection. Never enable it in products.
 * Decisions: ADR-0030 to ADR-0033.
 
 ## Rules for consumers and the next phases
@@ -75,11 +84,26 @@ Read this with:
     analysis last;
   * `cancel` stops downstream first.
 * **Do not** put pipeline-managed stages under direct per-stage control
-  and expect the pipeline not to react.
+  and expect the pipeline not to react. Stopping an optional stage
+  directly degrades the pipeline; stopping a required one ends it.
+* **Abandoned-worker cap**: at `orchestration.max_abandoned_workers`
+  live abandoned threads, every new stage worker start is refused
+  (`orchestration.abandoned_workers_exhausted`) until hung threads exit.
+  Watch the `abandoned_workers` gauge.
+* **Restart is checked first**: an invalid replacement leaves the
+  running pipeline untouched.
+* **`timeline` events**: `stage` is optional (`null` for audio gaps).
+  Findings are limited to 32 per kind and stage per epoch.
 
 ## Open items (need a decision or later work)
 
-* Independent Phase 7 audit, then closure (spec §23–24).
+* A verification audit of the corrections, then closure (spec §23–24).
+* **Still PARTIAL after the corrections**:
+  * scheduler fairness under core-channel saturation (SCH-2, EVL-4,
+    EVL-6);
+  * the natural stale-output race, which the test hook substitutes for
+    (CAU-5 scope);
+  * AUD-07 and AUD-14 are corrected in code but have no dedicated test.
 * The real MT adapter is still blocked (Phase 6). Pipelines carry it
   unchanged when it arrives.
 * An audio-layer bound for timing uncertainty (currently `unknown`).
@@ -96,6 +120,8 @@ Read this with:
 ```bash
 cd communication-engine && scripts/verify.sh
 cargo +1.85.0 test --workspace --all-targets
+cargo +1.85.0 test -p communication-engine --features test-hooks --test stale_output_runtime
+cargo test -p communication-engine --test orchestration_audit -- --ignored --nocapture
 cargo run --release -p ce-orchestrate --example observer_overhead
 cd .. && npx tsc --noEmit && npm test && npm run test:server && npm run build
 ```

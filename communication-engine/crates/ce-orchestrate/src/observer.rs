@@ -42,8 +42,8 @@ pub enum Finding {
     },
     /// A timeline finding.
     Timeline {
-        /// Stage.
-        stage: StageKind,
+        /// Stage of the output; `None` for stream-level facts (audio gaps).
+        stage: Option<StageKind>,
         /// Kind.
         kind: TimelineKind,
         /// Frame, if known.
@@ -74,6 +74,21 @@ pub struct Observer {
     seq_evicted_below: u64,
     reservoirs: BTreeMap<LatencyMetric, Reservoir>,
     counters: OrchestrationCounters,
+    /// Findings published per (finding kind, stage) in this epoch.
+    published: BTreeMap<(u8, Option<StageKind>, u8), u32>,
+}
+
+/// Findings of one kind and stage published per pipeline epoch before
+/// further ones are only counted (`suppressed_findings`), so a persistently
+/// misbehaving producer cannot flood the event bus (AUD-09).
+pub const FINDINGS_PER_KIND: u32 = 32;
+
+fn finding_key(f: &Finding) -> (u8, Option<StageKind>, u8) {
+    match f {
+        Finding::Causal { stage, kind, .. } => (0, Some(*stage), *kind as u8),
+        Finding::Timeline { stage, kind, .. } => (1, *stage, *kind as u8),
+        Finding::Deadline { stage, .. } => (2, Some(*stage), 0),
+    }
 }
 
 fn ms_between(later: MonotonicTime, earlier: MonotonicTime) -> f32 {
@@ -98,7 +113,24 @@ impl Observer {
             seq_evicted_below: 0,
             reservoirs: BTreeMap::new(),
             counters: OrchestrationCounters::default(),
+            published: BTreeMap::new(),
         }
+    }
+
+    /// Keep at most [`FINDINGS_PER_KIND`] findings per key; count the rest.
+    /// Counters of violations are always complete.
+    fn limit(&mut self, findings: Vec<Finding>) -> Vec<Finding> {
+        let mut out = Vec::with_capacity(findings.len());
+        for f in findings {
+            let n = self.published.entry(finding_key(&f)).or_insert(0);
+            if *n < FINDINGS_PER_KIND {
+                *n += 1;
+                out.push(f);
+            } else {
+                self.counters.suppressed_findings += 1;
+            }
+        }
+        out
     }
 
     fn count_timeline(&mut self, kind: TimelineKind) {
@@ -171,6 +203,11 @@ impl Observer {
 
     /// A transcript revision.
     pub fn on_transcript(&mut self, r: &TranscriptRevision, now: MonotonicTime) -> Vec<Finding> {
+        let out = self.on_transcript_all(r, now);
+        self.limit(out)
+    }
+
+    fn on_transcript_all(&mut self, r: &TranscriptRevision, now: MonotonicTime) -> Vec<Finding> {
         let mut out = Vec::new();
         self.counters.transcript_revisions += 1;
         let u = r.meta.utterance;
@@ -209,7 +246,7 @@ impl Observer {
         for k in findings {
             self.count_timeline(k);
             out.push(Finding::Timeline {
-                stage: StageKind::Recognition,
+                stage: Some(StageKind::Recognition),
                 kind: k,
                 frame: Some(r.meta.frame_range.0),
             });
@@ -230,6 +267,11 @@ impl Observer {
 
     /// A semantic event.
     pub fn on_semantic(&mut self, e: &SemanticEvent, now: MonotonicTime) -> Vec<Finding> {
+        let out = self.on_semantic_all(e, now);
+        self.limit(out)
+    }
+
+    fn on_semantic_all(&mut self, e: &SemanticEvent, now: MonotonicTime) -> Vec<Finding> {
         let mut out = Vec::new();
         match e {
             SemanticEvent::Observation { observation, .. } => {
@@ -267,6 +309,11 @@ impl Observer {
 
     /// A translation event.
     pub fn on_translation(&mut self, e: &TranslationEvent, now: MonotonicTime) -> Vec<Finding> {
+        let out = self.on_translation_all(e, now);
+        self.limit(out)
+    }
+
+    fn on_translation_all(&mut self, e: &TranslationEvent, now: MonotonicTime) -> Vec<Finding> {
         let mut out = Vec::new();
         match e {
             // A new worker run: consumer state resets, sequences restart.
@@ -323,6 +370,11 @@ impl Observer {
 
     /// An analysis event (timeline only).
     pub fn on_analysis(&mut self, e: &AnalysisEvent) -> Vec<Finding> {
+        let out = self.on_analysis_all(e);
+        self.limit(out)
+    }
+
+    fn on_analysis_all(&mut self, e: &AnalysisEvent) -> Vec<Finding> {
         let (meta, ordinal) = match e {
             AnalysisEvent::SegmentStarted { meta, segment, .. }
             | AnalysisEvent::SegmentEnded { meta, segment, .. } => (meta, Some(*segment)),
@@ -342,7 +394,7 @@ impl Observer {
         for k in findings {
             self.count_timeline(k);
             out.push(Finding::Timeline {
-                stage: StageKind::Analysis,
+                stage: Some(StageKind::Analysis),
                 kind: k,
                 frame: Some(meta.frame_range.0),
             });
@@ -352,10 +404,15 @@ impl Observer {
 
     /// An upstream audio discontinuity.
     pub fn on_audio_gap(&mut self, lost_frames: Option<u64>) -> Vec<Finding> {
+        let out = self.on_audio_gap_all(lost_frames);
+        self.limit(out)
+    }
+
+    fn on_audio_gap_all(&mut self, lost_frames: Option<u64>) -> Vec<Finding> {
         let k = self.timeline.gap(lost_frames);
         self.count_timeline(k);
         vec![Finding::Timeline {
-            stage: StageKind::Recognition,
+            stage: None,
             kind: k,
             frame: None,
         }]

@@ -53,3 +53,11 @@ Status: Accepted (Phase 7, pending the independent audit) · Date: 2026-11-24
   interval plus one device buffer (Phase 2). It is reported as such.
 * Observation does not prevent violations; it makes them visible. Within
   a generation, workers remain the authority on their own ordering.
+
+## Audit amendment (AUD-08, AUD-09)
+
+* Audio gaps are stream-level findings: `timeline.stage` is optional, and
+  `null` for gaps.
+* At most 32 findings per kind and stage are published per epoch. The
+  rest are counted (`suppressed_findings`).
+

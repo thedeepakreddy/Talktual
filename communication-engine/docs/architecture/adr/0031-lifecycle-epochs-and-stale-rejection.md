@@ -53,3 +53,16 @@ prior-generation results.
   abandoned. It is covered by unit tests of the admission logic and by
   runtime restart tests; it is not reproduced end to end
   deterministically (see the report).
+
+## Audit amendment (Phase 7 audit, AUD-01 and AUD-03)
+
+* "Bounded by the abandoned workers" was not a bound. Abandoned workers
+  are now capped by `orchestration.max_abandoned_workers`: new worker
+  starts are refused at the cap, with live accounting from the worker
+  handles. See `orchestration.md` §5.
+* **Evidence**: rejection is now verified end to end through a
+  test-only hook (feature `test-hooks`). The hook sends through a
+  replaced or abandoned worker's real sender, so the signal crosses the
+  forwarder, admission and publication. The natural race (the worker
+  thread itself sending late) was not forced.
+
