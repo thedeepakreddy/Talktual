@@ -361,3 +361,74 @@ async fn r5_restart_with_an_invalid_graph_stops_the_running_pipeline_first() {
     assert_eq!(err.code(), "orchestration.missing_dependency");
     assert_eq!(st.state, PipelineState::Running);
 }
+
+/// VA-R6 (verification audit): engine-wide finding metrics vs the
+/// pipeline's own counters when more than 32 findings of one kind occur.
+#[tokio::test]
+#[ignore]
+async fn r6_engine_metrics_vs_pipeline_counters_beyond_the_findings_limit() {
+    let echo = ScriptedFactory::echo(scripted_capabilities("t.echo", &[("en", "es")]));
+    let h = harness(audio_config(), 400, vec![echo]).await;
+    h.grant_capture().await;
+    let (mut r, id) = open(&h).await;
+    let mut s = spec("t.echo", Requirement::Required, StopMode::Drain);
+    s.deadlines.transcript_final_ms = Some(1);
+    h.engine.start_pipeline(id, s).await.unwrap();
+    feed(&h, &mut r, 5).await;
+    // Every later final is published long "after" its audio on the test clock.
+    h.clock.advance(Duration::from_secs(600));
+    feed(&h, &mut r, 2_500).await;
+    let st = h.engine.pipeline_status(id).await.unwrap();
+    let m = h.engine.metrics();
+    eprintln!(
+        "pipeline counters: deadline_misses {}, suppressed_findings {}; engine metrics: deadline_misses {}",
+        st.counters.deadline_misses, st.counters.suppressed_findings, m.deadline_misses
+    );
+    assert!(st.counters.deadline_misses > 32, "{:?}", st.counters);
+}
+
+/// VA-R7 (verification audit): analysis workers abandoned at a stop
+/// timeout versus the abandoned-worker cap.
+#[tokio::test]
+#[ignore]
+async fn r7_abandoned_analysis_workers_versus_the_cap() {
+    use communication_engine::audio_intel::ScriptedVad;
+    let h = harness(audio_config(), 4, vec![]).await;
+    h.grant_capture().await;
+    let (mut r, id) = open(&h).await;
+    let t0 = threads();
+    let mut refused = 0;
+    let rounds = 20;
+    for _ in 0..rounds {
+        let mut cfg = AnalysisConfig::default();
+        cfg.budget.degrade = false;
+        cfg.budget.queue_blocks = 4_000;
+        match h
+            .engine
+            .start_analysis_with(
+                id,
+                Some(cfg),
+                Box::new(ScriptedVad::new(|_| 0.5).with_delay(Duration::from_secs(3))),
+            )
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("refused: {}", e.code());
+                refused += 1;
+                continue;
+            }
+        }
+        feed(&h, &mut r, 3).await;
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        h.engine.stop_analysis(id).await.unwrap();
+    }
+    let m = h.engine.metrics();
+    eprintln!(
+        "rounds {rounds}: refused {refused}; abandoned_workers gauge {}; worker_forwarders {}; analysis_failures {}; threads delta {}",
+        m.abandoned_workers,
+        m.worker_forwarders,
+        m.analysis_failures,
+        threads() as i64 - t0 as i64
+    );
+}
