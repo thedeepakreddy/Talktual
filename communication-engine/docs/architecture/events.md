@@ -30,8 +30,22 @@ language observations), `Semantic(SemanticEvent)` (Phase 5, topic
 `Operational` for lifecycle, context and rejection events),
 `Translation(TranslationEvent)` (Phase 6, topic `Translation`, see
 [translation.md](translation.md); `Content` for results, `Operational`
-for lifecycle, withdrawal, unavailable and rejection events) and
+for lifecycle, withdrawal, unavailable and rejection events),
+`Orchestration(OrchestrationEvent)` (Phase 7, topic `Orchestration`, see
+[orchestration.md](orchestration.md); always `Operational`: pipeline
+lifecycle, stage start/degrade/end, stale-output rejection, causal,
+timeline and deadline findings, ids and counts only) and
 `Module(ModuleEvent)`.
+
+**Phase 7 ordering notes**:
+* Stage events of a stream's current worker are published in that
+  worker's order. Outputs of earlier worker generations are never
+  published.
+* Orchestration findings follow the stage event they concern.
+* Data channels are polled fairly, so the relative order of events from
+  *different* channels is not fixed. Use the envelope `sequence` and the
+  causal identifiers (utterance, revision, source), never arrival order
+  across channels.
 
 **Module events** (provisional) carry a namespaced `EventName`, a module-owned
 attribute schema version and structured attributes. Modules submit a

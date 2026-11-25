@@ -33,7 +33,9 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use super::Core;
+use super::pipeline::{Tagged, analysis_end, tagged_sender};
 use crate::runtime::metrics::Metrics;
+use ce_core::orchestration::{StageEnd, StageKind};
 
 /// Capacity of the analysis event channel.
 pub(crate) const INTEL_SIGNAL_CAPACITY: usize = 1024;
@@ -43,11 +45,12 @@ const FINISHED_KEPT: usize = 16;
 struct Running {
     handle: AnalysisHandle,
     session: SessionId,
+    generation: u64,
 }
 
 /// Analysis bookkeeping owned by the core.
 pub(crate) struct IntelState {
-    tx: mpsc::Sender<IntelSignal>,
+    tx: mpsc::Sender<Tagged<IntelSignal>>,
     running: BTreeMap<AudioStreamId, Running>,
     finished: BTreeMap<AudioStreamId, (SessionId, AnalysisStatus)>,
     finished_order: Vec<AudioStreamId>,
@@ -65,7 +68,7 @@ impl std::fmt::Debug for IntelState {
 }
 
 impl IntelState {
-    pub(crate) fn new(tx: mpsc::Sender<IntelSignal>) -> Self {
+    pub(crate) fn new(tx: mpsc::Sender<Tagged<IntelSignal>>) -> Self {
         Self {
             tx,
             running: BTreeMap::new(),
@@ -92,6 +95,14 @@ fn no_analysis(id: AudioStreamId) -> CeError {
 }
 
 impl Core {
+    /// Abandoned workers of this stage whose threads are still alive.
+    pub(super) fn intel_abandoned_live(&self) -> usize {
+        self.intel
+            .as_ref()
+            .map(|s| s.abandoned.iter().filter(|h| !h.is_finished()).count())
+            .unwrap_or(0)
+    }
+
     fn intel_mut(&mut self) -> CeResult<&mut IntelState> {
         self.intel.as_mut().ok_or_else(|| {
             CeError::new(
@@ -111,6 +122,9 @@ impl Core {
     ) -> CeResult<CommandOutcome> {
         let cfg = config.unwrap_or_else(|| self.config.analysis.clone());
         cfg.validate()?;
+        self.admit_worker_start(StageKind::Analysis)?;
+        let generation = self.next_generation();
+        let metrics = self.metrics.clone();
         let session = {
             let audio = self.audio.as_ref().ok_or_else(|| {
                 CeError::new(
@@ -151,7 +165,7 @@ impl Core {
                 "this stream is already being analysed",
             ));
         }
-        let tx = intel.tx.clone();
+        let tx = tagged_sender(generation, intel.tx.clone(), metrics);
         let (tap_tx, tap_rx) = analysis_tap(cfg.budget.queue_blocks as usize);
         let handle = spawn_analysis(id, cfg, tap_rx, tx, detector)?;
         let attached = self
@@ -169,12 +183,18 @@ impl Core {
             if let Some(intel) = self.intel.as_mut() {
                 intel.abandoned.push(handle);
             }
+            self.discard_generation(generation);
             return Err(e);
         }
         let status = handle.status();
-        self.intel_mut()?
-            .running
-            .insert(id, Running { handle, session });
+        self.intel_mut()?.running.insert(
+            id,
+            Running {
+                handle,
+                session,
+                generation,
+            },
+        );
         Metrics::inc(&self.metrics.analyses_started, 1);
         self.log(
             Observation::log(Level::Info, "analysis.started")
@@ -204,6 +224,14 @@ impl Core {
         self.query_analysis(id)
     }
 
+    /// Generation of the analysis worker running on `id`, if any.
+    pub(super) fn analysis_generation(&self, id: AudioStreamId) -> Option<u64> {
+        self.intel
+            .as_ref()
+            .and_then(|i| i.running.get(&id))
+            .map(|r| r.generation)
+    }
+
     /// Whether an analysis is running on `id`.
     pub(super) fn analysis_running(&self, id: AudioStreamId) -> bool {
         self.intel
@@ -227,7 +255,16 @@ impl Core {
     }
 
     /// Process one analysis signal.
-    pub(super) fn handle_intel_signal(&mut self, signal: IntelSignal) {
+    pub(super) fn handle_intel_signal(&mut self, tagged: Tagged<IntelSignal>) {
+        let Tagged { generation, signal } = tagged;
+        let stream = match &signal {
+            IntelSignal::Event(e) => e.stream(),
+            IntelSignal::Ended { stream, .. } => *stream,
+        };
+        let current = self.analysis_generation(stream);
+        if !self.admit_signal(StageKind::Analysis, stream, generation, current) {
+            return;
+        }
         match signal {
             IntelSignal::Event(event) => {
                 let stream = event.stream();
@@ -244,7 +281,9 @@ impl Core {
                         Observation::log(Level::Warn, "analysis.failed").field("stream", stream),
                     );
                 }
+                let findings = self.observe_analysis(&event);
                 self.emit(EventPayload::Analysis(event), session);
+                self.report_findings(stream, findings);
             }
             IntelSignal::Ended { stream, status } => {
                 let Some(intel) = self.intel.as_mut() else {
@@ -261,6 +300,13 @@ impl Core {
                         Observation::log(Level::Info, "analysis.ended")
                             .field("stream", stream)
                             .field("reason", format!("{reason:?}")),
+                    );
+                    self.note_stage_end(
+                        StageKind::Analysis,
+                        stream,
+                        generation,
+                        analysis_end(reason),
+                        false,
                     );
                 }
             }
@@ -288,6 +334,7 @@ impl Core {
             let Some(mut r) = intel.running.remove(&stream) else {
                 continue;
             };
+            let generation = r.generation;
             let mut status = r.handle.status();
             r.handle.abandon();
             status.running = false;
@@ -295,6 +342,9 @@ impl Core {
             let counters = status.counters;
             let session = r.session;
             intel.remember(stream, session, status);
+            // Kept until its thread exits: counted by the abandoned-worker
+            // cap (VA-01).
+            intel.abandoned.push(r.handle);
             let err = CeError::new(
                 ErrorCategory::Timeout,
                 "analysis.stalled",
@@ -318,12 +368,19 @@ impl Core {
                 }),
                 Some(session),
             );
+            self.note_stage_end(
+                StageKind::Analysis,
+                stream,
+                generation,
+                StageEnd::Stalled,
+                false,
+            );
         }
     }
 
     /// Wait until each stream in `ids` has reported its end (or the
     /// deadline passes), draining all signals meanwhile.
-    async fn await_analysis_end(&mut self, ids: &[AudioStreamId], deadline: Instant) {
+    pub(super) async fn await_analysis_end(&mut self, ids: &[AudioStreamId], deadline: Instant) {
         loop {
             let pending = self
                 .intel
@@ -359,14 +416,23 @@ impl Core {
             let Some(mut r) = intel.running.remove(&stream) else {
                 continue;
             };
+            let generation = r.generation;
             let mut status = r.handle.status();
             r.handle.abandon();
             status.running = false;
             status.ended.get_or_insert(AnalysisEndReason::Failed);
             intel.remember(stream, r.session, status);
+            intel.abandoned.push(r.handle);
             Metrics::inc(&self.metrics.analysis_failures, 1);
             self.log(
                 Observation::log(Level::Warn, "analysis.stop_timed_out").field("stream", stream),
+            );
+            self.note_stage_end(
+                StageKind::Analysis,
+                stream,
+                generation,
+                StageEnd::Stalled,
+                true,
             );
         }
     }

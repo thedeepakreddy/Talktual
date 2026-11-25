@@ -44,7 +44,9 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use super::Core;
+use super::pipeline::{Tagged, tagged_sender, translation_end};
 use crate::runtime::metrics::Metrics;
+use ce_core::orchestration::{StageEnd, StageKind};
 
 /// Capacity of the translation event channel.
 pub(crate) const TRANSLATION_SIGNAL_CAPACITY: usize = 1024;
@@ -53,11 +55,12 @@ const FINISHED_KEPT: usize = 16;
 struct Running {
     handle: TranslationHandle,
     session: SessionId,
+    generation: u64,
 }
 
 /// Translation bookkeeping owned by the core.
 pub(crate) struct TranslationStateMap {
-    tx: mpsc::Sender<TranslationSignal>,
+    tx: mpsc::Sender<Tagged<TranslationSignal>>,
     running: BTreeMap<AudioStreamId, Running>,
     finished: BTreeMap<AudioStreamId, (SessionId, TranslationStatus)>,
     finished_order: Vec<AudioStreamId>,
@@ -75,7 +78,7 @@ impl std::fmt::Debug for TranslationStateMap {
 }
 
 impl TranslationStateMap {
-    pub(crate) fn new(tx: mpsc::Sender<TranslationSignal>) -> Self {
+    pub(crate) fn new(tx: mpsc::Sender<Tagged<TranslationSignal>>) -> Self {
         Self {
             tx,
             running: BTreeMap::new(),
@@ -129,6 +132,14 @@ fn unavailable() -> CeError {
 }
 
 impl Core {
+    /// Abandoned workers of this stage whose threads are still alive.
+    pub(super) fn translation_abandoned_live(&self) -> usize {
+        self.translation
+            .as_ref()
+            .map(|s| s.abandoned.iter().filter(|h| !h.is_finished()).count())
+            .unwrap_or(0)
+    }
+
     fn translation_mut(&mut self) -> CeResult<&mut TranslationStateMap> {
         self.translation.as_mut().ok_or_else(unavailable)
     }
@@ -145,7 +156,7 @@ impl Core {
         }
     }
 
-    fn select_adapters(
+    pub(super) fn select_adapters(
         &self,
         cfg: &TranslationConfig,
     ) -> CeResult<Vec<(Arc<dyn TranslationFactory>, TranslationCapabilities)>> {
@@ -205,6 +216,9 @@ impl Core {
     ) -> CeResult<CommandOutcome> {
         let cfg = config.unwrap_or_else(|| self.config.translation.translation.clone());
         cfg.validate()?;
+        self.admit_worker_start(StageKind::Translation)?;
+        let generation = self.next_generation();
+        let metrics = self.metrics.clone();
         let session = {
             let audio = self.audio.as_ref().ok_or_else(unavailable)?;
             let (info, state, ended) = audio.stream(id).ok_or_else(|| {
@@ -266,7 +280,9 @@ impl Core {
             )
             .with_context("max", max.to_string()));
         }
-        let tx = state.tx.clone();
+        let tx = tagged_sender(generation, state.tx.clone(), metrics);
+        #[cfg(feature = "test-hooks")]
+        self.retain_translation_sender(id, generation, &tx);
         let mut adapters = Vec::with_capacity(selected.len());
         for (f, caps) in &selected {
             adapters.push(AdapterSlot {
@@ -282,9 +298,14 @@ impl Core {
         })?;
         let handle = spawn_translation(processor, tx)?;
         let status = handle.status();
-        self.translation_mut()?
-            .running
-            .insert(id, Running { handle, session });
+        self.translation_mut()?.running.insert(
+            id,
+            Running {
+                handle,
+                session,
+                generation,
+            },
+        );
         Metrics::inc(&self.metrics.translations_started, 1);
         self.log(
             Observation::log(Level::Info, "translation.started")
@@ -323,6 +344,14 @@ impl Core {
     }
 
     /// Current or final status.
+    /// Generation of the worker running on `id`, if any.
+    pub(super) fn translation_generation(&self, id: AudioStreamId) -> Option<u64> {
+        self.translation
+            .as_ref()
+            .and_then(|s| s.running.get(&id))
+            .map(|r| r.generation)
+    }
+
     pub(super) fn query_translation(&mut self, id: AudioStreamId) -> CeResult<CommandOutcome> {
         let state = self.translation_mut()?;
         if let Some(r) = state.running.get(&id) {
@@ -388,7 +417,16 @@ impl Core {
     }
 
     /// Process one translation signal.
-    pub(super) fn handle_translation_signal(&mut self, signal: TranslationSignal) {
+    pub(super) fn handle_translation_signal(&mut self, tagged: Tagged<TranslationSignal>) {
+        let Tagged { generation, signal } = tagged;
+        let stream = match &signal {
+            TranslationSignal::Event(e) => e.stream(),
+            TranslationSignal::Ended { stream, .. } => *stream,
+        };
+        let current = self.translation_generation(stream);
+        if !self.admit_signal(StageKind::Translation, stream, generation, current) {
+            return;
+        }
         match signal {
             TranslationSignal::Event(event) => {
                 let stream = event.stream();
@@ -404,8 +442,10 @@ impl Core {
                         Observation::log(Level::Warn, "translation.failed").field("stream", stream),
                     );
                 }
+                let findings = self.observe_translation(&event);
                 let class = event.data_class();
                 self.emit_classified(EventPayload::Translation(event), class, session);
+                self.report_findings(stream, findings);
             }
             TranslationSignal::Ended { stream, status } => {
                 let Some(state) = self.translation.as_mut() else {
@@ -418,11 +458,13 @@ impl Core {
                     }
                     let reason = status.ended;
                     state.remember(stream, r.session, *status);
+                    let end = translation_end(reason);
                     self.log(
                         Observation::log(Level::Info, "translation.ended")
                             .field("stream", stream)
                             .field("reason", format!("{reason:?}")),
                     );
+                    self.note_stage_end(StageKind::Translation, stream, generation, end, false);
                 }
             }
         }
@@ -435,6 +477,7 @@ impl Core {
         let Some(mut r) = state.running.remove(&stream) else {
             return;
         };
+        let generation = r.generation;
         let mut status = r.handle.status();
         r.handle.abandon(TranslationEndReason::Failed);
         status.running = false;
@@ -466,6 +509,13 @@ impl Core {
             }),
             Some(session),
         );
+        self.note_stage_end(
+            StageKind::Translation,
+            stream,
+            generation,
+            StageEnd::Stalled,
+            false,
+        );
     }
 
     /// Housekeeping: reap exited threads, detect stalls.
@@ -487,7 +537,7 @@ impl Core {
         }
     }
 
-    async fn await_translation_end(&mut self, ids: &[AudioStreamId], deadline: Instant) {
+    pub(super) async fn await_translation_end(&mut self, ids: &[AudioStreamId], deadline: Instant) {
         loop {
             let pending = self
                 .translation
@@ -524,6 +574,7 @@ impl Core {
             let Some(mut r) = state.running.remove(&stream) else {
                 continue;
             };
+            let generation = r.generation;
             let mut status = r.handle.status();
             r.handle.abandon(TranslationEndReason::Failed);
             status.running = false;
@@ -533,6 +584,13 @@ impl Core {
             Metrics::inc(&self.metrics.translation_failures, 1);
             self.log(
                 Observation::log(Level::Warn, "translation.stop_timed_out").field("stream", stream),
+            );
+            self.note_stage_end(
+                StageKind::Translation,
+                stream,
+                generation,
+                StageEnd::Stalled,
+                true,
             );
         }
     }

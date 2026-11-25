@@ -62,6 +62,7 @@ use ce_core::ids::{CapabilityId, CommandId, CorrelationId, IdGenerator, SessionI
 use ce_core::intel::{AnalysisConfig, AnalysisStatus};
 use ce_core::module::{ModuleDescriptor, ModuleFactory};
 use ce_core::observability::{NoopSink, ObservabilitySink};
+use ce_core::orchestration::{PipelineSpec, PipelineStatus};
 use ce_core::privacy::{ConsentPurpose, ConsentState};
 use ce_core::resource::{AdmissionPolicy, QueueKind};
 use ce_core::semantic::{ObservationId, SemanticCapabilities, SemanticConfig, SemanticStatus};
@@ -112,6 +113,10 @@ pub mod prelude {
     pub use ce_core::intel::{AnalysisConfig, AnalysisEvent, AnalysisStatus};
     pub use ce_core::lifecycle::{ModuleState, RuntimeState};
     pub use ce_core::module::{Module, ModuleContext, ModuleDescriptor, ModuleFactory};
+    pub use ce_core::orchestration::{
+        OrchestrationEvent, PipelineSpec, PipelineState, PipelineStatus, Requirement, StageConfig,
+        StageKind, StageSpec, StopMode,
+    };
     pub use ce_core::privacy::DataClass;
     pub use ce_core::privacy::{ConsentPurpose, ConsentState};
     pub use ce_core::semantic::{
@@ -839,6 +844,93 @@ impl Engine {
             CommandOutcome::TranslationAdapters { adapters } => Ok(adapters),
             other => Err(unexpected(&other)),
         }
+    }
+
+    async fn pipeline_command(&self, command: Command) -> CeResult<PipelineStatus> {
+        match self.execute(command).await? {
+            CommandOutcome::Pipeline { status } => Ok(*status),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Validate and start a pipeline (Phase 7) on a capture stream: its
+    /// stages start in dependency order; a required stage that cannot start
+    /// rolls the others back and fails the call; an optional one leaves the
+    /// pipeline `degraded` (reported). Orchestration events arrive as
+    /// `EventPayload::Orchestration` (operational; no content).
+    pub async fn start_pipeline(
+        &self,
+        stream_id: AudioStreamId,
+        spec: PipelineSpec,
+    ) -> CeResult<PipelineStatus> {
+        self.pipeline_command(Command::StartPipeline { stream_id, spec })
+            .await
+    }
+
+    /// Stop a pipeline with its stop mode (`drain` or `cancel`); per-stage
+    /// outcomes are reported.
+    pub async fn stop_pipeline(&self, stream_id: AudioStreamId) -> CeResult<PipelineStatus> {
+        self.pipeline_command(Command::StopPipeline { stream_id })
+            .await
+    }
+
+    /// Reset a pipeline's running stages in dependency order (identifiers
+    /// continue).
+    pub async fn reset_pipeline(&self, stream_id: AudioStreamId) -> CeResult<PipelineStatus> {
+        self.pipeline_command(Command::ResetPipeline { stream_id })
+            .await
+    }
+
+    /// Stop (if running) and start again with a new epoch and new worker
+    /// generations; outputs of the previous workers are rejected. `spec`
+    /// replaces the stored specification when given.
+    pub async fn restart_pipeline(
+        &self,
+        stream_id: AudioStreamId,
+        spec: Option<PipelineSpec>,
+    ) -> CeResult<PipelineStatus> {
+        self.pipeline_command(Command::RestartPipeline { stream_id, spec })
+            .await
+    }
+
+    /// Current (or final) pipeline status.
+    pub async fn pipeline_status(&self, stream_id: AudioStreamId) -> CeResult<PipelineStatus> {
+        self.pipeline_command(Command::QueryPipeline { stream_id })
+            .await
+    }
+
+    /// **Test only** (feature `test-hooks`): from now on, keep a clone of
+    /// every translation worker's own signal sender so tests can inject
+    /// through a replaced worker's real forwarder (Phase 7 audit AUD-03).
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub async fn test_retain_translation_senders(&self) -> CeResult<()> {
+        self.submit(CoreMsg::Test(
+            runtime::core::TestHook::RetainTranslationSenders,
+        ))
+        .await
+    }
+
+    /// **Test only** (feature `test-hooks`): send `event` as the translation
+    /// worker of `generation` on `stream` (through its retained sender, its
+    /// forwarder and the core's admission). Returns once it is queued.
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub async fn test_inject_translation(
+        &self,
+        stream: AudioStreamId,
+        generation: u64,
+        event: ce_core::translation::TranslationEvent,
+    ) -> CeResult<()> {
+        let (reply, rx) = oneshot::channel();
+        self.submit(CoreMsg::Test(runtime::core::TestHook::InjectTranslation {
+            stream,
+            generation,
+            event: Box::new(event),
+            reply,
+        }))
+        .await?;
+        rx.await.map_err(|_| stopped())?
     }
 
     /// Current counters (no round trip to the core).

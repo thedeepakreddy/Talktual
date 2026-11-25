@@ -163,10 +163,12 @@ impl AnalysisHandle {
         now.saturating_sub(last) > self.stall_timeout.as_millis() as u64
     }
 
-    /// Give up on a stalled thread: request a stop and detach it.
+    /// Give up on a stalled thread: request a stop. The thread handle is
+    /// **kept**, so [`is_finished`](Self::is_finished) keeps reporting
+    /// whether the thread is still alive; the owner keeps the handle until
+    /// the thread exits (Phase 7 abandoned-worker accounting, VA-01).
     pub fn abandon(&mut self) {
         self.stop(AnalysisEndReason::Failed);
-        self.thread.take();
     }
 }
 

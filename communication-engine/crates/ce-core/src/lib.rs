@@ -43,6 +43,7 @@ pub mod intel;
 pub mod lifecycle;
 pub mod module;
 pub mod observability;
+pub mod orchestration;
 pub mod privacy;
 pub mod provider;
 pub mod resource;

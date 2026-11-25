@@ -58,6 +58,8 @@ pub struct EngineConfig {
     pub semantic: crate::semantic::SemanticSettings,
     /// Translation settings (Phase 6).
     pub translation: crate::translation::TranslationSettings,
+    /// Orchestration settings (Phase 7).
+    pub orchestration: crate::orchestration::OrchestrationSettings,
 }
 
 impl Default for EngineConfig {
@@ -71,6 +73,7 @@ impl Default for EngineConfig {
             speech: crate::speech::SpeechConfig::default(),
             semantic: crate::semantic::SemanticSettings::default(),
             translation: crate::translation::TranslationSettings::default(),
+            orchestration: crate::orchestration::OrchestrationSettings::default(),
         }
     }
 }
@@ -92,6 +95,7 @@ impl EngineConfig {
         self.speech.validate()?;
         self.semantic.validate()?;
         self.translation.validate()?;
+        self.orchestration.validate()?;
         for (id, module) in &self.modules {
             module
                 .check_no_inline_secrets()

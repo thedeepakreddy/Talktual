@@ -3,7 +3,9 @@
 A product-agnostic Rust foundation for a communication intelligence engine.
 Talktual is its first consumer, not its boundary.
 
-**Status: Phase 6 — translation intelligence** on top of Phase 5
+**Status: Phase 7 — streaming orchestration & timing intelligence**
+(implemented; independent audit pending) on top of Phase 6 translation
+intelligence, Phase 5
 semantic & contextual intelligence, the
 Phase 4 speech recognition & language intelligence pipeline, Phase 3 audio intelligence, the Phase 2 audio foundation and the
 Phase 1 foundation. Capture and playback infrastructure
@@ -34,15 +36,28 @@ terminology profiles with protected spans, and a supervised bounded
 worker. It ships a deterministic offline translation-memory baseline and
 a scripted adapter; **a real machine-translation adapter is blocked
 pending approval of a model download**, so translation quality is not
-established. There is no diarization, voice or TTS,
+established. Phase 7 adds **pipelines** (`ce-orchestrate`):
+* validated stage graphs per capture stream, with required and optional
+  stages, dependency-ordered start with rollback, `drain`/`cancel` stop,
+  reset, and restart with a new epoch;
+* worker generations that reject stale outputs of replaced or abandoned
+  workers;
+* explicit degraded operation;
+* an observer for revision reconciliation, causal checks, sample-clock
+  timeline normalization, latency and deadline outcomes;
+* fair control-loop scheduling.
+
+All Phase 7 evidence is synthetic or scripted. There is no diarization,
+voice or TTS,
 and **no audio hardware has been tested** — no latency or device claims.
 All APIs are provisional (facade API `0.1`). See the
 [Phase 1](docs/phases/phase-1-report.md),
 [Phase 2](docs/phases/phase-2-report.md),
 [Phase 3](docs/phases/phase-3-report.md),
 [Phase 4](docs/phases/phase-4-report.md),
-[Phase 5](docs/phases/phase-5-report.md) and
-[Phase 6](docs/phases/phase-6-report.md) reports.
+[Phase 5](docs/phases/phase-5-report.md),
+[Phase 6](docs/phases/phase-6-report.md) and
+[Phase 7](docs/phases/phase-7-report.md) reports.
 
 ## What Phase 1 provides
 
@@ -76,6 +91,7 @@ communication-engine/
   fixtures/semantic/                   authored + real-ASR semantic corpus, example profile, provenance (Phase 5)
   crates/ce-translate/                 translation: adapter boundary, memory/scripted adapters, fidelity, processor, worker, eval
   fixtures/translation/                authored parallel corpus, dev-only memory, terminology profile, provenance (Phase 6)
+  crates/ce-orchestrate/               orchestration: pipeline graph, generations, reconciliation, timeline, latency, observer (Phase 7)
   adapters/ce-asr-sherpa/              optional real ASR adapter (sherpa-onnx; outside the workspace)
   adapters/talktual-bridge/            Talktual ↔ CE bridge: Talktual uses CE recognition end to end
   crates/communication-engine/         runtime (private) + public facade
@@ -99,6 +115,7 @@ cargo run -p communication-engine --example speech_smoke    # speech recognition
 cargo run --release -p ce-speech --example evaluate_speech -- all  # Phase 4 evaluation tables
 cargo run --release -p ce-semantic --example evaluate_semantic -- all --errors  # Phase 5 evaluation
 cargo run --release -p ce-translate --example evaluate_translation -- test      # Phase 6 evaluation
+cargo run --release -p ce-orchestrate --example observer_overhead                # Phase 7 observer overhead
 cargo run --release -p communication-engine --features cpal --example audio_probe -- --seconds 5   # real device
 cargo test --workspace --all-targets                         # tests
 scripts/verify.sh                                            # all gates

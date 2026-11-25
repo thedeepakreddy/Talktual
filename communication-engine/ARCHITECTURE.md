@@ -2,15 +2,17 @@
 
 Status: Phase 1 foundation, Phase 2 audio foundation, Phase 3 audio
 intelligence, Phase 4 speech recognition & language intelligence pipeline
-Phase 5 semantic & contextual intelligence and Phase 6 translation
-intelligence, implemented and verified on
+Phase 5 semantic & contextual intelligence, Phase 6 translation
+intelligence and Phase 7 streaming orchestration & timing intelligence
+(independent audit pending), implemented and verified on
 Linux x86_64 (see the
 [Phase 1](docs/phases/phase-1-report.md),
 [Phase 2](docs/phases/phase-2-report.md),
 [Phase 3](docs/phases/phase-3-report.md),
 [Phase 4](docs/phases/phase-4-report.md),
-[Phase 5](docs/phases/phase-5-report.md) and
-[Phase 6](docs/phases/phase-6-report.md) reports). APIs are
+[Phase 5](docs/phases/phase-5-report.md),
+[Phase 6](docs/phases/phase-6-report.md) and
+[Phase 7](docs/phases/phase-7-report.md) reports). APIs are
 **provisional**.
 
 The Communication Engine (CE) is a product-agnostic Rust foundation for a
@@ -43,6 +45,17 @@ source-language policy; policy-controlled fallback and privacy; bounded
 Phase 5 hints; terminology profiles with protected spans; a supervised
 bounded worker. Shipped adapters are a deterministic translation memory
 and a scripted adapter; real MT is blocked pending approval.
+Phase 7 adds `ce-orchestrate` and runtime pipelines (see
+[orchestration.md](docs/architecture/orchestration.md)):
+* validated stage graphs, with required and optional stages,
+  dependency-ordered start and rollback, `drain`/`cancel` stop, reset,
+  and restart with a new epoch;
+* engine-wide worker generations, so outputs of replaced or abandoned
+  workers are never published;
+* explicit degraded operation;
+* a pure observer for revision reconciliation, causal checks,
+  sample-clock timeline normalization, latency and deadline outcomes;
+* an unbiased data select behind command priority in the control loop.
 Phase 5 adds `ce-semantic`:
 * typed, versioned observations (entities, relations, references,
   optional acts) linked to transcript revisions and spans, with epistemic
@@ -68,6 +81,10 @@ been tested).
   tests)    └─────────────┬──────────────┘
                           │ re-exports as `contracts`
                           │ re-exports as `audio`, `audio_intel`, `speech`, `semantic`, `translation`
+            ┌─────────────▼──────────────┐
+            │ ce-orchestrate (Phase 7)   │  pipeline graph, generations, reconciliation,
+            │                            │  timeline, latency, observer (deps: ce-core only)
+            └────────────────────────────┘
             ┌─────────────▼──────────────┐
             │ ce-translate (Phase 6)     │  translation adapter boundary, memory/scripted
             │                            │  adapters, fidelity, processor, worker, eval
@@ -169,6 +186,7 @@ engine.start_analysis(stream, None).await?;             // Phase 3
 engine.start_recognition(stream, None).await?;          // Phase 4 (adapters via builder.asr_adapter)
 engine.start_semantics(stream, None).await?;            // Phase 5 (rule adapter by default; builder.semantic_adapter)
 engine.start_translation(stream, Some(cfg)).await?;     // Phase 6 (needs builder.translation_adapter and a target)
+engine.start_pipeline(stream, spec).await?;             // Phase 7: validated graph of the stages above
 engine.execute(Command::…).await?;                      // typed, serializable commands
 engine.shutdown().await?;                               // bounded, reports per module
 ```
@@ -201,4 +219,7 @@ revision semantics · 0022 language observations · 0023 real-ASR baseline
 (sherpa-onnx) · 0024 Talktual ↔ CE bridge · 0025 semantic layer and
 contracts · 0026 rule baseline and semantic evaluation · 0027 translation
 layer and contracts · 0028 translation adapters and selection · 0029
-translation revisions, context precedence and privacy.
+translation revisions, context precedence and privacy · 0030 orchestration
+pipelines and graph validation · 0031 lifecycle epochs and stale-output
+rejection · 0032 timeline, causality and latency · 0033 control-plane
+scheduling fairness.

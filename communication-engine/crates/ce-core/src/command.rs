@@ -181,6 +181,36 @@ pub enum Command {
     },
     /// List registered translation adapters without loading any model (Phase 6).
     ListTranslationAdapters,
+    /// Validate and start a pipeline on a capture stream (Phase 7).
+    StartPipeline {
+        /// The stream.
+        stream_id: AudioStreamId,
+        /// Specification.
+        spec: crate::orchestration::PipelineSpec,
+    },
+    /// Stop a pipeline with its stop mode (Phase 7).
+    StopPipeline {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Reset a pipeline's stages in dependency order (Phase 7).
+    ResetPipeline {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
+    /// Stop and start a pipeline again with a new epoch; `spec` replaces the
+    /// stored one when given (Phase 7).
+    RestartPipeline {
+        /// The stream.
+        stream_id: AudioStreamId,
+        /// Replacement specification.
+        spec: Option<crate::orchestration::PipelineSpec>,
+    },
+    /// Report a pipeline's status (Phase 7).
+    QueryPipeline {
+        /// The stream.
+        stream_id: AudioStreamId,
+    },
 }
 
 impl Command {
@@ -218,6 +248,11 @@ impl Command {
             Command::ResetTranslation { .. } => "reset_translation",
             Command::QueryTranslation { .. } => "query_translation",
             Command::ListTranslationAdapters => "list_translation_adapters",
+            Command::StartPipeline { .. } => "start_pipeline",
+            Command::StopPipeline { .. } => "stop_pipeline",
+            Command::ResetPipeline { .. } => "reset_pipeline",
+            Command::RestartPipeline { .. } => "restart_pipeline",
+            Command::QueryPipeline { .. } => "query_pipeline",
         }
     }
 
@@ -241,6 +276,10 @@ impl Command {
                 config: Some(config),
                 ..
             } => config.validate(),
+            Command::StartPipeline { spec, .. }
+            | Command::RestartPipeline {
+                spec: Some(spec), ..
+            } => spec.validate(),
             Command::ConfirmObservation { observation, .. }
                 if observation.0.is_empty() || observation.0.len() > 128 =>
             {
@@ -361,6 +400,11 @@ pub enum CommandOutcome {
     TranslationAdapters {
         /// Capabilities of each, in registration order.
         adapters: Vec<crate::translation::TranslationCapabilities>,
+    },
+    /// Pipeline status (Phase 7).
+    Pipeline {
+        /// Status.
+        status: Box<crate::orchestration::PipelineStatus>,
     },
 }
 

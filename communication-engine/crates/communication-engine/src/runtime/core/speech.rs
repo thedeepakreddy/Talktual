@@ -41,7 +41,9 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use super::Core;
+use super::pipeline::{Tagged, recognition_end, tagged_sender};
 use crate::runtime::metrics::Metrics;
+use ce_core::orchestration::{StageEnd, StageKind};
 
 /// Capacity of the speech event channel.
 pub(crate) const SPEECH_SIGNAL_CAPACITY: usize = 1024;
@@ -52,11 +54,12 @@ struct Running {
     handle: RecognitionHandle,
     session: SessionId,
     adapter: String,
+    generation: u64,
 }
 
 /// Recognition bookkeeping owned by the core.
 pub(crate) struct SpeechState {
-    tx: mpsc::Sender<SpeechSignal>,
+    tx: mpsc::Sender<Tagged<SpeechSignal>>,
     running: BTreeMap<AudioStreamId, Running>,
     finished: BTreeMap<AudioStreamId, (SessionId, RecognitionStatus)>,
     finished_order: Vec<AudioStreamId>,
@@ -74,7 +77,7 @@ impl std::fmt::Debug for SpeechState {
 }
 
 impl SpeechState {
-    pub(crate) fn new(tx: mpsc::Sender<SpeechSignal>) -> Self {
+    pub(crate) fn new(tx: mpsc::Sender<Tagged<SpeechSignal>>) -> Self {
         Self {
             tx,
             running: BTreeMap::new(),
@@ -138,6 +141,14 @@ fn is_hint(e: &AnalysisEvent) -> bool {
 }
 
 impl Core {
+    /// Abandoned workers of this stage whose threads are still alive.
+    pub(super) fn speech_abandoned_live(&self) -> usize {
+        self.speech
+            .as_ref()
+            .map(|s| s.abandoned.iter().filter(|h| !h.is_finished()).count())
+            .unwrap_or(0)
+    }
+
     fn speech_mut(&mut self) -> CeResult<&mut SpeechState> {
         self.speech.as_mut().ok_or_else(unavailable)
     }
@@ -154,7 +165,7 @@ impl Core {
         }
     }
 
-    fn resolve_adapter(
+    pub(super) fn resolve_adapter(
         &self,
         cfg: &RecognitionConfig,
     ) -> CeResult<(Arc<dyn AsrFactory>, AsrCapabilities)> {
@@ -192,6 +203,9 @@ impl Core {
     ) -> CeResult<CommandOutcome> {
         let cfg = config.unwrap_or_else(|| self.config.speech.recognition.clone());
         cfg.validate()?;
+        self.admit_worker_start(StageKind::Recognition)?;
+        let generation = self.next_generation();
+        let metrics = self.metrics.clone();
         let session = {
             let audio = self.audio.as_ref().ok_or_else(unavailable)?;
             let (info, state, ended) = audio.stream(id).ok_or_else(|| {
@@ -252,7 +266,7 @@ impl Core {
             )
             .with_context("max", max.to_string()));
         }
-        let tx = speech.tx.clone();
+        let tx = tagged_sender(generation, speech.tx.clone(), metrics);
         let adapter = factory.create()?;
         let (tap_tx, tap_rx) = analysis_tap(cfg.budget.queue_blocks as usize);
         let setup = RecognizerSetup {
@@ -274,6 +288,7 @@ impl Core {
             if let Some(s) = self.speech.as_mut() {
                 s.abandoned.push(handle);
             }
+            self.discard_generation(generation);
             return Err(e);
         }
         let status = handle.status();
@@ -283,6 +298,7 @@ impl Core {
                 handle,
                 session,
                 adapter: caps.adapter.clone(),
+                generation,
             },
         );
         Metrics::inc(&self.metrics.recognitions_started, 1);
@@ -330,6 +346,14 @@ impl Core {
     }
 
     /// Current or final status.
+    /// Generation of the recognition worker running on `id`, if any.
+    pub(super) fn recognition_generation(&self, id: AudioStreamId) -> Option<u64> {
+        self.speech
+            .as_ref()
+            .and_then(|s| s.running.get(&id))
+            .map(|r| r.generation)
+    }
+
     pub(super) fn query_recognition(&mut self, id: AudioStreamId) -> CeResult<CommandOutcome> {
         let speech = self.speech_mut()?;
         if let Some(r) = speech.running.get(&id) {
@@ -362,7 +386,16 @@ impl Core {
     }
 
     /// Process one speech signal.
-    pub(super) fn handle_speech_signal(&mut self, signal: SpeechSignal) {
+    pub(super) fn handle_speech_signal(&mut self, tagged: Tagged<SpeechSignal>) {
+        let Tagged { generation, signal } = tagged;
+        let stream = match &signal {
+            SpeechSignal::Event(e) => e.stream(),
+            SpeechSignal::Ended { stream, .. } => *stream,
+        };
+        let current = self.recognition_generation(stream);
+        if !self.admit_signal(StageKind::Recognition, stream, generation, current) {
+            return;
+        }
         match signal {
             SpeechSignal::Event(event) => {
                 let stream = event.stream();
@@ -393,8 +426,10 @@ impl Core {
                     }
                     _ => {}
                 }
+                let findings = self.observe_speech(&event);
                 let class = event.data_class();
                 self.emit_classified(EventPayload::Speech(event), class, session);
+                self.report_findings(stream, findings);
             }
             SpeechSignal::Ended { stream, status } => {
                 let Some(speech) = self.speech.as_mut() else {
@@ -411,6 +446,13 @@ impl Core {
                         Observation::log(Level::Info, "speech.ended")
                             .field("stream", stream)
                             .field("reason", format!("{reason:?}")),
+                    );
+                    self.note_stage_end(
+                        StageKind::Recognition,
+                        stream,
+                        generation,
+                        recognition_end(reason),
+                        false,
                     );
                 }
             }
@@ -430,6 +472,7 @@ impl Core {
         let Some(mut r) = speech.running.remove(&stream) else {
             return;
         };
+        let generation = r.generation;
         let mut status = r.handle.status();
         r.handle.abandon(reason);
         status.running = false;
@@ -456,6 +499,13 @@ impl Core {
                 counters: Box::new(counters),
             }),
             Some(session),
+        );
+        self.note_stage_end(
+            StageKind::Recognition,
+            stream,
+            generation,
+            StageEnd::Stalled,
+            false,
         );
     }
 
@@ -504,7 +554,7 @@ impl Core {
 
     /// Wait until each stream in `ids` has reported its end (or the
     /// deadline passes), draining all signals meanwhile.
-    async fn await_recognition_end(&mut self, ids: &[AudioStreamId], deadline: Instant) {
+    pub(super) async fn await_recognition_end(&mut self, ids: &[AudioStreamId], deadline: Instant) {
         loop {
             let pending = self
                 .speech
@@ -541,6 +591,7 @@ impl Core {
             let Some(mut r) = speech.running.remove(&stream) else {
                 continue;
             };
+            let generation = r.generation;
             let mut status = r.handle.status();
             r.handle.abandon(RecognitionEndReason::Failed);
             status.running = false;
@@ -550,6 +601,13 @@ impl Core {
             Metrics::inc(&self.metrics.recognition_failures, 1);
             self.log(
                 Observation::log(Level::Warn, "speech.stop_timed_out").field("stream", stream),
+            );
+            self.note_stage_end(
+                StageKind::Recognition,
+                stream,
+                generation,
+                StageEnd::Stalled,
+                true,
             );
         }
     }
