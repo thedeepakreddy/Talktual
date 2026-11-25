@@ -61,3 +61,8 @@ Status: Accepted (Phase 7, pending the independent audit) · Date: 2026-11-24
 * At most 32 findings per kind and stage are published per epoch. The
   rest are counted (`suppressed_findings`).
 
+## Final amendment (verification audit VA-02)
+
+The event limit applies to **publication only**. The engine-wide
+metrics (`causal_violations`, `timeline_anomalies`, `deadline_misses`)
+follow the observer's complete counters.

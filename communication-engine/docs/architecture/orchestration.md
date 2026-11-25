@@ -259,14 +259,26 @@ stale-generation signals are dropped (§3).
 * **Abandoned workers** (audit AUD-01):
   * A worker abandoned at a stop timeout or a stall keeps its OS thread
     (threads cannot be killed) and its forwarder until the thread exits.
-  * The core counts these from the worker handles, live (a thread that
-    exited no longer counts). No new stage worker starts while the count
-    is at `orchestration.max_abandoned_workers`.
+  * The core counts these from the worker handles of **all four
+    stages**, live: a thread that exited no longer counts. Analysis was
+    covered only after verification-audit finding VA-01. No new stage
+    worker starts while the count is at
+    `orchestration.max_abandoned_workers`.
   * The resulting bound on abandoned threads is the cap − 1 plus the
     workers running when the cap was reached.
   * The gauges are `abandoned_workers` and `starts_refused_abandoned`.
 * **Diagnostics** (AUD-09): at most 32 findings per kind and stage per
-  epoch are published; the rest are counted.
+  epoch are published; the rest are counted (`suppressed_findings`).
+  **Metrics are not limited**: the engine-wide `causal_violations`,
+  `timeline_anomalies` and `deadline_misses` follow the observer's
+  complete counters (VA-02).
+* **Test-only feature `test-hooks`** (VA-03):
+  * off by default;
+  * it adds two `#[doc(hidden)]` `Engine::test_*` methods that can
+    inject signals through a translation worker's retained sender, after
+    an explicit runtime opt-in;
+  * `--all-features` builds include it (ordinary Cargo feature
+    unification), but products must never enable it.
 
 ## 6. Privacy
 

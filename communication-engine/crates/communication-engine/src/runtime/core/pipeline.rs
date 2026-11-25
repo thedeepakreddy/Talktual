@@ -150,6 +150,12 @@ pub(crate) enum TestHook {
     },
 }
 
+/// (causal violations, timeline anomalies, deadline misses) of a counter
+/// set: the totals the engine-wide metrics follow (VA-02).
+fn finding_totals(c: &OrchestrationCounters) -> (u64, u64, u64) {
+    (c.causal_violations, c.timeline_anomalies, c.deadline_misses)
+}
+
 /// The result of the checks made before a pipeline starts.
 struct Prepared {
     session: SessionId,
@@ -589,9 +595,26 @@ impl Core {
             return Vec::new();
         };
         let t0 = std::time::Instant::now();
+        let before = finding_totals(p.observer.counters());
         let out = f(&mut p.observer, now);
+        let after = finding_totals(p.observer.counters());
         p.observer
             .record_overhead(t0.elapsed().as_secs_f32() * 1_000.0);
+        // VA-02: engine metrics follow the observer's complete counters,
+        // not the (limited) published findings. Per-call deltas of
+        // monotonic counters: never negative, no extra state.
+        Metrics::inc(
+            &self.metrics.causal_violations,
+            after.0.saturating_sub(before.0),
+        );
+        Metrics::inc(
+            &self.metrics.timeline_anomalies,
+            after.1.saturating_sub(before.1),
+        );
+        Metrics::inc(
+            &self.metrics.deadline_misses,
+            after.2.saturating_sub(before.2),
+        );
         out
     }
 
@@ -634,47 +657,31 @@ impl Core {
                     utterance,
                     revision,
                     kind,
-                } => {
-                    Metrics::inc(&self.metrics.causal_violations, 1);
-                    OrchestrationEvent::CausalViolation {
-                        stream,
-                        stage,
-                        utterance,
-                        revision,
-                        kind,
-                    }
-                }
-                Finding::Timeline { stage, kind, frame } => {
-                    if !matches!(
-                        kind,
-                        ce_core::orchestration::TimelineKind::ReAnchor
-                            | ce_core::orchestration::TimelineKind::Gap
-                            | ce_core::orchestration::TimelineKind::UnknownTiming
-                    ) {
-                        Metrics::inc(&self.metrics.timeline_anomalies, 1);
-                    }
-                    OrchestrationEvent::Timeline {
-                        stream,
-                        stage,
-                        kind,
-                        frame,
-                    }
-                }
+                } => OrchestrationEvent::CausalViolation {
+                    stream,
+                    stage,
+                    utterance,
+                    revision,
+                    kind,
+                },
+                Finding::Timeline { stage, kind, frame } => OrchestrationEvent::Timeline {
+                    stream,
+                    stage,
+                    kind,
+                    frame,
+                },
                 Finding::Deadline {
                     stage,
                     utterance,
                     latency_ms,
                     budget_ms,
-                } => {
-                    Metrics::inc(&self.metrics.deadline_misses, 1);
-                    OrchestrationEvent::DeadlineMissed {
-                        stream,
-                        stage,
-                        utterance,
-                        latency_ms,
-                        budget_ms,
-                    }
-                }
+                } => OrchestrationEvent::DeadlineMissed {
+                    stream,
+                    stage,
+                    utterance,
+                    latency_ms,
+                    budget_ms,
+                },
             };
             self.emit(EventPayload::Orchestration(event), session);
         }

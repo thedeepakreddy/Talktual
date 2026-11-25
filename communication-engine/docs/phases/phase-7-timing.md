@@ -81,7 +81,8 @@ worker generation, payloads are never altered or dropped (ADR-0032).
 
 **Diagnostic volume** (audit AUD-09): at most 32 findings of one kind
 and stage are published per pipeline epoch. Further ones are counted in
-`suppressed_findings`, and the violation counters remain complete.
+`suppressed_findings`. Both the pipeline's violation counters and the
+engine-wide metrics remain complete (VA-02).
 
 ## 4. Configuration and compatibility guide
 

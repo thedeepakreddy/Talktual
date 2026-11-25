@@ -332,3 +332,59 @@ async fn outputs_of_abandoned_workers_are_rejected() {
     assert!(!published(&h, "MARK-ABANDONED"));
     h.engine.shutdown().await.unwrap();
 }
+
+/// VA-02: causal violations beyond the per-kind event limit. Each injected
+/// result (current generation, so it is published) refers to a revision
+/// that was never published: one `unknown_source` violation each, plus
+/// `sequence_regression` for the repeated sequence. At most 32 events of a
+/// kind are published; the pipeline counter and the engine metric count
+/// every violation.
+#[tokio::test]
+async fn causal_violation_metrics_are_complete_beyond_the_event_limit() {
+    let mut h = harness(audio_config(), vec![echo()]).await;
+    h.grant_capture().await;
+    let (mut r, id) = open(&h).await;
+    let st = h
+        .engine
+        .start_pipeline(id, spec("t.echo", StopMode::Drain))
+        .await
+        .unwrap();
+    let g = translation_generation(&st);
+    feed(&h, &mut r, 5).await;
+    for i in 0..40 {
+        h.engine
+            .test_inject_translation(id, g, marker(id, &format!("MARK-UNKNOWN-{i}")))
+            .await
+            .unwrap();
+    }
+    wait_published(&mut h, "MARK-UNKNOWN-39").await;
+    let fin = h.engine.stop_pipeline(id).await.unwrap();
+    let c = &fin.counters;
+    assert!(c.causal_violations >= 40 + 39, "{c:?}");
+    assert_eq!(
+        h.engine.metrics().causal_violations,
+        c.causal_violations,
+        "engine metric = complete count"
+    );
+    let _ = h
+        .events
+        .wait_for(Duration::from_millis(200), |_| false)
+        .await;
+    let unknown_events = h
+        .events
+        .events()
+        .iter()
+        .filter(|e| {
+            matches!(
+                &e.payload,
+                EventPayload::Orchestration(OrchestrationEvent::CausalViolation {
+                    kind: communication_engine::contracts::orchestration::CausalKind::UnknownSource,
+                    ..
+                })
+            )
+        })
+        .count();
+    assert_eq!(unknown_events, 32, "publication limited per kind");
+    assert!(c.suppressed_findings >= 40 - 32);
+    h.engine.shutdown().await.unwrap();
+}

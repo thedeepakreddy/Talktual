@@ -66,3 +66,8 @@ prior-generation results.
   forwarder, admission and publication. The natural race (the worker
   thread itself sending late) was not forced.
 
+## Final amendment (verification audit VA-01, VA-03)
+
+* The abandoned-worker cap covers **all four stages**. Analysis was
+  missing (`AnalysisHandle::abandon()` detached its thread) until VA-01.
+* `test-hooks` is a test-only feature. Products must not enable it.

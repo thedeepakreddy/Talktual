@@ -378,13 +378,15 @@ async fn r6_engine_metrics_vs_pipeline_counters_beyond_the_findings_limit() {
     // Every later final is published long "after" its audio on the test clock.
     h.clock.advance(Duration::from_secs(600));
     feed(&h, &mut r, 2_500).await;
-    let st = h.engine.pipeline_status(id).await.unwrap();
+    // Corrected (VA-02): compare after the stop (quiescent).
+    let st = h.engine.stop_pipeline(id).await.unwrap();
     let m = h.engine.metrics();
     eprintln!(
         "pipeline counters: deadline_misses {}, suppressed_findings {}; engine metrics: deadline_misses {}",
         st.counters.deadline_misses, st.counters.suppressed_findings, m.deadline_misses
     );
     assert!(st.counters.deadline_misses > 32, "{:?}", st.counters);
+    assert_eq!(m.deadline_misses, st.counters.deadline_misses);
 }
 
 /// VA-R7 (verification audit): analysis workers abandoned at a stop
@@ -393,12 +395,16 @@ async fn r6_engine_metrics_vs_pipeline_counters_beyond_the_findings_limit() {
 #[ignore]
 async fn r7_abandoned_analysis_workers_versus_the_cap() {
     use communication_engine::audio_intel::ScriptedVad;
-    let h = harness(audio_config(), 4, vec![]).await;
+    // Cap below the audio layer's 4 taps per stream, so the engine-wide cap
+    // (not the tap limit) is what refuses.
+    let mut config = audio_config();
+    config.orchestration.max_abandoned_workers = 3;
+    let h = harness(config, 4, vec![]).await;
     h.grant_capture().await;
     let (mut r, id) = open(&h).await;
     let t0 = threads();
     let mut refused = 0;
-    let rounds = 20;
+    let rounds = 6;
     for _ in 0..rounds {
         let mut cfg = AnalysisConfig::default();
         cfg.budget.degrade = false;
@@ -415,6 +421,7 @@ async fn r7_abandoned_analysis_workers_versus_the_cap() {
             Ok(_) => {}
             Err(e) => {
                 eprintln!("refused: {}", e.code());
+                assert_eq!(e.code(), "orchestration.abandoned_workers_exhausted");
                 refused += 1;
                 continue;
             }
@@ -431,4 +438,9 @@ async fn r7_abandoned_analysis_workers_versus_the_cap() {
         m.analysis_failures,
         threads() as i64 - t0 as i64
     );
+    // Corrected (VA-01): each abandoned analysis worker is counted, and the
+    // cap refuses the rest.
+    assert_eq!(m.abandoned_workers, 3);
+    assert_eq!(refused, 3);
+    assert_eq!(m.starts_refused_abandoned, 3);
 }

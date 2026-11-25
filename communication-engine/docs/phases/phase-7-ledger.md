@@ -136,7 +136,7 @@ ADR-0033.
 
 | ID | Requirement | Implementation | Evidence | Status | Disposition |
 |---|---|---|---|---|---|
-| SCH-1 | Bound concurrency, queues, state, tasks and threads | `max_pipelines`; one forwarder per worker; **abandoned-worker cap** `max_abandoned_workers` with live accounting and typed refusal (AUD-01); existing caps | U; R; `aud01_*` (cap, concurrency, recovery, lifecycle); R1 | VERIFIED | bound = cap − 1 + workers running when the cap is reached (documented). Before the audit this row was VERIFIED without that bound: AUD-01 showed unbounded growth |
+| SCH-1 | Bound concurrency, queues, state, tasks and threads | `max_pipelines`; one forwarder per worker; **abandoned-worker cap** `max_abandoned_workers` with live accounting from the worker handles of **all four stages** and typed refusal (AUD-01, analysis fixed by VA-01); existing caps | U; R; `aud01_*`, `va01_*`; R1, R7 | VERIFIED | bound = cap − 1 + workers running when the cap is reached (documented). History: VERIFIED without that bound until AUD-01; analysis uncounted until VA-01 |
 | SCH-2 | No starvation among eligible streams; justify priority | unbiased data select; control priority (ADR-0033) | U fairness (`next_data`); `aud04_…` (a saturated stage does not stop another stream); audit R4 (command latency under a burst) | PARTIAL | scheduler fairness while a stage's *core* channel is saturated was not forced end to end (AUD-04) |
 | SCH-3 | CPU-heavy work off ingress/callback paths | unchanged | inspection | VERIFIED | — |
 | SCH-4 | Per-stage capacity and overflow behaviour | `arch` §5 table | docs | VERIFIED | — |
@@ -171,7 +171,7 @@ ADR-0033.
 | FAI-2 | Fault-isolate optional modules | degraded mode | R | VERIFIED | — |
 | FAI-3 | Emit a reason for degraded operation | `stage_degraded{reason}` | R | VERIFIED | — |
 | FAI-4 | Test saturation, delays, hangs, cancellation, restart, out-of-order, recovery | O, R | O, R | VERIFIED | — |
-| FAI-5 | Prevent memory/task leaks and runaway retries | bounded tables; abandoned-worker cap (AUD-01); forwarders end with workers; no retries | U; R; `aud01_*`; R1 | VERIFIED | hung threads persist until they exit (not killable); they are bounded by the cap |
+| FAI-5 | Prevent memory/task leaks and runaway retries | bounded tables; abandoned-worker cap covering every stage (AUD-01, VA-01); forwarders end with workers; no retries | U; R; `aud01_*`; `va01_*`; R1; R7 | VERIFIED | hung threads persist until they exit (they cannot be killed); they are bounded by the cap |
 
 ## 13. Privacy
 
@@ -202,11 +202,11 @@ ADR-0033.
 | OBS-1 | Graph/session lifecycle and epochs | R events | VERIFIED |
 | OBS-2 | Dispatch/completion/failure/timeout events | stage events; stop outcomes | VERIFIED |
 | OBS-3 | Queue wait, processing and end-to-end latency | status latency summaries | VERIFIED |
-| OBS-4 | Stale/rejected/duplicate events and ordering violations | counters and events | VERIFIED |
+| OBS-4 | Stale/rejected/duplicate events and ordering violations | events (at most 32 per kind and stage per epoch) and complete counters, both per pipeline and engine-wide (VA-02: `va02_…`, `causal_violation_metrics…`, R6) | VERIFIED |
 | OBS-5 | Backpressure, coalescing, drop and rejection counts | existing plus new counters | VERIFIED |
 | OBS-6 | Timeline normalization, discontinuities, uncertainty | timeline status | VERIFIED |
 | OBS-7 | Recovery, degraded mode and shutdown outcomes | events | VERIFIED |
-| OBS-8 | Concurrency/resource counts | pipelines, `worker_forwarders`, `abandoned_workers`, `starts_refused_abandoned` | VERIFIED |
+| OBS-8 | Concurrency/resource counts | pipelines, `worker_forwarders`, `abandoned_workers` (all stages, VA-01), `starts_refused_abandoned` | VERIFIED |
 | OBS-9 | Trace/correlation ids and config fingerprints | envelope ids; fingerprint | VERIFIED |
 | OBS-10 | No sensitive payloads in diagnostics | R privacy test | VERIFIED |
 
@@ -283,3 +283,20 @@ Counts after the corrections:
 * Plus the `tagged_sender` unit test.
 * `orchestration_audit.rs` (5 tests) holds `#[ignore]`d reproductions.
 
+## Final corrections and closure (2026-11-25)
+
+* **VA-01**: analysis-stage abandoned-worker accounting (SCH-1, FAI-5,
+  OBS-8 updated).
+* **VA-02**: engine metrics are complete beyond the event limit (OBS-4
+  updated).
+* **VA-03**: `test-hooks` exposure, accepted and documented.
+
+Classifications are **unchanged** by these corrections:
+* PARTIAL: SCH-2, EVL-4, EVL-6 (core-channel saturation fairness not
+  forced end to end), EVL-7, TST-10, EVL-9, CMP-4;
+* CAU-5: VERIFIED with stated scope (the natural race is unforced);
+* AUD-07 and AUD-14: code review only.
+
+DOC-12 and the acceptance criteria (ACC-18, audit and closure) are
+satisfied by `phase-7-closure.md`. Phase 7 is **closed: ACCEPT WITH
+LIMITATIONS**.

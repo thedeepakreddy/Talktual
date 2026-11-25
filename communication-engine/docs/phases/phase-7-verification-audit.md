@@ -217,3 +217,21 @@ are acceptable for closure once documented as above.
 5. **Re-run**: `verify.sh`, MSRV (with and without `test-hooks`), the
    repeated Phase 7 tests, the audit reproductions and the Talktual
    checks.
+
+---
+
+## 7. Final corrections addendum (2026-11-25; added after this audit)
+
+Everything above is the verification audit **as written** at `3ec74ae`.
+The authorized final corrections are recorded here; see
+`phase-7-closure.md` for the commit hashes and the closure.
+
+| Finding | Root cause | Correction | Evidence (executed) | Status |
+|---|---|---|---|---|
+| **VA-01** | `AnalysisHandle::abandon()` dropped the thread `JoinHandle` (`thread.take()`), so `is_finished()` reported `true` for a live thread. The runtime's analysis stall and stop-timeout paths did not keep the handle in `abandoned`. | `abandon()` now only requests the stop and **keeps** the handle (as the other stages' handles do). Both runtime paths push the handle to `intel.abandoned`, and housekeeping reaps it only once `join_if_finished` sees the thread exit. No public API change; one Phase 3 crate method body changed. | `orchestration_corrections`: `va01_abandoned_analysis_workers_are_counted_and_share_the_cap` checks that a hung analysis is counted exactly; that analysis and translation share one cap; that refusal applies to direct, `start_analysis_with`, pipeline and recognition starts; that refused starts create no forwarder; that capacity returns only after the threads exit; and that shutdown is bounded. `va01_concurrent_analysis_starts_cannot_bypass_the_cap` sends 12 simultaneous analysis starts at the cap: all refused, no worker spawned, gauge exact. **R7 now asserts**: 3 abandoned analysis workers counted, 3 refused by the cap (cap 3, below the audio tap limit). **All three VA tests failed with the fixes removed** (VA-01: the gauge never counted; VA-02: the metric fell short), then passed with them. | **CORRECTED** |
+| **VA-02** | `report_findings` incremented the engine metrics once per *published* finding, after the AUD-09 limiter. | The engine metrics (`causal_violations`, `timeline_anomalies`, `deadline_misses`) are now incremented from the observer's **complete counters**, as per-call deltas around each observer call. Publication is unchanged (32 per kind and stage per epoch), and `suppressed_findings` is unchanged. No new state: a delta of monotonic counters, computed on the control task. | `va02_engine_metrics_count_every_finding_beyond_the_event_limit`: over 32 deadline misses, exactly 32 events published, `suppressed_findings` = total − 32, engine metric = pipeline counter, and cumulative across a new epoch (compared at quiescent points). `stale_output_runtime::causal_violation_metrics_are_complete…` (feature `test-hooks`): 40 injected results give ≥ 79 causal violations, 32 `unknown_source` events published, engine metric = pipeline counter. **R6 now asserts**: engine metric = pipeline counter (126 = 126). Timeline anomalies use the same delta code, but no runtime test produces more than 32 of them (code review for that metric). | **CORRECTED** |
+| **VA-03** | — | **ACCEPTED, documented.** Cargo features are additive, so `--all-features` enabling `test-hooks` is ordinary feature unification. Hardening it with `compile_error!` would break the repository's own all-features gates. The exposure is limited: the feature is off by default; the two methods are `#[doc(hidden)]` and named `test_*`; injection requires an explicit runtime opt-in (`test_retain_translation_senders`) before any sender is retained; nothing in the serializable `Command` API can reach it. A product must not enable `test-hooks`, as `Cargo.toml`, `orchestration.md` and the handoff state. | inspection | **ACCEPTED LIMITATION** |
+
+After these corrections, the residual limitations in §5 are unchanged,
+and so are the classifications of AUD-03, AUD-04 (PARTIAL), AUD-07 and
+AUD-14 (code review only) and AUD-11 (open, approval).

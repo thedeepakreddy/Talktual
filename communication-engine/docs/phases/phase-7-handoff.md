@@ -1,8 +1,17 @@
 # Phase 7 handoff
 
-State after the Phase 7 implementation, its audit (`phase-7-audit.md`:
-REQUIRES CORRECTIONS) and the authorized corrections (audit §13).
-**The verification audit and closure have not happened yet.**
+**Phase 7 is CLOSED: ACCEPT WITH LIMITATIONS** (`phase-7-closure.md`).
+
+History:
+1. implementation;
+2. audit (`phase-7-audit.md`: REQUIRES CORRECTIONS);
+3. corrections (audit §13);
+4. verification audit (`phase-7-verification-audit.md`: REQUIRES
+   CORRECTIONS for VA-01 and VA-02);
+5. final corrections (verification audit §7);
+6. closure.
+
+Phase 8 has not started.
 
 Read this with:
 * `phase-7-report.md` (status and evidence);
@@ -86,18 +95,23 @@ Read this with:
 * **Do not** put pipeline-managed stages under direct per-stage control
   and expect the pipeline not to react. Stopping an optional stage
   directly degrades the pipeline; stopping a required one ends it.
-* **Abandoned-worker cap**: at `orchestration.max_abandoned_workers`
-  live abandoned threads, every new stage worker start is refused
+* **Abandoned-worker cap**: covers all four stages, including analysis
+  (VA-01). At `orchestration.max_abandoned_workers` live abandoned
+  threads, every new stage worker start is refused
   (`orchestration.abandoned_workers_exhausted`) until hung threads exit.
   Watch the `abandoned_workers` gauge.
 * **Restart is checked first**: an invalid replacement leaves the
   running pipeline untouched.
 * **`timeline` events**: `stage` is optional (`null` for audio gaps).
-  Findings are limited to 32 per kind and stage per epoch.
+  Findings *events* are limited to 32 per kind and stage per epoch.
+  Counters and engine metrics are complete (VA-02).
+* **`test-hooks`**: test-only. Never enable it in a product (VA-03);
+  `--all-features` builds include it.
 
 ## Open items (need a decision or later work)
 
-* A verification audit of the corrections, then closure (spec §23–24).
+* None for closure. The accepted limitations are listed in
+  `phase-7-closure.md`.
 * **Still PARTIAL after the corrections**:
   * scheduler fairness under core-channel saturation (SCH-2, EVL-4,
     EVL-6);

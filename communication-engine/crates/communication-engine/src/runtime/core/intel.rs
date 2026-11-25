@@ -342,6 +342,9 @@ impl Core {
             let counters = status.counters;
             let session = r.session;
             intel.remember(stream, session, status);
+            // Kept until its thread exits: counted by the abandoned-worker
+            // cap (VA-01).
+            intel.abandoned.push(r.handle);
             let err = CeError::new(
                 ErrorCategory::Timeout,
                 "analysis.stalled",
@@ -419,6 +422,7 @@ impl Core {
             status.running = false;
             status.ended.get_or_insert(AnalysisEndReason::Failed);
             intel.remember(stream, r.session, status);
+            intel.abandoned.push(r.handle);
             Metrics::inc(&self.metrics.analysis_failures, 1);
             self.log(
                 Observation::log(Level::Warn, "analysis.stop_timed_out").field("stream", stream),

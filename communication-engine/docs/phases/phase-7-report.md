@@ -327,3 +327,38 @@ The authorized corrections are listed with their dispositions in audit
 **Corrections implemented; ready for the verification audit and
 closure.** Phase 7 is **not** closed by this work, and Phase 8 has not
 started.
+
+## 14. Final corrections and closure (2026-11-25)
+
+The verification audit (`phase-7-verification-audit.md`, `3ec74ae`)
+returned REQUIRES CORRECTIONS for two reproduced defects. Both are
+corrected; see verification audit §7 for the details.
+
+* **VA-01**: the abandoned-worker cap did not cover analysis.
+  * Root cause: `AnalysisHandle::abandon()` detached the thread, and the
+    runtime did not keep abandoned analysis handles.
+  * Fix: `abandon()` keeps the handle, and the stall and stop-timeout
+    paths retain it until the thread exits. All four stages are now
+    counted and capped.
+* **VA-02**: the engine metrics were capped with the events.
+  * Root cause: the metrics were incremented per *published* finding.
+  * Fix: the metrics are derived from the observer's complete counters
+    (per-call deltas). Publication stays limited to 32 per kind and
+    stage per epoch.
+* **VA-03**: `test-hooks` is included by `--all-features`. Accepted and
+  documented: it is off by default, needs an explicit runtime opt-in,
+  and has `#[doc(hidden)]` `test_*` methods only.
+
+**Changed**:
+* `ce-audio-intel/src/worker.rs`: the `abandon` body;
+* `runtime/core/intel.rs`: the two paths;
+* `runtime/core/pipeline.rs`: metric deltas; increments removed from
+  `report_findings`.
+
+**Tests**: 3 in `orchestration_corrections.rs` (`va01_*` ×2, `va02_…`),
+1 in `stale_output_runtime.rs`; R6 and R7 now assert the corrected
+behaviour. With the fixes removed, all three new correction tests failed,
+which shows they detect the defects.
+
+Closure: **ACCEPT WITH LIMITATIONS**. See `phase-7-closure.md` for the
+gate results, the accepted limitations and the commit.

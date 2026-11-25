@@ -129,3 +129,27 @@ the runtime's wrapper around it. It was corrected as follows.
 
 These need hardware and model approval, and are recorded as PARTIAL or
 NOT TESTED in the ledger.
+
+## 4. Final corrections (verification audit VA-01, VA-02)
+
+* **Analysis-stage abandoned workers**:
+  * R7 (cap set to 3): 3 hung analysis workers abandoned; the gauge
+    reads 3; there are 3 extra threads and 3 forwarders; the next 3
+    starts are refused with `orchestration.abandoned_workers_exhausted`.
+  * Before the correction: 4 abandoned, gauge 1, no cap refusal (the
+    audio tap limit refused instead).
+  * `va01_*`: analysis and translation share the cap; 12 simultaneous
+    analysis starts at the cap are all refused with no worker spawned;
+    capacity returns only after the threads exit.
+* **Metric completeness**:
+  * R6: 126 deadline misses, 94 suppressed events, engine metric 126
+    (before: 32).
+  * `va02_…`: exactly 32 events published; the engine metric equals the
+    pipeline counter, and is cumulative across epochs.
+  * Causal violations through `test-hooks`: 40 injections give ≥ 79
+    violations, 32 events of the kind published, and a complete metric.
+  * Timeline-anomaly metrics share the mechanism; no runtime test
+    produces more than 32 of them.
+
+All of this is synthetic (fake audio, scripted ASR, scripted adapters
+and detectors, manual test clock).

@@ -700,3 +700,211 @@ async fn aud04_a_saturated_stage_stays_bounded_and_isolated_and_recovers() {
     let report = h.engine.shutdown().await.unwrap();
     assert!(report.clean, "{report:?}");
 }
+
+// ------------------------------------------------------------------ VA-01
+
+fn hung_vad(delay: Duration) -> Box<communication_engine::audio_intel::ScriptedVad> {
+    Box::new(communication_engine::audio_intel::ScriptedVad::new(|_| 0.5).with_delay(delay))
+}
+
+fn analysis_cfg() -> AnalysisConfig {
+    let mut c = AnalysisConfig::default();
+    c.budget.degrade = false;
+    c.budget.queue_blocks = 4_000;
+    c
+}
+
+/// Start an analysis whose detector blocks `delay` per hop, let it enter a
+/// hop, then stop it: the stop times out and the worker is abandoned.
+async fn abandon_analysis(
+    h: &AudioHarness,
+    r: &mut CaptureReader,
+    id: AudioStreamId,
+    delay: Duration,
+) {
+    h.engine
+        .start_analysis_with(id, Some(analysis_cfg()), hung_vad(delay))
+        .await
+        .unwrap();
+    feed(h, &mut [&mut *r], 3).await;
+    // The worker is inside a hop once it has heartbeat-free work queued;
+    // the stop below waits its full bound either way.
+    let st = h.engine.stop_analysis(id).await.unwrap();
+    assert!(!st.running);
+}
+
+#[tokio::test]
+async fn va01_abandoned_analysis_workers_are_counted_and_share_the_cap() {
+    let entered = Arc::new(AtomicUsize::new(0));
+    let hang = hanging("t.hang", Duration::from_millis(3_000), entered.clone());
+    let h = harness(cap_config(2), 400, vec![hang, echo("t.echo")]).await;
+    h.grant_capture().await;
+    let (mut ra, a) = open(&h).await;
+    let (mut rb, b) = open(&h).await;
+    let (_rc, c) = open(&h).await;
+    let fw0 = h.engine.metrics().worker_forwarders;
+    // One hung analysis worker: counted exactly (before VA-01: not at all).
+    abandon_analysis(&h, &mut ra, a, Duration::from_millis(3_000)).await;
+    until("one abandoned analysis", || {
+        h.engine.metrics().abandoned_workers == 1
+    })
+    .await;
+    assert!(h.engine.metrics().analysis_failures >= 1);
+    // One hung translation worker on another stream: the same cap.
+    abandon_one(&h, &mut rb, b, &entered).await;
+    until("two abandoned", || {
+        h.engine.metrics().abandoned_workers == 2
+    })
+    .await;
+    // At the cap: analysis starts are refused by the engine-wide cap (not by
+    // the audio tap limit), directly and through a pipeline; so are others.
+    assert_eq!(
+        code(
+            h.engine
+                .start_analysis_with(c, Some(analysis_cfg()), hung_vad(Duration::ZERO))
+                .await
+        ),
+        "orchestration.abandoned_workers_exhausted"
+    );
+    assert_eq!(
+        code(h.engine.start_analysis(c, None).await),
+        "orchestration.abandoned_workers_exhausted"
+    );
+    assert_eq!(
+        code(
+            h.engine
+                .start_pipeline(
+                    c,
+                    PipelineSpec::new(vec![StageSpec::required(StageKind::Analysis)])
+                )
+                .await
+        ),
+        "orchestration.abandoned_workers_exhausted"
+    );
+    assert_eq!(
+        code(h.engine.start_recognition(c, Some(continuous())).await),
+        "orchestration.abandoned_workers_exhausted"
+    );
+    // Refused starts created nothing.
+    assert_eq!(h.engine.metrics().abandoned_workers, 2);
+    let fw_at_cap = h.engine.metrics().worker_forwarders;
+    assert_eq!(
+        fw_at_cap,
+        fw0 + 2,
+        "one forwarder per abandoned worker, nothing more"
+    );
+    assert!(h.engine.analysis_status(c).await.is_err());
+    // Capacity returns only when the threads actually exit (≈3 s hops/calls).
+    assert!(h.engine.metrics().abandoned_workers > 0);
+    until("abandoned threads exited", || {
+        h.engine.metrics().abandoned_workers == 0
+    })
+    .await;
+    h.engine
+        .start_analysis_with(c, Some(analysis_cfg()), hung_vad(Duration::ZERO))
+        .await
+        .unwrap();
+    assert_eq!(
+        h.engine.metrics().abandoned_workers,
+        0,
+        "a running worker is not abandoned"
+    );
+    let t = Instant::now();
+    h.engine.shutdown().await.unwrap();
+    assert!(t.elapsed() < WAIT, "bounded shutdown");
+}
+
+#[tokio::test]
+async fn va01_concurrent_analysis_starts_cannot_bypass_the_cap() {
+    let h = Arc::new(harness(cap_config(1), 4, vec![]).await);
+    h.grant_capture().await;
+    let mut readers = Vec::new();
+    let mut ids = Vec::new();
+    for _ in 0..4 {
+        let (r, id) = open(&h).await;
+        readers.push(r);
+        ids.push(id);
+    }
+    abandon_analysis(&h, &mut readers[0], ids[0], Duration::from_millis(2_000)).await;
+    until("at cap", || h.engine.metrics().abandoned_workers == 1).await;
+    let fw = h.engine.metrics().worker_forwarders;
+    let threads_before = h.engine.metrics().analyses_started;
+    let starts = (0..12).map(|i| {
+        let h = h.clone();
+        let id = ids[1 + i % 3];
+        async move {
+            h.engine
+                .start_analysis_with(id, Some(analysis_cfg()), hung_vad(Duration::ZERO))
+                .await
+        }
+    });
+    let results = futures_join(starts).await;
+    assert!(
+        results.iter().all(
+            |r| matches!(r, Err(e) if e.code() == "orchestration.abandoned_workers_exhausted")
+        ),
+        "{results:?}"
+    );
+    let m = h.engine.metrics();
+    assert_eq!(m.abandoned_workers, 1);
+    assert_eq!(m.worker_forwarders, fw, "no worker was spawned");
+    assert_eq!(m.analyses_started, threads_before);
+    assert!(m.starts_refused_abandoned >= 12);
+    until("recovered", || h.engine.metrics().abandoned_workers == 0).await;
+    let h = Arc::try_unwrap(h).ok().expect("sole owner");
+    h.engine.shutdown().await.unwrap();
+}
+
+// ------------------------------------------------------------------ VA-02
+
+/// More than 32 deadline misses: events stay limited to 32 per kind per
+/// epoch, the pipeline counter and the engine metric count all of them,
+/// across a restart (engine metrics are cumulative; pipeline counters are
+/// per epoch).
+#[tokio::test]
+async fn va02_engine_metrics_count_every_finding_beyond_the_event_limit() {
+    let mut h = harness(audio_config(), 400, vec![echo("t.echo")]).await;
+    h.grant_capture().await;
+    let (mut r, id) = open(&h).await;
+    let mut spec = pipeline("t.echo", StopMode::Drain);
+    spec.deadlines.transcript_final_ms = Some(1);
+    h.engine.start_pipeline(id, spec).await.unwrap();
+    feed(&h, &mut [&mut r], 5).await;
+    // Every later final is published "long after" its audio (test clock).
+    h.clock.advance(Duration::from_secs(600));
+    feed(&h, &mut [&mut r], 2_000).await;
+    // Compare at quiescent points: after a stop, the epoch produces nothing.
+    let first = h.engine.stop_pipeline(id).await.unwrap();
+    assert!(first.counters.deadline_misses > 32, "{:?}", first.counters);
+    assert_eq!(
+        h.engine.metrics().deadline_misses,
+        first.counters.deadline_misses,
+        "engine metric = complete count"
+    );
+    let _ = h
+        .events
+        .wait_for(Duration::from_millis(200), |_| false)
+        .await;
+    let published = orch(&h)
+        .iter()
+        .filter(|e| matches!(e, OrchestrationEvent::DeadlineMissed { .. }))
+        .count() as u64;
+    assert_eq!(published, 32, "publication stays limited");
+    assert_eq!(
+        first.counters.suppressed_findings,
+        first.counters.deadline_misses - 32
+    );
+    // A new epoch (restart of the stopped pipeline): new counters; the engine
+    // metric is cumulative.
+    let second_start = h.engine.restart_pipeline(id, None).await.unwrap();
+    assert!(second_start.epoch > first.epoch);
+    assert_eq!(second_start.counters.deadline_misses, 0);
+    feed(&h, &mut [&mut r], 400).await;
+    let second = h.engine.stop_pipeline(id).await.unwrap();
+    assert!(second.counters.deadline_misses > 0);
+    assert_eq!(
+        h.engine.metrics().deadline_misses,
+        first.counters.deadline_misses + second.counters.deadline_misses
+    );
+    h.engine.shutdown().await.unwrap();
+}

@@ -542,3 +542,15 @@ the hash).
   Phase 7 contract field (AUD-08) and added one setting and two gauges
   (AUD-01). All are additive except the `Timeline.stage` type, which
   belongs to Phase 7 itself.
+
+### Note added 2026-11-25 (final corrections)
+
+The verification audit (`phase-7-verification-audit.md`) found two
+places where §13 above overstated the result:
+* **AUD-01**: the live accounting did **not** cover the analysis stage
+  (VA-01): `AnalysisHandle::abandon()` detached the thread.
+* **AUD-09**: the engine-wide metrics were capped with the events
+  (VA-02).
+
+Both were corrected in the final correction cycle (verification audit
+§7). The table above is kept as originally written.
